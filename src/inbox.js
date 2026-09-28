@@ -3,9 +3,15 @@ import { normalizeThreads, findNewMail } from './mail.js';
 import { openDm, threadEntry } from './state.js';
 import { warnOnce } from './util.js';
 
+// The fields the Recent list renders, in list order; used to skip emit() when none of them moved.
+function recentSignature(list) {
+  return JSON.stringify(list.map((t) => [t.userId, t.username, t.avatar, t.preview, t.lastReply, t.newMail, t.isSystem]));
+}
+
 export function createInbox({ api, store, myId, now = () => Date.now(), onActivity = () => {}, onThreadChanged = () => {} }) {
   let threads = [];
   let previous = null; // Map userId -> lastReply from the previous poll; null until the first poll
+  let lastSignature = null; // Recent-list signature from the previous poll; null until the first poll
   const subs = new Set();
 
   function emit() {
@@ -27,8 +33,13 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
     const fresh = findNewMail(threads, state.threads, myId);
     const freshIds = new Set(fresh.map((t) => t.userId));
 
+    // Oldest first: every openDm call in this poll shares the same now(), so evictDms breaks its
+    // rank tie by insertion order. Pushing oldest-to-newest means the oldest is evicted, not the
+    // newest, when more threads pop in one poll than the dock can hold.
+    const sortedFresh = [...fresh].sort((a, b) => (a.lastReply || 0) - (b.lastReply || 0));
+
     const changes = [];
-    for (const t of fresh) {
+    for (const t of sortedFresh) {
       const seen = state.threads[t.userId] || {};
       const pop = !!state.friends[t.userId] && (t.lastReply || 0) > (seen.lastNotifiedReply || 0);
       if (seen.unread !== t.newMail || pop) changes.push({ t, pop });
@@ -45,7 +56,11 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
           entry.unread = t.newMail;
           if (pop) {
             entry.lastNotifiedReply = t.lastReply || 0;
-            openDm(s, t.userId, { now: now(), username: t.username, avatar: t.avatar });
+            // `#id` is a placeholder for a still-unknown username (mail.js); passing it through
+            // would overwrite a real name already on the dock entry. avatar is null in the same
+            // case, and openDm already ignores a falsy avatar.
+            const username = t.username === `#${t.userId}` ? undefined : t.username;
+            openDm(s, t.userId, { now: now(), username, avatar: t.avatar });
           }
         }
         for (const id of cleared) threadEntry(s, id).unread = 0;
@@ -53,17 +68,37 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
     }
 
     // The first poll only sets the baseline; later polls report threads whose last reply moved.
-    if (previous) {
+    // `previous` is replaced before the signals below fire, so a callback that throws can't leave
+    // the same change to be re-signalled (and mistaken for a network failure by the poller) next time.
+    const prevBaseline = previous;
+    previous = new Map(threads.map((t) => [t.userId, t.lastReply]));
+    if (prevBaseline) {
       let chatting = false;
       for (const t of threads) {
-        if (previous.has(t.userId) && previous.get(t.userId) === t.lastReply) continue;
-        onThreadChanged(t.userId);
+        if (prevBaseline.has(t.userId) && prevBaseline.get(t.userId) === t.lastReply) continue;
+        try {
+          onThreadChanged(t.userId);
+        } catch (e) {
+          warnOnce('inbox-callback', e);
+        }
         if (state.friends[t.userId] || state.dock.dms.some((d) => d.id === t.userId)) chatting = true;
       }
-      if (chatting) onActivity();
+      if (chatting) {
+        try {
+          onActivity();
+        } catch (e) {
+          warnOnce('inbox-callback', e);
+        }
+      }
     }
-    previous = new Map(threads.map((t) => [t.userId, t.lastReply]));
-    emit();
+
+    // Redraw the Friends window only when what its Recent list shows actually changed (spec §8);
+    // store-driven changes already trigger their own renders.
+    const signature = recentSignature(threads);
+    if (signature !== lastSignature) {
+      lastSignature = signature;
+      emit();
+    }
     return r;
   }
 
