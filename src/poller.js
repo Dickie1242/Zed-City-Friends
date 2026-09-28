@@ -49,6 +49,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
       if (result && result.ok === false) {
         if (result.kind === 'auth') {
           active = false;
+          rerun = false; // an onAuthLost that doesn't stop() must not leave a stale rerun for the next start()
           if (onAuthLost) onAuthLost();
           return;
         }
@@ -71,6 +72,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
       schedule(delay);
     } catch (e) {
       warnOnce('poller-tick', e);
+      rerun = false; // don't let a pending poke fire back-to-back with the fallback run
       if (active) schedule(typeof interval === 'number' ? interval : 60000);
     }
   }

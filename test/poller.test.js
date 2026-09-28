@@ -14,20 +14,32 @@ function controlledRun() {
   return { run, release: (v = { ok: true }) => releases.shift()(v) };
 }
 
+// Tracks every poller created in a test so afterEach can destroy it, even if the test fails
+// partway through — an undestroyed poller keeps its visibilitychange listener on document and
+// can go on running, producing misleading unhandled-rejection noise in later tests.
+let pollers;
+function newPoller(opts) {
+  const p = makePoller(opts);
+  pollers.push(p);
+  return p;
+}
+
 describe('poller', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setVisibility('visible');
     resetWarnings();
+    pollers = [];
   });
   afterEach(() => {
+    for (const p of pollers) p.destroy();
     vi.useRealTimers();
     setVisibility('visible');
   });
 
   it('runs immediately on start and then every interval', async () => {
     const run = vi.fn().mockResolvedValue({ ok: true });
-    const p = makePoller({ run, interval: 1000 });
+    const p = newPoller({ run, interval: 1000 });
     p.start();
     await vi.advanceTimersByTimeAsync(0);
     expect(run).toHaveBeenCalledTimes(1);
@@ -41,7 +53,7 @@ describe('poller', () => {
 
   it('pauses while hidden and runs right away when visible again', async () => {
     const run = vi.fn().mockResolvedValue({ ok: true });
-    const p = makePoller({ run, interval: 1000 });
+    const p = newPoller({ run, interval: 1000 });
     p.start();
     await vi.advanceTimersByTimeAsync(0);
     setVisibility('hidden');
@@ -60,7 +72,7 @@ describe('poller', () => {
       times.push(Date.now());
       return Promise.resolve(results.shift() || { ok: true });
     });
-    const p = makePoller({ run, interval: 1000, maxBackoff: 3000 });
+    const p = newPoller({ run, interval: 1000, maxBackoff: 3000 });
     const t0 = Date.now();
     p.start();
     await vi.advanceTimersByTimeAsync(20000);
@@ -74,7 +86,7 @@ describe('poller', () => {
     const onAuthLost = vi.fn();
     const results = [{ ok: false, kind: 'busy' }, { ok: false, kind: 'auth' }];
     const run = vi.fn(() => Promise.resolve(results.shift()));
-    const p = makePoller({ run, interval: 1000, busyInterval: 60000, onAuthLost });
+    const p = newPoller({ run, interval: 1000, busyInterval: 60000, onAuthLost });
     p.start();
     await vi.advanceTimersByTimeAsync(59999);
     expect(run).toHaveBeenCalledTimes(1);
@@ -88,7 +100,7 @@ describe('poller', () => {
   it('reads a function interval before every wait and can reschedule', async () => {
     let ms = 15000;
     const run = vi.fn().mockResolvedValue({ ok: true });
-    const p = makePoller({ run, interval: () => ms });
+    const p = newPoller({ run, interval: () => ms });
     p.start();
     await vi.advanceTimersByTimeAsync(0);
     ms = 5000;
@@ -103,7 +115,7 @@ describe('poller', () => {
   it('never overlaps runs; a poke during a run triggers one more run after it', async () => {
     let release;
     const run = vi.fn(() => new Promise((r) => { release = r; }));
-    const p = makePoller({ run, interval: 10000 });
+    const p = newPoller({ run, interval: 10000 });
     p.start();
     p.poke();
     p.poke();
@@ -117,7 +129,7 @@ describe('poller', () => {
 
   it('clears a pending rerun on stop, so a later start does not cause a back-to-back run', async () => {
     const c = controlledRun();
-    const p = makePoller({ run: c.run, interval: 10000 });
+    const p = newPoller({ run: c.run, interval: 10000 });
     p.start();
     p.poke(); // sets a pending rerun while the first run is in flight
     p.stop();
@@ -137,7 +149,7 @@ describe('poller', () => {
   it('an auth result with a poke pending stops immediately, without an extra run', async () => {
     const c = controlledRun();
     const onAuthLost = vi.fn();
-    const p = makePoller({ run: c.run, interval: 1000, onAuthLost });
+    const p = newPoller({ run: c.run, interval: 1000, onAuthLost });
     p.start();
     p.poke(); // pending rerun must not be allowed to sneak a request past auth loss
     c.release({ ok: false, kind: 'auth' });
@@ -147,13 +159,33 @@ describe('poller', () => {
     expect(p.active).toBe(false);
     await vi.advanceTimersByTimeAsync(60000);
     expect(c.run).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+    expect(vi.getTimerCount()).toBe(0);
+    p.destroy();
+  });
+
+  it('an auth result with a pending poke does not leave a stale rerun for a later start (onAuthLost does not stop)', async () => {
+    const c = controlledRun();
+    const onAuthLost = vi.fn(); // deliberately does not call stop()
+    const p = newPoller({ run: c.run, interval: 1000, onAuthLost });
+    p.start();
+    p.poke(); // pending rerun while the first run is in flight
+    c.release({ ok: false, kind: 'auth' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.run).toHaveBeenCalledTimes(1);
+    expect(onAuthLost).toHaveBeenCalledTimes(1);
+    expect(p.active).toBe(false);
+    p.start(); // re-authenticated
+    expect(c.run).toHaveBeenCalledTimes(2); // start() runs once, right away
+    c.release({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.run).toHaveBeenCalledTimes(2); // no stale rerun causing a back-to-back 3rd run
+    expect(vi.getTimerCount()).toBe(1);
     p.destroy();
   });
 
   it('counts a network failure toward backoff even when a pending poke reruns immediately', async () => {
     const c = controlledRun();
-    const p = makePoller({ run: c.run, interval: 1000 });
+    const p = newPoller({ run: c.run, interval: 1000 });
     p.start();
     p.poke(); // pending rerun while the first run is in flight
     c.release({ ok: false, kind: 'network' });
@@ -175,7 +207,7 @@ describe('poller', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     let boom = false;
     const run = vi.fn().mockResolvedValue({ ok: true });
-    const p = makePoller({
+    const p = newPoller({
       run,
       interval: () => {
         if (boom) throw new Error('boom');
@@ -195,14 +227,14 @@ describe('poller', () => {
     expect(run).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(run).toHaveBeenCalledTimes(3);
-    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+    expect(vi.getTimerCount()).toBe(1);
     p.destroy();
   });
 
   it('re-reads the interval function before every wait: 15s, then 5s, then 15s', async () => {
     let ms = 15000;
     const run = vi.fn().mockResolvedValue({ ok: true });
-    const p = makePoller({ run, interval: () => ms });
+    const p = newPoller({ run, interval: () => ms });
     p.start();
     await vi.advanceTimersByTimeAsync(0);
     expect(run).toHaveBeenCalledTimes(1);
@@ -216,7 +248,7 @@ describe('poller', () => {
     expect(run).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(1);
     expect(run).toHaveBeenCalledTimes(4);
-    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+    expect(vi.getTimerCount()).toBe(1);
     p.destroy();
   });
 });
