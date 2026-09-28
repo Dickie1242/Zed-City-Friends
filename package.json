@@ -1,0 +1,17 @@
+{
+  "name": "zed-city-friends",
+  "version": "0.1.0",
+  "description": "Friends list and Torn-style DM windows in Zed City's chat dock.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "vitest": "^5.0.2"
+  }
+}
