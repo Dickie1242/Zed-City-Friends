@@ -41,29 +41,38 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
     }
     running = false;
     if (!active) return;
-    if (rerun) {
-      rerun = false;
-      tick();
-      return;
-    }
-    let delay = base();
-    if (result && result.ok === false) {
-      if (result.kind === 'auth') {
-        active = false;
-        if (onAuthLost) onAuthLost();
-        return;
-      }
-      if (result.kind === 'network' || result.kind === 'rate') {
-        backoff = Math.min(backoff ? backoff * 2 : base() * 2, maxBackoff);
-        delay = backoff;
+    // Handle the result before an explicit rerun, so a poke pending during the run can't
+    // skip auth handling or backoff bookkeeping. interval()/onAuthLost() can throw here,
+    // so guard it (spec §7) instead of letting tick()'s promise reject unhandled.
+    try {
+      let delay = base();
+      if (result && result.ok === false) {
+        if (result.kind === 'auth') {
+          active = false;
+          if (onAuthLost) onAuthLost();
+          return;
+        }
+        if (result.kind === 'network' || result.kind === 'rate') {
+          backoff = Math.min(backoff ? backoff * 2 : base() * 2, maxBackoff);
+          delay = backoff;
+        } else {
+          backoff = 0;
+          if (result.kind === 'busy') delay = Math.max(base(), busyInterval);
+        }
       } else {
         backoff = 0;
-        if (result.kind === 'busy') delay = Math.max(base(), busyInterval);
       }
-    } else {
-      backoff = 0;
+      // A poke that arrived while running still reruns right away.
+      if (rerun) {
+        rerun = false;
+        tick();
+        return;
+      }
+      schedule(delay);
+    } catch (e) {
+      warnOnce('poller-tick', e);
+      if (active) schedule(typeof interval === 'number' ? interval : 60000);
     }
-    schedule(delay);
   }
 
   function onVisibility() {
@@ -81,6 +90,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
     },
     stop() {
       active = false;
+      rerun = false; // don't let a pending poke cause a back-to-back run on a later start()
       clear();
     },
     // Run now (or right after the current run finishes).
@@ -96,6 +106,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
     },
     destroy() {
       active = false;
+      rerun = false;
       clear();
       doc.removeEventListener('visibilitychange', onVisibility);
     },
