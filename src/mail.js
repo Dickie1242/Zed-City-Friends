@@ -4,6 +4,10 @@ import { asArray, toId } from './util.js';
 // Same grouping window the game's inbox uses (MailView groupWindowMs).
 export const GROUP_WINDOW_MS = 900000;
 
+// The PHP backend may send numeric flags as strings ("0"/"1"); a plain !!raw.field
+// would treat "0" as truthy, so coerce through Number instead.
+const flag = (v) => v === true || Number(v) > 0;
+
 export function messageText(message) {
   if (typeof message === 'string') return message;
   if (message && typeof message === 'object') {
@@ -23,7 +27,7 @@ export function normalizeMessage(raw) {
     senderId: toId(raw.sender_id),
     text: messageText(raw.message),
     ts: parseSentAt(raw.sent_at),
-    isSystem: !!raw.is_system,
+    isSystem: flag(raw.is_system),
   };
 }
 
@@ -44,7 +48,7 @@ export function normalizeThread(raw) {
     senderId: toId(raw.sender_id),
     lastReply: parseSentAt(raw.last_reply),
     newMail: unread > 0 ? Math.floor(unread) : 0,
-    isSystem: !!raw.is_system,
+    isSystem: flag(raw.is_system),
   };
 }
 
@@ -82,6 +86,8 @@ export function findNewMail(threads, seen, myId) {
   for (const t of threads) {
     if (t.isSystem || t.newMail <= 0 || t.senderId === myId) continue;
     const lastSeen = (seen[t.userId] && seen[t.userId].lastSeenReply) || 0;
+    // <=, not <: the server may not mark a thread read (spec §12.6), so re-polling the same
+    // lastReply (1-second precision) must not resurrect the badge on every poll.
     if (t.lastReply !== null && t.lastReply <= lastSeen) continue;
     out.push(t);
   }
