@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createApi, classifyResponse, MAIL_ACCESS_ERROR } from '../src/api.js';
 
 function response(status, body) {
@@ -132,6 +132,8 @@ describe('createApi endpoint URLs', () => {
 });
 
 describe('createApi timeouts', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('times out a stalled GET and reports it as a network error', async () => {
     vi.useFakeTimers();
     const fetchImpl = vi.fn(
@@ -148,18 +150,42 @@ describe('createApi timeouts', () => {
     const pending = api.getChats();
     await vi.advanceTimersByTimeAsync(1000);
     expect(await pending).toEqual({ ok: false, kind: 'network', code: 0, message: 'Request timed out' });
-    vi.useRealTimers();
   });
 
-  it('clears the timeout when a GET responds in time, so advancing time afterwards does nothing', async () => {
+  it('times out when the body stalls after the headers arrive', async () => {
     vi.useFakeTimers();
-    const fetchImpl = vi.fn().mockResolvedValue(response(200, []));
+    const fetchImpl = vi.fn((url, init) =>
+      Promise.resolve({
+        status: 200,
+        json: () =>
+          new Promise((resolve, reject) => {
+            init.signal.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
+      }),
+    );
+    const api = createApi({ fetchImpl, timeoutMs: 1000 });
+    const pending = api.getChats();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await pending).toEqual({ ok: false, kind: 'network', code: 0, message: 'Request timed out' });
+  });
+
+  it('clears the timeout when a GET responds in time, so it never fires', async () => {
+    vi.useFakeTimers();
+    let signal;
+    const fetchImpl = vi.fn((url, init) => {
+      signal = init.signal;
+      return Promise.resolve(response(200, []));
+    });
     const api = createApi({ fetchImpl, timeoutMs: 1000 });
     const r = await api.getChats();
     expect(r).toEqual({ ok: true, data: [] });
+    expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(5000);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    expect(signal.aborted).toBe(false);
   });
 
   it('does not put a signal on POST requests, so sendMail is never aborted', async () => {
