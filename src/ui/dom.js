@@ -11,6 +11,7 @@ export function h(tag, props, ...children) {
       else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
       else if (k === 'dataset') Object.assign(el.dataset, v);
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k.startsWith('on')) continue; // never turn a string on* value into an inline handler attribute
       else if (v === true) el.setAttribute(k, '');
       else el.setAttribute(k, String(v));
     }
@@ -54,10 +55,23 @@ export function avatar({ avatar: path, online, size = 26 }) {
 
 // Wraps the first case-insensitive match of `query` in <mark>.
 export function highlightMatch(text, query) {
+  const s = String(text ?? '');
   const q = String(query || '').trim();
-  const i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
-  if (i < 0) return [text];
-  return [text.slice(0, i), h('mark', null, text.slice(i, i + q.length)), text.slice(i + q.length)].filter((x) => x !== '');
+  const ql = q.toLowerCase();
+  // Scan `s` itself (not a lowercased copy) so the index still refers to the original string:
+  // lowercasing can change length (e.g. 'İ'.toLowerCase() is two UTF-16 units), which would
+  // otherwise misalign the slice.
+  let i = -1;
+  if (q) {
+    for (let j = 0; j <= s.length - q.length; j++) {
+      if (s.slice(j, j + q.length).toLowerCase() === ql) {
+        i = j;
+        break;
+      }
+    }
+  }
+  if (i < 0) return [s];
+  return [s.slice(0, i), h('mark', null, s.slice(i, i + q.length)), s.slice(i + q.length)].filter((x) => x !== '');
 }
 
 // Same markup as the game's Quasar QBadge so the dock's .unread-badge rules apply.
