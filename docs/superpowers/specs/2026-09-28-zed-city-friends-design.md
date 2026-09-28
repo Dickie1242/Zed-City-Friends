@@ -70,28 +70,39 @@ It should look like it shipped with the game. It reuses the game's own CSS class
 
 ```
 src/
-  main.js              boot: wait for login, get player ID, create modules, wire them together
+  index.js             bundle entry: boot()
+  main.js              boot: wait for login (getStats), inject styles, start the app once per page
+  app.js               wires the modules together; owns the polling policy (§6)
   api.js               the only module that calls the server (see §6)
   store.js             the only module that touches storage (see §5)
-  mail.js              message normalization, grouping, time formatting, unread diffing, optimistic sends
-  poller.js            makePoller({fn, interval, maxBackoff}): pauses when the tab is hidden, backs off on errors
+  state.js             pure mutators over the saved document (friends, threads, dock)
+  backup.js            export/import JSON with strict validation
+  time.js              UTC parsing and formatting
+  mail.js              message/thread normalization, grouping + dividers, unread detection, pending reconciliation
+  conversation.js      one DM thread: paging, new messages, optimistic sends; plus a registry
+  inbox.js             getChats polling: unread badges, friend pop-ups, change signals
+  friends-view.js      pure Online / Offline / Recent section builder
+  poller.js            makePoller({run, interval, …}): pauses when the tab is hidden, backs off on errors
   presence.js          online-status cache, fetched 2 at a time, 60s staleness
   players.js           player lookups for the UI: search(q), resolveExact(name), get(id) (over api.js, short cache)
   router.js            page-change events (wraps history.pushState/replaceState, listens to popstate) and navigate(path)
-  ui/dom.js            h() element helper, text-only rendering, avatar/status-dot components
-  ui/dock.js           mounts our containers into .chat-containers, re-mounts them, one-open-chat rule on mobile
-  ui/friends-window.js Friends tab/window: filter, sections, add-friend pop-out, ⋯ menu
+  ui/dom.js            h() element helper, text-only rendering, avatar/status-dot/badge components
+  ui/styles.js         only what the game's CSS doesn't cover, as a CSS string added once
+  ui/toast.js          minimal toasts
+  ui/dock.js           mounts our root into .chat-containers, re-mounts it, one-open-chat rule on mobile
+  ui/dock-view.js      reconciles DM windows + the Friends window inside our root
+  ui/friends-window.js Friends tab/window: filter, sections, ⋯ menu
+  ui/add-friend-popover.js  the person-plus pop-out search
   ui/dm-window.js      one DM window/tab per conversation
   ui/profile-button.js Add Friend / Friends button on /profile/{id}
   ui/chat-names.js     "+ friend" hover action in Global/Faction chat
-  ui/styles.css        only what the game's CSS doesn't cover; imported as text and added once
 test/                  Vitest + jsdom
 build.mjs              esbuild → dist/zed-city-friends.user.js
 ```
 
 **Module rules:**
 - Only `api.js` does network I/O. Only `store.js` does storage I/O.
-- UI modules get a `services` object (`store`, `mail`, `presence`, `players`, `router`) from `main.js` and never import `api.js` directly.
+- UI modules get a `services` object (`store`, `actions`, `presence`, `players`, `inbox`, `conversations`, `router`, `toast`) from `app.js` and never import `api.js` directly.
 - **Navigation:** `router.navigate(path)` uses the game's own Vue Router, reached through `document.querySelector('#q-app').__vue_app__.config.globalProperties.$router.push(path)`, so there's no page reload. Vue sets `__vue_app__` in production builds too. If the router isn't found, it falls back to `location.assign(path)`. This is the only place we touch Vue internals, and only to read.
 - The store is a small observable: `get()`, `update(fn)`, `subscribe(fn)`. UI modules re-render only their own subtree when the part of the state they use changes.
 
@@ -99,9 +110,9 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 
 ### 4.1 Dock placement
 
-- Our elements are ordinary `div.chat-container` nodes with an extra `zcf` class. They're **prepended** into `.chat-containers`, so they sit to the left of the game's chats: `[DM tabs/windows…][Friends][game chats…]`.
-- When Vue later inserts one of its own chats, it anchors on its own sibling nodes, so our prepended nodes stay put.
-- **Re-mounting:** a single `MutationObserver` on `document.body` (`childList`, `subtree`) checks two O(1) conditions, batched per animation frame: whether our root is still attached, and whether a dock exists. If the game rebuilt the dock, our nodes are re-prepended. All UI is drawn from store state, so re-mounting loses nothing.
+- Our elements are ordinary `div.chat-container` nodes with an extra `zcf` class. They live in one `div.zcf-root` with `display:contents`, which is **prepended** into `.chat-containers`. Because of `display:contents`, our containers take part in the dock's flex row directly, to the left of the game's chats: `[DM tabs/windows…][Friends][game chats…]`.
+- When Vue later inserts one of its own chats, it anchors on its own sibling nodes, so our prepended root stays put.
+- **Re-mounting:** a single `MutationObserver` on `document.body` (`childList`, `subtree`) does an O(1) "is our root still attached?" check and does nothing if it is. Otherwise, at most once per animation frame, it looks for the dock and re-prepends the root. All UI is drawn from store state, so re-mounting loses nothing.
 - **When no dock exists** (`/create-player`, chat-banned), nothing is shown and the feature waits quietly.
 
 ### 4.2 Friends tab and window
@@ -160,7 +171,8 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 - Only one of our windows can be open at a time. Opening one minimizes our others.
 - **Opening one of our windows** minimizes any open game chat by calling `.click()` on that chat's `.chat-header`, the game's own toggle.
 - **Opening a game chat** minimizes ours. We detect it with a `MutationObserver` on the dock subtree, filtered to `class` attribute changes.
-- **We never add or remove classes on `.chat-containers`,** because Vue owns that element and would overwrite the change. Our stylesheet copies the game's `single-chat-mode` rules using `.chat-containers:has(> .zcf.zcf-open)`. Our open window gets `order:1`; our minimized entries get `order:0`.
+- **We never add or remove classes on `.chat-containers`,** because Vue owns that element and would overwrite the change. The dock already lays out as a right-aligned row on phones. Our stylesheet gives our open window `order:1` (right-most) and lets it shrink to fit, up to 340px, like the game's open chat.
+- On phones only the 2 most recently used DM entries get a tab, so the dock still fits on screen. All entries stay saved.
 
 ### 4.6 Profile button (`/profile/{id}`)
 
@@ -169,7 +181,7 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 - **If the only button is Settings (your own profile),** nothing is added.
 - **Friend state:** the label becomes `Friends` and the icon `fa-user-check`. Our own class `zcf-is-friend` sets the outline and text to `#81c784`, so we don't depend on Quasar's palette classes. Clicking shows an inline confirm to remove.
 - **Click handling:** the clone doesn't carry the game's Vue handlers. We attach our own click listener and strip any `href` or `to` attributes.
-- Username and avatar for a new friend come from a `getProfile` call (cached briefly). If that fails, the name comes from the page's username heading.
+- Username and avatar for a new friend come from a `getProfile` call (cached briefly). If that fails, the friend is saved as `#{id}` and the name is filled in by the next presence refresh.
 - **Page changes:** `router.js` triggers this on every change to a `/profile/{id}` route. A short-lived `MutationObserver` watches for the button row and disconnects once the button is inserted or after 10s.
 
 ### 4.7 Chat-name action
@@ -189,8 +201,8 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
   {
     "v": 1,
     "friends": { "123": { "id": 123, "username": "Spike", "avatar": "avatars/…png", "addedAt": 1790620900000 } },
-    "threads": { "123": { "lastSeenReply": "2026-09-28 14:03:11", "unread": 2 } },
-    "dock": { "friendsOpen": false, "dms": [ { "id": 123, "open": false, "lastUsed": 1790620900000 } ] }
+    "threads": { "123": { "lastSeenReply": 1790620991000, "lastNotifiedReply": 1790620991000, "unread": 2 } },
+    "dock": { "friendsOpen": false, "dms": [ { "id": 123, "open": false, "lastUsed": 1790620900000, "username": "Spike", "avatar": null } ] }
   }
   ```
 - **Cross-tab sync:** listen for the `storage` event on our key and reload the store, so two game tabs never overwrite each other's friend edits. Every write re-reads the key and applies the change on top, so the last write wins per change, not per whole document.
@@ -256,7 +268,7 @@ For comparison, the game's own `/mail/{id}` view makes 60 requests a minute.
 
 ## 8. Performance budget
 
-- **No framework.** The bundle should be under 40 KB unminified.
+- **No framework.** The bundle is about 85 KB of readable, unminified code (Greasy Fork forbids minified scripts), or about 17 KB gzipped. A build test caps it at 120 KB.
 - **One stylesheet** injected once.
 - **DOM observers:**
   - one body-level `childList` observer whose callback does only O(1) checks, batched per animation frame
