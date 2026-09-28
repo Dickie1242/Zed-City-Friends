@@ -86,16 +86,38 @@ describe('router', () => {
     const router = makeRouter({ win: fakeWin, doc: fakeDoc });
     router.navigate('javascript:alert(1)');
     router.navigate('//evil.example/x');
+    // URL parsing strips tabs/newlines, so these resolve to //evil.example/... too.
+    router.navigate('/\t/evil.example/x');
+    router.navigate('/\n/evil.example/y');
     expect(push).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalled();
   });
 
+  it('does not reload when the target page was already reached before push() rejects', async () => {
+    const push = vi.fn(() => Promise.reject(new Error('navigation cancelled')));
+    const assign = vi.fn();
+    const fakeWin = { location: { pathname: '/profile/1', assign }, history: fakeHistory(), addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
+    const fakeDoc = { querySelector: () => ({ __vue_app__: { config: { globalProperties: { $router: { push } } } } }) };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    makeRouter({ win: fakeWin, doc: fakeDoc }).navigate('/profile/1');
+    await flush();
+    expect(warn).toHaveBeenCalledWith('[ZCF]', 'navigate', expect.any(Error));
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it('destroy() stops notifications', async () => {
+    // subs.clear() alone would already make the notification assertion pass, so also prove
+    // destroy() removes the exact listeners it added.
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
     const router = makeRouter();
     const fn = vi.fn();
     router.onChange(fn);
+    const added = addSpy.mock.calls.filter(([type]) => type === 'zcf:locationchange' || type === 'popstate');
     router.destroy();
+    const removed = removeSpy.mock.calls.filter(([type]) => type === 'zcf:locationchange' || type === 'popstate');
+    expect(removed).toEqual(added);
     history.pushState({}, '', '/destroy-target');
     await Promise.resolve();
     expect(fn).not.toHaveBeenCalled();
@@ -151,26 +173,26 @@ describe('router', () => {
 
   it('a throwing dispatchEvent inside the patched pushState does not propagate to the caller', () => {
     const original = vi.fn(() => 'native-return');
-    const fakeHistory = { pushState: original, replaceState: vi.fn() };
+    const stubHistory = { pushState: original, replaceState: vi.fn() };
     const dispatchEvent = vi.fn(() => { throw new Error('listener exploded'); });
-    const fakeWin = { location: { pathname: '/' }, history: fakeHistory, addEventListener() {}, removeEventListener() {}, dispatchEvent };
+    const fakeWin = { location: { pathname: '/' }, history: stubHistory, addEventListener() {}, removeEventListener() {}, dispatchEvent };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     makeRouter({ win: fakeWin, doc: { querySelector: () => null } });
     let ret;
-    expect(() => { ret = fakeHistory.pushState({}, '', '/x'); }).not.toThrow();
+    expect(() => { ret = stubHistory.pushState({}, '', '/x'); }).not.toThrow();
     expect(ret).toBe('native-return');
     expect(original).toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith('[ZCF]', 'router-dispatch', expect.any(Error));
   });
 
   it('a failed history patch does not crash createRouter, and popstate still notifies', () => {
-    const fakeHistory = {};
-    Object.defineProperty(fakeHistory, 'pushState', { value: () => {}, writable: false, configurable: true });
-    Object.defineProperty(fakeHistory, 'replaceState', { value: () => {}, writable: false, configurable: true });
+    const lockedHistory = {};
+    Object.defineProperty(lockedHistory, 'pushState', { value: () => {}, writable: false, configurable: true });
+    Object.defineProperty(lockedHistory, 'replaceState', { value: () => {}, writable: false, configurable: true });
     const listeners = {};
     const fakeWin = {
       location: { pathname: '/start' },
-      history: fakeHistory,
+      history: lockedHistory,
       addEventListener(type, fn) { listeners[type] = fn; },
       removeEventListener() {},
       dispatchEvent() {},
@@ -179,7 +201,7 @@ describe('router', () => {
     let router;
     expect(() => { router = makeRouter({ win: fakeWin, doc: { querySelector: () => null } }); }).not.toThrow();
     expect(warn).toHaveBeenCalledWith('[ZCF]', 'history-patch', expect.any(Error));
-    expect(fakeHistory[Symbol.for('zcf.historyPatched')]).toBe(true);
+    expect(lockedHistory[Symbol.for('zcf.historyPatched')]).toBe(true);
 
     const fn = vi.fn();
     router.onChange(fn);
