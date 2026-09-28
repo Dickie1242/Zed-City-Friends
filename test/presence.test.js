@@ -163,4 +163,31 @@ describe('presence', () => {
     expect(maxInFlight).toBeLessThanOrEqual(2);
     expect(fetchProfile).toHaveBeenCalledTimes(8);
   });
+
+  it('does not duplicate a fetch for an id that is still in flight', async () => {
+    const fetchProfile = vi.fn(() => new Promise((resolve) => setTimeout(() => resolve({ ok: true, data: { online: true } }), 500)));
+    const p = createPresence({ fetchProfile });
+    p.refresh([1]);
+    await vi.advanceTimersByTimeAsync(100);
+    p.refresh([1]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches ids dropped by a pause once it expires', async () => {
+    let t = 0;
+    let limited = true;
+    const fetchProfile = vi.fn(() =>
+      Promise.resolve(limited ? { ok: false, kind: 'rate' } : { ok: true, data: { online: true } }));
+    const p = createPresence({ fetchProfile, now: () => t, concurrency: 1, pauseMs: 5000 });
+    p.refresh([1, 2, 3]);
+    await vi.advanceTimersByTimeAsync(1000);
+    // 2 and 3 were dropped from the queue by the pause; without also clearing `queued` for
+    // them, they'd look permanently in-flight and refresh() would skip them forever.
+    limited = false;
+    t += 5000;
+    p.refresh([1, 2, 3]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 1, 2, 3]);
+  });
 });
