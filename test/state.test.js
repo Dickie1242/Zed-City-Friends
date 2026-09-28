@@ -69,6 +69,26 @@ describe('state', () => {
     expect(s.dock.dms.map((d) => d.id)).toEqual([3, 4, 5, 6]);
   });
 
+  it('never evicts an expanded DM before minimized ones, even with unread badges', () => {
+    const s = emptyState();
+    openDm(s, 1, { expand: true, now: 1 });
+    openDm(s, 2, { now: 2 });
+    openDm(s, 3, { now: 3 });
+    openDm(s, 4, { now: 4 });
+    for (const id of [2, 3, 4]) s.threads[id] = { unread: 1 };
+    openDm(s, 5, { now: 10 });
+    expect(s.dock.dms.map((d) => d.id)).toEqual([1, 3, 4, 5]);
+    expect(s.dock.dms.find((d) => d.id === 1).open).toBe(true);
+  });
+
+  it('falls back to the least recently used entry when every other one is open', () => {
+    const s = emptyState();
+    for (let id = 1; id <= 4; id += 1) openDm(s, id, { expand: true, now: id });
+    openDm(s, 5, { expand: true, now: 5 });
+    expect(s.dock.dms.map((d) => d.id)).toEqual([2, 3, 4, 5]);
+    expect(s.dock.dms.length).toBe(MAX_DMS);
+  });
+
   it('toggles and closes dock entries', () => {
     const s = emptyState();
     openDm(s, 1, { now: 1 });

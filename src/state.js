@@ -87,13 +87,16 @@ export function openDm(state, id, opts = {}) {
   evictDms(state, id, max);
 }
 
-// Keeps at most `max` DM entries, dropping the least recently used ones without unread mail first.
+// Keeps at most `max` DM entries. Eviction order: minimized+quiet, then minimized+unread, then
+// open entries last (an expanded window is never closed out from under the person reading it),
+// with ties broken by the least recently used.
 export function evictDms(state, keepId, max = MAX_DMS) {
   while (state.dock.dms.length > max) {
     const candidates = state.dock.dms.filter((d) => d.id !== keepId);
     if (!candidates.length) break;
-    const quiet = candidates.filter((d) => !(state.threads[d.id] && state.threads[d.id].unread > 0));
-    const pool = (quiet.length ? quiet : candidates).slice().sort((a, b) => a.lastUsed - b.lastUsed);
+    const hasUnread = (d) => !!(state.threads[d.id] && state.threads[d.id].unread > 0);
+    const rank = (d) => (d.open ? 2 : 0) + (hasUnread(d) ? 1 : 0);
+    const pool = candidates.slice().sort((a, b) => rank(a) - rank(b) || a.lastUsed - b.lastUsed);
     const victim = pool[0];
     state.dock.dms = state.dock.dms.filter((d) => d !== victim);
   }
