@@ -214,12 +214,18 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 
 **Polling (via `makePoller`):**
 
+Zed City mail has no push channel (the socket only carries global, faction and activity rooms, verified in the bundle), so DMs are kept feeling live by adaptive polling. One fast poll covers the conversation you're in. One shared thread-list poll covers everything else, and its interval depends on whether you're actively chatting.
+
 | Poller | Call | Interval | Runs when |
 |---|---|---|---|
-| threads | `getChats?page=1` | 20s | tab visible and logged in |
-| dm:{id} | `getNewMessages` | 3s | that DM is expanded and the tab is visible |
+| threads | `getChats?page=1` | **5s** while "chatting", otherwise **15s** | tab visible and logged in |
+| dm:active | `getNewMessages` for the **active** DM | 2s | an expanded DM exists and the tab is visible |
 | dmInfo:{id} | `getChatInfo` | 60s | that DM is expanded and the tab is visible |
 | presence | `getProfile` for stale friends | 60s | Friends window expanded and tab visible |
+
+- **"Chatting"** means you sent a DM, or a DM message arrived (in any thread with a friend or an open DM), within the last 5 minutes. Each such event restarts the 5-minute window. When it runs out, the threads poller drops back to 15s.
+- **Active DM** means the expanded DM you most recently focused, typed in, or clicked. Only that one polls every 2s.
+- **Other expanded DMs don't poll on their own.** When a threads poll shows their `last_reply` changed, they call `getNewMessages` once. So several open windows cost the same as one.
 
 - **Hidden tab:** every poller stops on `visibilitychange` → hidden. On → visible, each runs once immediately and then resumes its interval.
 - **Backoff:** on `network` or `rate`, the interval doubles up to 5 minutes, and resets after a success.
@@ -229,7 +235,16 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
   - Presence also comes for free from `getChatInfo` responses.
   - A friend's saved `username` and `avatar` are updated whenever a response differs, which catches name changes.
 
-**Cost:** with the tab visible and nothing open, the script makes 3 requests a minute. With one DM expanded, it makes 24 a minute. The game's own `/mail/{id}` view makes 60 a minute.
+**Cost and latency** (tab visible):
+
+| Situation | Requests per minute | Worst-case delay for a new message |
+|---|---|---|
+| Idle, nothing open | 4 | 15s for a pop-up (the game's own envelope badge: 60s) |
+| Chatting, no DM expanded | 12 | 5s |
+| Chatting, 1+ DMs expanded | about 43 (30 active DM + 12 threads + 1 info), regardless of how many DMs are open | 2s in the active DM, 5s elsewhere |
+| Tab hidden | 0 | immediate check when you return to the tab |
+
+For comparison, the game's own `/mail/{id}` view makes 60 requests a minute.
 
 ## 7. Error handling and resilience
 
@@ -264,7 +279,8 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 - **`api.js`:** CSRF fetched once and reused; 403 → refresh + one retry; error-code → `kind` mapping; never redirects. Uses a mocked `fetch`.
 - **`store.js`:** separate keys per player; the `storage` event reloads; migrations; corrupt documents backed up; import merge and validation.
 - **`mail.js`:** normalizing object messages; 15-minute same-day grouping; date dividers; UTC formatting (today, yesterday, older); unread diffing from `getChats` rows (friend vs non-friend vs system); optimistic send matched to `message_id`.
-- **`poller.js`:** stops when hidden, runs immediately when visible again, backoff doubling and reset, `busy` / `auth` handling. Uses fake timers.
+- **`poller.js`:** stops when hidden, runs immediately when visible again, backoff doubling and reset, `busy` / `auth` handling, and the interval changing at runtime (15s → 5s → 15s as the chatting window starts and ends). Uses fake timers.
+- **Active-DM selection:** only one DM polls fast; switching focus moves the fast poll; non-active expanded DMs fetch only when `last_reply` changes.
 - **`ui/*`:** fixture HTML copied from the live DOM for the dock, profile button row and chat message rows.
   - Our nodes are prepended and re-mount after the dock is replaced.
   - The profile button lands between Trade and Mail, falls back to after Block, and doesn't appear on your own profile.
