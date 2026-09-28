@@ -138,7 +138,7 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 
 ### 4.3 DM windows
 
-- **One per other player**, keyed by user ID. The dock holds at most **4** DM entries (open or minimized). Opening a fifth evicts the one used longest ago, skipping entries with an unread badge unless every entry has one. Expanded windows are evicted last, so an incoming message never closes the conversation you're in.
+- **One per other player**, keyed by user ID. The dock holds at most **4** DM entries (open or minimized). Opening a fifth evicts the one used longest ago, skipping entries with an unread badge unless every entry has one. Expanded windows are evicted last, so an incoming message only closes an expanded window when every other entry is expanded too.
 - **Header:**
   - avatar + username + `Online` / `Active 5m ago` (from `getChatInfo`, refreshed every 60s while expanded)
   - minimize `—`, close `✕`, and an "open in inbox" link to `/mail/{id}`
