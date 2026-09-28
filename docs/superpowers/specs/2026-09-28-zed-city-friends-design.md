@@ -207,7 +207,7 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
   ```
 - **Cross-tab sync:** listen for the `storage` event on our key and reload the store, so two game tabs never overwrite each other's friend edits. Every write re-reads the key and applies the change on top, so the last write wins per change, not per whole document.
 - **Only in memory, never saved:** presence (online/active), message lists, and the CSRF token.
-- **Versioning:** `v` gates migrations. An unknown or corrupt document is backed up to `zcf:v1:{playerId}:corrupt:{ts}`, and the script starts empty rather than crashing.
+- **Versioning:** the document under `zcf:v1:` always has `v: 1`. A breaking schema change moves to a new key (`zcf:v2:{playerId}`) and migrates from v1 once, so tabs still running the old script never meet a document they can't read. If a v1 tab does find a newer `v` under its key, it leaves the document alone and keeps working in memory without saving. A corrupt document is backed up to `zcf:v1:{playerId}:corrupt:{ts}` and the script starts empty rather than crashing. If storage is blocked or full, changes are kept in memory for the session.
 
 ## 6. Networking
 
