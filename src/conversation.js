@@ -1,6 +1,6 @@
 // One DM thread: loads pages, fetches new messages, sends with optimistic "pending" copies.
 import { normalizeMessages, reconcilePending } from './mail.js';
-import { toId, warnOnce } from './util.js';
+import { asArray, toId, warnOnce } from './util.js';
 
 export const PAGE_SIZE = 10;
 export const MAX_MESSAGES = 200;
@@ -74,20 +74,25 @@ export function createConversation({
     if (state.loading) return { ok: true };
     state.loading = true;
     emit();
-    const r = await api.getChatMessages(userId, 1, PAGE_SIZE);
-    state.loading = false;
-    if (!r.ok) {
-      fail(r);
-      emit();
+    let r = { ok: true };
+    try {
+      r = await api.getChatMessages(userId, 1, PAGE_SIZE);
+      if (!r.ok) {
+        fail(r);
+        return r;
+      }
+      state.busy = null;
+      const rows = asArray(r.data).length;
+      const msgs = normalizeMessages(r.data);
+      add(msgs);
+      pending = reconcilePending(pending, list());
+      state.loaded = true;
+      if (rows < PAGE_SIZE) state.hasMore = false;
       return r;
+    } finally {
+      state.loading = false;
+      emit();
     }
-    state.busy = null;
-    const msgs = normalizeMessages(r.data);
-    add(msgs);
-    state.loaded = true;
-    if (msgs.length < PAGE_SIZE) state.hasMore = false;
-    emit();
-    return r;
   }
 
   // Pages are counted from the newest message, so the next older page follows from how many we hold.
@@ -105,13 +110,18 @@ export function createConversation({
           fail(r);
           break;
         }
+        state.busy = null;
+        const rows = asArray(r.data).length;
         const msgs = normalizeMessages(r.data);
         if (msgs.length === 0) {
           state.hasMore = false;
           break;
         }
-        const { added } = add(msgs);
-        if (msgs.length < PAGE_SIZE) state.hasMore = false;
+        // Only keep what is older than the oldest held message; anything newer is fetchNew's job,
+        // and adding it here would push lastId past messages we never fetched (a permanent gap).
+        const oldest = messages.size ? Math.min(...messages.keys()) : Infinity;
+        const { added } = add(msgs.filter((m) => m.id < oldest));
+        if (rows < PAGE_SIZE) state.hasMore = false;
         if (added > 0 || !state.hasMore) break;
       }
     } finally {
@@ -122,6 +132,8 @@ export function createConversation({
   }
 
   async function fetchNew() {
+    // Blocked is sticky, so polling a blocked thread can't change anything the window shows.
+    if (state.blocked) return { ok: false, kind: 'access' };
     if (!state.loaded) return loadInitial();
     const r = await api.getNewMessages(userId, lastId());
     if (!r.ok) {
@@ -140,12 +152,17 @@ export function createConversation({
   }
 
   async function refreshInfo() {
+    // Blocked is sticky, so polling a blocked thread can't change anything the window shows.
+    if (state.blocked) return { ok: false, kind: 'access' };
     const r = await api.getChatInfo(userId);
     if (!r.ok) {
       fail(r);
       emit();
       return r;
     }
+    const wasBusy = state.busy;
+    state.busy = null;
+    let changed = wasBusy !== null;
     const info = r.data && (r.data[userId] || r.data[String(userId)]);
     if (info && typeof info === 'object') {
       state.info = {
@@ -155,8 +172,9 @@ export function createConversation({
         active: info.active,
       };
       onInfo(state.info);
-      emit();
+      changed = true;
     }
+    if (changed) emit();
     return r;
   }
 
@@ -192,14 +210,16 @@ export function createConversation({
 
   function retry(localId) {
     const p = pending.find((x) => x.localId === localId);
-    if (!p) return Promise.resolve(false);
+    if (!p || state.blocked) return Promise.resolve(false);
     pending = pending.filter((x) => x !== p);
     return send(p.text);
   }
 
   // Drops the oldest messages beyond MAX_MESSAGES (called while the view is pinned to the bottom).
   function trim(max = MAX_MESSAGES) {
-    if (messages.size <= max) return false;
+    // Trimming mid-load would drop the block between what's held and the incoming older page,
+    // and with loadOlder's older-than-oldest filter, that gap would be permanent.
+    if (state.loadingOlder || messages.size <= max) return false;
     const drop = list().slice(0, messages.size - max);
     for (const m of drop) messages.delete(m.id);
     state.hasMore = true;
