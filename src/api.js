@@ -12,6 +12,10 @@ export function classifyResponse(status, body) {
     if (BUSY_CODES[code]) return { ok: false, kind: 'busy', code, message, busy: BUSY_CODES[code] };
     if (message === MAIL_ACCESS_ERROR) return { ok: false, kind: 'access', code, message };
     if (code === 403 || status === 403) return { ok: false, kind: 'csrf', code: 403, message };
+    // A JSON error body can still carry a rate-limit or server-error status; classify those by
+    // status so the poller's backoff (which only triggers on 'network'/'rate') sees them.
+    if (status === 429) return { ok: false, kind: 'rate', code: 429, message };
+    if (status >= 500) return { ok: false, kind: 'network', code: status, message };
     return { ok: false, kind: 'other', code, message };
   }
   if (status === 429) return { ok: false, kind: 'rate', code: 429, message: 'Rate limited' };
@@ -22,7 +26,7 @@ export function classifyResponse(status, body) {
   return { ok: true, data: body };
 }
 
-export function createApi({ fetchImpl = (...args) => fetch(...args), base = API_BASE } = {}) {
+export function createApi({ fetchImpl = (...args) => fetch(...args), base = API_BASE, timeoutMs = 20000 } = {}) {
   let csrfToken = null;
 
   async function send(method, path, { params, body } = {}) {
@@ -41,10 +45,24 @@ export function createApi({ fetchImpl = (...args) => fetch(...args), base = API_
       if (csrfToken) init.headers['X-CSRF-Token'] = csrfToken;
       init.body = JSON.stringify(body || {});
     }
+    // Only GETs time out. Aborting a POST (e.g. sendMail) after the server accepted it would
+    // report a delivered message as failed, and a retry would send it twice.
+    let timer = null;
+    let timedOut = false;
+    if (method === 'GET' && typeof AbortController === 'function') {
+      const controller = new AbortController();
+      init.signal = controller.signal;
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+    }
     let res;
     try {
       res = await fetchImpl(url, init);
     } catch (e) {
+      if (timer) clearTimeout(timer);
+      if (timedOut) return { ok: false, kind: 'network', code: 0, message: 'Request timed out' };
       return { ok: false, kind: 'network', code: 0, message: String((e && e.message) || e) };
     }
     let data = null;
@@ -52,7 +70,11 @@ export function createApi({ fetchImpl = (...args) => fetch(...args), base = API_
       data = await res.json();
     } catch {
       data = null;
+    } finally {
+      // The body can stall after the headers arrive, so the timer stays armed until json() settles.
+      if (timer) clearTimeout(timer);
     }
+    if (timedOut) return { ok: false, kind: 'network', code: 0, message: 'Request timed out' };
     return classifyResponse(res.status, data);
   }
 
