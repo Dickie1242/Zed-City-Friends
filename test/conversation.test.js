@@ -247,6 +247,31 @@ describe('conversation', () => {
     expect(c.state.busy).toBe('traveling');
   });
 
+  it('keeps held messages contiguous when a stale fetchNew response lands after a newer one plus a trim', async () => {
+    let resolveFirst;
+    let resolveSecond;
+    let call = 0;
+    const firstPromise = new Promise((res) => { resolveFirst = res; });
+    const secondPromise = new Promise((res) => { resolveSecond = res; });
+    const api = fakeApi({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: page(11, 20) }),
+      getNewMessages: vi.fn(() => (++call === 1 ? firstPromise : secondPromise)),
+    });
+    const c = createConversation({ api, userId: THEM, myId: ME });
+    await c.loadInitial(); // holds 11..20
+    const f1 = c.fetchNew(); // requested after id 20, still in flight
+    const f2 = c.fetchNew(); // also requested after id 20, still in flight
+    resolveSecond({ ok: true, data: page(21, 60) }); // the later call's response arrives first
+    await f2;
+    c.trim(15); // keeps only the newest 15 (46..60)
+    resolveFirst({ ok: true, data: page(21, 25) }); // the stale response arrives last
+    await f1;
+    const ids = c.messages().map((m) => m.id);
+    expect(ids.every((id, i) => i === 0 || id === ids[i - 1] + 1)).toBe(true); // no gap
+    expect(ids[0]).toBe(46);
+    expect(ids[ids.length - 1]).toBe(60);
+  });
+
   it('registry reuses one conversation per user and forwards events', async () => {
     const onChange = vi.fn();
     const reg = createConversations({ api: fakeApi(), myId: ME, onChange });

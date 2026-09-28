@@ -74,9 +74,8 @@ export function createConversation({
     if (state.loading) return { ok: true };
     state.loading = true;
     emit();
-    let r = { ok: true };
     try {
-      r = await api.getChatMessages(userId, 1, PAGE_SIZE);
+      const r = await api.getChatMessages(userId, 1, PAGE_SIZE);
       if (!r.ok) {
         fail(r);
         return r;
@@ -143,7 +142,10 @@ export function createConversation({
     }
     const wasBusy = state.busy;
     state.busy = null;
-    const { added, fromThem } = add(normalizeMessages(r.data));
+    // A slower, overlapping fetchNew can resolve after a newer one plus a trim; anything at or
+    // below the current top is already held or was trimmed on purpose, so only add what's newer.
+    const top = lastId();
+    const { added, fromThem } = add(normalizeMessages(r.data).filter((m) => m.id > top));
     const before = pending.length;
     pending = reconcilePending(pending, list());
     if (added || pending.length !== before || wasBusy) emit();
