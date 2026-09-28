@@ -52,7 +52,7 @@ export function createDock({ doc = document, win = window, onGameChatOpened = ()
   // dock rebuild, or a chat mounted already-open - tell the app once so it collapses ours.
   function reconcileOpenGameChat() {
     if (!dockEl || !isSmall()) return;
-    if (dockEl.querySelector(':scope > .chat-container:not(.chat-minimized)')) onGameChatOpened();
+    if (dockEl.querySelector(':scope > .chat-container:not(.chat-minimized)')) safe('dock-reconcile', onGameChatOpened)();
   }
 
   function ensure() {
