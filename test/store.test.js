@@ -127,6 +127,10 @@ describe('store', () => {
     expect(fn).not.toHaveBeenCalled();
     expect(Object.keys(store.get().friends)).toEqual(['1']);
     expect(storage.getItem(storageKey(1))).toBe(newer);
+    // A stale tab can keep working and saving to memory, but must never touch the newer document.
+    store.update((s) => addFriend(s, { id: 2, username: 'b' }, 0));
+    expect(Object.keys(store.get().friends)).toEqual(['1', '2']);
+    expect(storage.getItem(storageKey(1))).toBe(newer);
     store.destroy();
   });
 
@@ -160,6 +164,37 @@ describe('store', () => {
     expect(Object.keys(store.get().friends)).toEqual(['1']);
     expect(storage.getItem(storageKey(1))).toBe('{not json');
     expect(storage.keys().some((k) => k.includes(':corrupt:'))).toBe(false);
+    // A later update() repairs the corrupt doc (backs it up, removes it) — friend 1, held only in
+    // memory since the event above, must survive that repair rather than be replaced by its empty result.
+    store.update((s) => addFriend(s, { id: 2, username: 'b' }, 0));
+    expect(Object.keys(store.get().friends)).toEqual(['1', '2']);
+    const saved = JSON.parse(storage.getItem(storageKey(1)));
+    expect(Object.keys(saved.friends)).toEqual(['1', '2']);
+    expect(storage.keys().some((k) => k.includes(':corrupt:'))).toBe(true);
+    store.destroy();
+  });
+
+  it('keeps in-memory changes across a corrupt document once repairing it starts working', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storage = memoryStorage({ [storageKey(1)]: '{not json' });
+    let failBackup = true;
+    const realSetItem = storage.setItem;
+    storage.setItem = (k, v) => {
+      if (failBackup && String(k).includes(':corrupt:')) throw new Error('quota');
+      return realSetItem(k, v);
+    };
+    const store = createStore({ playerId: 1, storage, win: new EventTarget() });
+    expect(store.get().friends).toEqual({});
+    store.update((s) => addFriend(s, { id: 1, username: 'a' }, 0));
+    expect(Object.keys(store.get().friends)).toEqual(['1']);
+    expect(storage.getItem(storageKey(1))).toBe('{not json'); // repair failed: corrupt text untouched
+
+    failBackup = false;
+    store.update((s) => addFriend(s, { id: 2, username: 'b' }, 0));
+    expect(Object.keys(store.get().friends)).toEqual(['1', '2']);
+    const saved = JSON.parse(storage.getItem(storageKey(1)));
+    expect(Object.keys(saved.friends)).toEqual(['1', '2']);
+    expect(storage.keys().some((k) => k.includes(':corrupt:'))).toBe(true);
     store.destroy();
   });
 
@@ -192,8 +227,15 @@ describe('store', () => {
     const fn2 = vi.fn();
     store.subscribe(fn2);
     store.destroy();
+
+    // A kept listener would reload this valid empty doc and wipe out friends ['1', '2'].
     storage.setItem(storageKey(1), JSON.stringify({ v: 1, friends: {}, threads: {}, dock: { friendsOpen: false, dms: [] } }));
     win.dispatchEvent(storageEvent(storageKey(1)));
+    expect(fn2).not.toHaveBeenCalled();
+    expect(Object.keys(store.get().friends)).toEqual(['1', '2']);
+
+    // A kept subscriber list would still notify fn2 on a plain update() after destroy().
+    store.update((s) => addFriend(s, { id: 3, username: 'c' }, 0));
     expect(fn2).not.toHaveBeenCalled();
   });
 });

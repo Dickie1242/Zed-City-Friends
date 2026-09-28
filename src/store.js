@@ -10,10 +10,12 @@ export function createStore({ playerId, storage = window.localStorage, win = win
   let saved = true; // whether the last write to storage succeeded
 
   // Reads the saved document without ever destroying data it can't make sense of.
-  // Returns { doc, ok }: ok is false whenever storage couldn't be read, or held something this
-  // script must not touch (a document from a newer script version, or corrupt text with `repair`
-  // unset). Only a caller that passes `repair: true` (initial load, update()) may back up and
-  // remove a corrupt document; a storage-event reload never may.
+  // Returns { doc, ok, repaired }: ok is false whenever storage couldn't be read, or held
+  // something this script must not touch (a document from a newer script version, or corrupt
+  // text with `repair` unset). Only a caller that passes `repair: true` (initial load, update())
+  // may back up and remove a corrupt document; a storage-event reload never may. `repaired` is
+  // true only when this call just replaced a corrupt document with a fresh empty one — the caller
+  // must not treat that empty doc as the source of truth over whatever it already holds in memory.
   function read({ repair } = {}) {
     let text = null;
     try {
@@ -52,7 +54,7 @@ export function createStore({ playerId, storage = window.localStorage, win = win
       // rather than lose the only copy of it.
       return { doc: null, ok: false };
     }
-    return { doc: emptyState(), ok: true };
+    return { doc: emptyState(), ok: true, repaired: true };
   }
 
   const initial = read({ repair: true });
@@ -73,10 +75,11 @@ export function createStore({ playerId, storage = window.localStorage, win = win
     // overwritten. This isn't a lock: two tabs can still save within a few ms of each other and
     // lose one change, but the storage event then brings both tabs back to the same document.
     const r = read({ repair: true });
-    // When the read is unusable (storage blocked, or the last save failed and nothing newer has
-    // landed), build the draft from our own in-memory state instead of a fresh empty/stale one,
-    // so earlier changes this session made aren't dropped.
-    const draft = r.ok && saved ? r.doc : JSON.parse(JSON.stringify(state));
+    // The in-memory copy wins over the freshly read doc whenever the read is unusable, or this
+    // call just repaired a corrupt document (its `r.doc` is a throwaway empty state), or our last
+    // save failed. Trade-off: a change another tab saved in the meantime can be lost this way —
+    // there's no operation log, just last-write-wins between what's on disk and what's in memory.
+    const draft = r.ok && saved && !r.repaired ? r.doc : JSON.parse(JSON.stringify(state));
     const result = mutate(draft);
     state = draft;
     if (r.ok) {
