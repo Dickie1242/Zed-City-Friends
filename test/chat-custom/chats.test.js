@@ -10,7 +10,7 @@ import {
   isLocked,
   isMoved,
   chatLabel,
-  describeChat,
+  chatSummary,
   LIMITS,
 } from '../../src/chat-custom/chats.js';
 
@@ -48,15 +48,27 @@ describe('chat keys and entries', () => {
     expect(isMoved({ w: 400 })).toBe(false);
   });
 
-  it('labels chats and describes their settings', () => {
+  it('labels chats', () => {
     expect(chatLabel('game:general')).toBe('Global');
     expect(chatLabel('game:activity')).toBe('Activity');
     expect(chatLabel('pm')).toBe('Private Messages');
     expect(chatLabel('settings')).toBe('Chat settings');
     expect(chatLabel('dm:5', 'Spike')).toBe('Spike');
     expect(chatLabel('dm:5')).toBe('#5');
-    expect(describeChat(undefined)).toBe('docked · default size · text 100%');
-    expect(describeChat({ x: 1, y: 2, w: 420, h: 520, text: 120 })).toBe('moved · 420×520 · text 120%');
-    expect(describeChat({ w: 400 })).toBe('docked · 400×auto · text 100%');
+  });
+
+  it('sums up a chat in plain words', () => {
+    expect(chatSummary(undefined, true)).toBe('As the game made it');
+    expect(chatSummary(undefined)).toBe('As it came');
+    expect(chatSummary({ x: 1, y: 2, w: 420, h: 520, text: 120, locked: false }, true)).toBe('Moved · Resized · Text 120% · Unlocked');
+    expect(chatSummary({ w: 400 })).toBe('Resized');
+  });
+
+  it('reads text size from a chat, or else the size for every chat', () => {
+    expect(textOf(undefined, 120)).toBe(120);
+    expect(textOf({ text: 90 }, 120)).toBe(90);
+    expect(normalizeChatEntry({ text: 100 }, 120)).toEqual({ text: 100 });
+    expect(normalizeChatEntry({ text: 120 }, 120)).toEqual({});
+    expect(normalizeChats({ pm: { text: 120 }, 'dm:5': { text: 100 } }, 120)).toEqual({ 'dm:5': { text: 100 } });
   });
 });

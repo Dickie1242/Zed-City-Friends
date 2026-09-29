@@ -3,7 +3,7 @@
 // never shows a badge or a dot.
 import { h, clear, icon } from './dom.js';
 import { findChats } from './chat-custom/registry.js';
-import { chatLabel, describeChat, isLocked, dmKey, dmIdOf } from '../chat-custom/chats.js';
+import { chatLabel, chatSummary, isLocked, dmKey, dmIdOf } from '../chat-custom/chats.js';
 import { SOUNDS } from '../settings.js';
 import { WHATS_NEW } from '../whats-new.js';
 import { VERSION, DEV_PROFILE_ID } from '../version.js';
@@ -148,7 +148,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
             title: isLocked(r.entry) ? 'Locked' : 'Unlocked',
             'aria-label': isLocked(r.entry) ? 'Locked' : 'Unlocked',
           }),
-          h('div', { class: 'zcf-row-main' }, h('div', { class: 'zcf-name' }, r.name), h('div', { class: 'zcf-status' }, describeChat(r.entry))),
+          h('div', { class: 'zcf-row-main' }, h('div', { class: 'zcf-name' }, r.name), h('div', { class: 'zcf-status' }, chatSummary(r.entry, r.key.startsWith('game:')))),
           h('button', { class: 'zcf-mini', type: 'button', 'data-zcf-focus': `reset:${r.key}`, disabled: !r.entry, onclick: () => actions.resetChat(r.key) }, 'Reset'))),
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
       section('Notifications', notifyBox.row, h('div', { class: 'zcf-set-sub' }, friendsOnlyBox.row), note, titleBox.row),

@@ -17,9 +17,10 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 export const clampText = (v) => clamp(Math.round(v / LIMITS.textStep) * LIMITS.textStep, LIMITS.minText, LIMITS.maxText);
 
-// Keeps only valid fields, clamped. Anything equal to its default is left out: locked (the default),
-// 100% message size, no position (x and y come as a pair or not at all).
-export function normalizeChatEntry(raw) {
+// Keeps only valid fields, clamped. Anything equal to its default is left out: locked (the default), a
+// message size equal to the size for every chat (`textAll`, 0.7 spec §3.1), no position (x and y come as a
+// pair or not at all).
+export function normalizeChatEntry(raw, textAll = DEFAULT_TEXT) {
   const out = {};
   if (!raw || typeof raw !== 'object') return out;
   if (raw.locked === false) out.locked = false;
@@ -34,22 +35,23 @@ export function normalizeChatEntry(raw) {
   const h = num(raw.h);
   if (h !== null) out.h = clamp(Math.round(h), LIMITS.minH, LIMITS.maxH);
   const t = num(raw.text);
-  if (t !== null && clampText(t) !== DEFAULT_TEXT) out.text = clampText(t);
+  if (t !== null && clampText(t) !== textAll) out.text = clampText(t);
   return out;
 }
 
-export function normalizeChats(chats) {
+export function normalizeChats(chats, textAll = DEFAULT_TEXT) {
   const out = {};
   if (!chats || typeof chats !== 'object' || Array.isArray(chats)) return out;
   for (const [key, raw] of Object.entries(chats)) {
     if (!isChatKey(key)) continue;
-    const entry = normalizeChatEntry(raw);
+    const entry = normalizeChatEntry(raw, textAll);
     if (Object.keys(entry).length) out[key] = entry;
   }
   return out;
 }
 
-export const textOf = (entry) => (entry && entry.text) || DEFAULT_TEXT;
+// A chat's own message size, or else the size for every chat.
+export const textOf = (entry, textAll = DEFAULT_TEXT) => (entry && entry.text) || textAll;
 export const isLocked = (entry) => !(entry && entry.locked === false);
 export const isMoved = (entry) => !!(entry && typeof entry.x === 'number' && typeof entry.y === 'number');
 
@@ -62,8 +64,13 @@ export function chatLabel(key, dmName) {
   return id ? dmName || `#${id}` : String(key);
 }
 
-// One line for the Chat settings list, e.g. "moved · 420×520 · text 120%".
-export function describeChat(entry) {
-  const size = entry && (entry.w || entry.h) ? `${entry.w || 'auto'}×${entry.h || 'auto'}` : 'default size';
-  return [isMoved(entry) ? 'moved' : 'docked', size, `text ${textOf(entry)}%`].join(' · ');
+// One line for a chat's row in Chat settings, in plain words: what differs from how the chat came.
+export function chatSummary(entry, game = false) {
+  const parts = [];
+  if (isMoved(entry)) parts.push('Moved');
+  if (entry && (entry.w || entry.h)) parts.push('Resized');
+  if (entry && entry.text) parts.push(`Text ${entry.text}%`);
+  if (!isLocked(entry)) parts.push('Unlocked');
+  if (parts.length) return parts.join(' · ');
+  return game ? 'As the game made it' : 'As it came';
 }

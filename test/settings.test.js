@@ -14,6 +14,14 @@ import {
   isPinned,
   setFlag,
   MAX_PINNED,
+  setSettingsTab,
+  setMentionSound,
+  setVolume,
+  setMentionWords,
+  setTextAll,
+  restoreDefaults,
+  applyBackupSettings,
+  MAX_MENTION_WORDS,
 } from '../src/settings.js';
 
 describe('settings document', () => {
@@ -30,6 +38,13 @@ describe('settings document', () => {
       notifyFriendsOnly: false,
       titleCount: true,
       hoverLocal: true,
+      settingsTab: 'general',
+      mentionSound: 'off',
+      volume: 100,
+      textAll: 100,
+      mentions: true,
+      mentionWords: [],
+      clock12: false,
     });
     expect(normalizeSettings({ v: 1, pmTab: 'nope', sound: 'siren' })).toMatchObject({ pmTab: 'chats', sound: 'off' });
     expect(() => normalizeSettings({ v: 2 })).toThrow();
@@ -110,5 +125,70 @@ describe('settings document', () => {
     setFlag(s, 'titleCount', false);
     setFlag(s, 'pmTab', 'x');
     expect(s).toMatchObject({ notify: true, titleCount: false, pmTab: 'chats' });
+  });
+
+  it('reads the 0.7 options, with mention highlights on and the rest off or as before', () => {
+    expect(defaultSettings()).toMatchObject({ settingsTab: 'general', mentionSound: 'off', volume: 100, textAll: 100, mentions: true, mentionWords: [], clock12: false });
+    expect(normalizeSettings({ v: 1, settingsTab: 'about', mentionSound: 'bell', volume: 42, textAll: 123, mentions: false, mentionWords: ' DWR , dwr, x, mothy ', clock12: true }))
+      .toMatchObject({ settingsTab: 'about', mentionSound: 'bell', volume: 40, textAll: 120, mentions: false, mentionWords: ['DWR', 'mothy'], clock12: true });
+    expect(normalizeSettings({ v: 1, settingsTab: 'x', mentionSound: 'siren', volume: 'loud', textAll: 'big', mentions: 0, clock12: 'yes' }))
+      .toMatchObject({ settingsTab: 'general', mentionSound: 'off', volume: 100, textAll: 100, mentions: true, clock12: false });
+  });
+
+  it('sets the settings tab, mention sound and volume only to known values', () => {
+    const s = defaultSettings();
+    setSettingsTab(s, 'chats');
+    setSettingsTab(s, 'nope');
+    setMentionSound(s, 'ping');
+    setMentionSound(s, 'siren');
+    setVolume(s, 33);
+    expect(s).toMatchObject({ settingsTab: 'chats', mentionSound: 'ping', volume: 35 });
+    setVolume(s, -5);
+    expect(s.volume).toBe(0);
+  });
+
+  it('keeps up to 10 mention words of 2-30 characters', () => {
+    const s = defaultSettings();
+    setMentionWords(s, Array.from({ length: 12 }, (_, i) => `word${i}`));
+    expect(s.mentionWords).toHaveLength(MAX_MENTION_WORDS);
+    setMentionWords(s, ['a'.repeat(31), '  two   words ', 7]);
+    expect(s.mentionWords).toEqual(['two words']);
+  });
+
+  it("sets the text size for every chat, clearing each chat's own, and a chat keeps only a size that differs", () => {
+    const s = defaultSettings();
+    updateChat(s, 'pm', { text: 120, w: 380 });
+    updateChat(s, 'dm:5', { text: 90 });
+    setTextAll(s, 110);
+    expect(s.textAll).toBe(110);
+    expect(s.chats).toEqual({ pm: { w: 380 } });
+    updateChat(s, 'dm:5', { text: 110 });
+    expect(s.chats['dm:5']).toBeUndefined();
+    updateChat(s, 'dm:5', { text: 100 });
+    expect(s.chats['dm:5']).toEqual({ text: 100 });
+    expect(normalizeSettings(JSON.parse(JSON.stringify(s))).chats['dm:5']).toEqual({ text: 100 });
+    resetAllChats(s);
+    expect(s).toMatchObject({ chats: {}, textAll: 100 });
+  });
+
+  it('restores defaults but keeps muted and pinned chats and the tabs', () => {
+    const s = defaultSettings();
+    Object.assign(s, { sound: 'bell', volume: 50, clock12: true, notify: true, pmTab: 'friends', settingsTab: 'about', mentionWords: ['DWR'] });
+    setMuted(s, 5, true);
+    togglePinned(s, 7);
+    updateChat(s, 'pm', { w: 400 });
+    restoreDefaults(s);
+    expect(s).toEqual({ ...defaultSettings(), muted: [5], pinned: [7], pmTab: 'friends', settingsTab: 'about' });
+  });
+
+  it("takes a backup's settings, merging muted and pinned chats with ours, and changes nothing for a bad one", () => {
+    const s = defaultSettings();
+    setMuted(s, 5, true);
+    togglePinned(s, 7);
+    applyBackupSettings(s, { v: 1, sound: 'ping', clock12: true, muted: [6, 5], pinned: [8], chats: { pm: { w: 400 } } });
+    expect(s).toMatchObject({ sound: 'ping', clock12: true, muted: [6, 5], pinned: [8, 7], chats: { pm: { w: 400 } } });
+    const before = JSON.stringify(s);
+    expect(() => applyBackupSettings(s, { v: 2 })).toThrow();
+    expect(JSON.stringify(s)).toBe(before);
   });
 });
