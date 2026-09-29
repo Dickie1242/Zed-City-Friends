@@ -1,6 +1,7 @@
 // One DM window/tab in the dock, styled like the game's chat (name · time · text, grouped).
 import { h, clear, icon, avatar, badge, setBadge } from './dom.js';
 import { createGifPicker } from './gif-picker.js';
+import { createEmojiPicker } from './emoji-picker.js';
 import { buildLog, messageParts } from '../mail.js';
 import { formatMessageTime, statusText } from '../time.js';
 
@@ -12,7 +13,7 @@ const BUSY_TEXT = {
 };
 
 export function createDmWindow(services, userId) {
-  const { store, actions, conversations, presence, router, myId, myName, fetchImpl } = services;
+  const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -35,6 +36,7 @@ export function createDmWindow(services, userId) {
   const scroller = h('div', { class: 'zcf-scroll' }, loader, log, pendingEl);
   const newChip = h('button', { class: 'zcf-newchip', type: 'button', hidden: true }, 'New messages ↓');
   const input = h('textarea', { class: 'zcf-input zcf-compose', rows: 1, placeholder: 'Message…', 'aria-label': 'Message' });
+  const emojiBtn = h('button', { class: 'zcf-emojibtn', type: 'button', title: 'Insert an emoji', 'aria-label': 'Insert an emoji', 'aria-expanded': 'false' }, h('i', { class: 'far fa-smile', 'aria-hidden': 'true' }));
   const gifBtn = h('button', { class: 'zcf-gifbtn', type: 'button', title: 'Send a GIF', 'aria-label': 'Send a GIF', 'aria-expanded': 'false' }, 'GIF');
   const sendBtn = h('button', { class: 'zcf-send', type: 'button' }, 'Send');
   const gifPicker = createGifPicker({
@@ -47,8 +49,16 @@ export function createDmWindow(services, userId) {
       conv.send(`![${title || 'GIF'}](${url})`);
     },
   });
-  const composer = h('div', { class: 'zcf-composer' }, input, gifBtn, sendBtn);
-  const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, gifPicker.el, composer);
+  const emojiPicker = createEmojiPicker({
+    doc: document,
+    storage,
+    onPick: (picked) => {
+      emojiBtn.setAttribute('aria-expanded', 'false');
+      insertAtCaret(picked.src ? `:${picked.name}:` : picked.emoji);
+    },
+  });
+  const composer = h('div', { class: 'zcf-composer' }, input, emojiBtn, gifBtn, sendBtn);
+  const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, emojiPicker.el, gifPicker.el, composer);
   const el = h('div', { class: 'chat-container zcf zcf-dm', dataset: { zcfDm: String(userId) } }, header, body);
 
   // Safety net for close paths we don't call directly (Esc); the click/pick handlers below set
@@ -56,6 +66,20 @@ export function createDmWindow(services, userId) {
   const syncGifBtn = () => gifBtn.setAttribute('aria-expanded', String(!gifPicker.el.hidden));
   const gifObserver = new MutationObserver(syncGifBtn);
   gifObserver.observe(gifPicker.el, { attributes: true, attributeFilter: ['hidden'] });
+  const syncEmojiBtn = () => emojiBtn.setAttribute('aria-expanded', String(!emojiPicker.el.hidden));
+  const emojiObserver = new MutationObserver(syncEmojiBtn);
+  emojiObserver.observe(emojiPicker.el, { attributes: true, attributeFilter: ['hidden'] });
+
+  // Caret-insertion for a picked emoji: a standard emoji drops in its unicode character (shown as
+  // typed), a Zed City (or flag) one drops in its ":name:" shortcode, which renders as an image once sent.
+  function insertAtCaret(text) {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + text + input.value.slice(end);
+    const pos = start + text.length;
+    input.focus();
+    input.selectionStart = input.selectionEnd = pos;
+  }
 
   const stop = (fn) => (e) => {
     e.stopPropagation();
@@ -76,8 +100,16 @@ export function createDmWindow(services, userId) {
   newChip.addEventListener('click', () => scrollToBottom());
   sendBtn.addEventListener('click', () => submit());
   gifBtn.addEventListener('click', () => {
+    emojiPicker.close();
+    syncEmojiBtn();
     gifPicker.toggle();
     syncGifBtn();
+  });
+  emojiBtn.addEventListener('click', () => {
+    gifPicker.close();
+    syncGifBtn();
+    emojiPicker.toggle();
+    syncEmojiBtn();
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -137,8 +169,21 @@ export function createDmWindow(services, userId) {
     return img;
   }
 
+  // Same shape the game renders emoji as: an inline image sized to the text line, whether it's a
+  // Zed City item or a flag (Windows can't draw flag glyphs, so those are images too).
+  function renderEmoji(part) {
+    const alt = `:${part.name}:`;
+    const img = h('img', { class: 'zcf-emoji', src: part.src, alt, title: alt, draggable: 'false', loading: 'lazy' });
+    img.addEventListener('error', () => img.replaceWith(document.createTextNode(alt)));
+    return img;
+  }
+
   function renderText(text) {
-    return messageParts(text).map((part) => (part.type === 'image' ? renderGif(part) : document.createTextNode(part.text)));
+    return messageParts(text).map((part) => {
+      if (part.type === 'image') return renderGif(part);
+      if (part.type === 'emoji') return renderEmoji(part);
+      return document.createTextNode(part.text);
+    });
   }
 
   function renderItem(item) {
@@ -172,6 +217,7 @@ export function createDmWindow(services, userId) {
     input.disabled = conv.state.blocked;
     sendBtn.disabled = conv.state.blocked || !!conv.state.busy;
     gifBtn.disabled = conv.state.blocked || !!conv.state.busy;
+    emojiBtn.disabled = conv.state.blocked || !!conv.state.busy;
   }
 
   // Appends when the new log only extends the old one; otherwise redraws (older page loaded, trimmed).
@@ -231,6 +277,8 @@ export function createDmWindow(services, userId) {
     if (!open) {
       gifPicker.close();
       syncGifBtn();
+      emojiPicker.close();
+      syncEmojiBtn();
     }
     wasOpen = open;
   }
@@ -243,6 +291,8 @@ export function createDmWindow(services, userId) {
       conversations.release(userId);
       gifObserver.disconnect();
       gifPicker.destroy();
+      emojiObserver.disconnect();
+      emojiPicker.destroy();
     },
   };
 }

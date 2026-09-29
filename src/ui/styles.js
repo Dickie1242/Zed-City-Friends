@@ -78,6 +78,7 @@ export const CSS = `
 .zcf-time{opacity:.4;margin-left:8px;font-size:11px}
 .zcf-text{opacity:.9;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
+.zcf .zcf-emoji{height:1.35em;width:auto;vertical-align:-0.3em;display:inline;margin:0 1px}
 .zcf-system .zcf-text{font-style:italic;opacity:.7}
 .zcf-pending-msg .zcf-text{opacity:.55}
 .zcf-failed .zcf-text{opacity:.5}
@@ -100,6 +101,21 @@ export const CSS = `
 .zcf-gif-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .zcf-gif-thumb{display:block;width:100%;height:70px;object-fit:cover;border-radius:3px;background:#202327;cursor:pointer}
 .zcf-gif-thumb:hover{outline:2px solid #0a748f}
+.zcf-emojibtn{background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font-size:14px;padding:7px 9px;cursor:pointer;line-height:1;display:flex;align-items:center}
+.zcf-emojibtn:hover{background:#ffffff1f;color:#fff}
+.zcf-emojibtn:disabled{opacity:.4;cursor:default}
+.zcf-emojibtn[aria-expanded="true"]{background:#3d8b40;color:#fff}
+.zcf-empanel{flex:none;max-height:240px;overflow-y:auto;background:#16181c;border:1px solid #000;border-radius:4px;margin:0 8px;padding:8px}
+.zcf-em-search{display:block;box-sizing:border-box;width:100%;background:#0e1013;border:1px solid #0a748f;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:6px 8px;margin-bottom:6px}
+.zcf-em-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.zcf-em-tab{display:flex;align-items:center;justify-content:center}
+.zcf-em-tab.zcf-active{background:#3d8b40;color:#fff}
+.zcf-em-tab-icon{width:11px;height:11px;display:block}
+.zcf-em-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.zcf-em-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:none;border:0;border-radius:3px;color:inherit;font-size:20px;line-height:1;cursor:pointer;padding:0}
+.zcf-em-btn:hover{background:#ffffff14}
+.zcf-em-img{width:22px;height:22px;object-fit:contain;display:block}
+.zcf-em-empty{grid-column:1/-1;font-size:11px;opacity:.5;text-align:center;padding:10px 0}
 .zcf-toasts{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);z-index:4000;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}

@@ -8,8 +8,8 @@ import { fakeApi, memoryStorage } from '../helpers.js';
 
 export const ME = 1;
 
-export function makeServices({ api = fakeApi(), threads = [], presence = {}, searchResults = [], fetchImpl } = {}) {
-  const store = createStore({ playerId: ME, storage: memoryStorage() });
+export function makeServices({ api = fakeApi(), threads = [], presence = {}, searchResults = [], fetchImpl, storage = memoryStorage() } = {}) {
+  const store = createStore({ playerId: ME, storage });
   const conversations = createConversations({ api, myId: ME });
   const actions = {
     addFriend: vi.fn((p) => store.update((s) => addFriend(s, p, 0))),
@@ -36,6 +36,7 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     myId: ME,
     myName: 'Me',
     store,
+    storage,
     actions,
     conversations,
     fetchImpl,

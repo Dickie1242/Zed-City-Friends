@@ -1,5 +1,6 @@
 import { parseSentAt, utcDayKey, formatDayLabel } from './time.js';
 import { asArray, toId } from './util.js';
+import { emojiParts } from './emoji.js';
 
 // Same grouping window the game's inbox uses (MailView groupWindowMs).
 export const GROUP_WINDOW_MS = 900000;
@@ -37,9 +38,15 @@ export function messageParts(text) {
     last = m.index + m[0].length;
   }
   if (last < s.length || raw.length === 0) raw.push({ type: 'text', text: s.slice(last) });
-  // Merge adjacent text parts (can happen after dropping empties below) and drop empty text parts.
-  const parts = [];
+  // Expand emoji shortcodes/flags within each text part (never inside a GIF's own alt/src).
+  const expanded = [];
   for (const p of raw) {
+    if (p.type === 'text') expanded.push(...emojiParts(p.text));
+    else expanded.push(p);
+  }
+  // Merge adjacent text parts (can happen after expansion/dropping empties) and drop empty text parts.
+  const parts = [];
+  for (const p of expanded) {
     if (p.type === 'text' && p.text === '') continue;
     const top = parts[parts.length - 1];
     if (p.type === 'text' && top && top.type === 'text') top.text += p.text;
@@ -48,10 +55,12 @@ export function messageParts(text) {
   return parts.length ? parts : [{ type: 'text', text: '' }];
 }
 
-// Thread-list preview: same text, but each allowed GIF embed collapses to "GIF: <alt>".
+// Thread-list preview: same text, but each allowed GIF embed collapses to "GIF: <alt>", standard
+// shortcodes/flags become unicode (already true of the text parts), and a Zed City shortcode is
+// left as ":name:" rather than turned into an image nothing can show in a one-line preview.
 export function previewText(text) {
   const s = messageParts(text)
-    .map((p) => (p.type === 'image' ? `GIF${p.alt ? ': ' + p.alt : ''}` : p.text))
+    .map((p) => (p.type === 'image' ? `GIF${p.alt ? ': ' + p.alt : ''}` : p.type === 'emoji' ? p.emoji || `:${p.name}:` : p.text))
     .join('');
   return s.replace(/\s+/g, ' ').trim();
 }

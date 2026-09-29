@@ -155,7 +155,49 @@ describe('messageParts', () => {
   });
 });
 
+describe('messageParts emoji', () => {
+  it('turns a known shortcode into its unicode emoji, merged into surrounding text', () => {
+    expect(messageParts('lol :joy: right')).toEqual([{ type: 'text', text: 'lol 😂 right' }]);
+  });
+
+  it('resolves a shortcode by alias too', () => {
+    expect(messageParts('bro :lmao:')).toEqual([{ type: 'text', text: 'bro 😂' }]);
+  });
+
+  it('turns a Zed City shortcode into an emoji image part', () => {
+    expect(messageParts('nice :zed_pack:')).toEqual([
+      { type: 'text', text: 'nice ' },
+      { type: 'emoji', name: 'zed_pack', src: '/items/zed_pack.webp' },
+    ]);
+  });
+
+  it('turns a raw unicode flag in text into an emoji image part', () => {
+    const parts = messageParts('go usa 🇺🇸!');
+    expect(parts).toEqual([
+      { type: 'text', text: 'go usa ' },
+      { type: 'emoji', name: 'us', src: expect.stringContaining('1f1fa-1f1f8'), emoji: '🇺🇸' },
+      { type: 'text', text: '!' },
+    ]);
+  });
+
+  it('leaves an unknown shortcode as literal text', () => {
+    expect(messageParts('what is :notreal: here')).toEqual([{ type: 'text', text: 'what is :notreal: here' }]);
+  });
+
+  it('keeps a GIF embed working alongside emoji shortcodes', () => {
+    const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    expect(messageParts(`:joy: check this ![hi](${src})`)).toEqual([
+      { type: 'text', text: '😂 check this ' },
+      { type: 'image', alt: 'hi', src },
+    ]);
+  });
+});
+
 describe('previewText', () => {
+  it('turns a shortcode into its unicode emoji', () => {
+    expect(previewText('lol :joy: right')).toBe('lol 😂 right');
+  });
+
   it('replaces an allowed GIF embed with "GIF: <alt>"', () => {
     const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/ii/4493325008d34b7bf8cd6813cd5c1619/d3/19/Wgu8FhZhblHegj8J.gif');
     expect(previewText(`![Bibi Impressed](${src})`)).toBe('GIF: Bibi Impressed');

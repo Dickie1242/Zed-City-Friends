@@ -11,7 +11,8 @@ describe('build', () => {
     expect(text).toContain('// @match        https://www.zed.city/*');
     expect(text).toContain('// @grant        none');
     expect(text).not.toMatch(/\bimport\s*[{*]/);
-    // ~85 KB readable today (Greasy Fork forbids minified code); the cap catches accidental bloat.
-    expect(Buffer.byteLength(text)).toBeLessThan(120 * 1024);
+    // ~140 KB readable today (Greasy Fork forbids minified code), most of it the ~50 KB emoji
+    // table; the cap catches accidental bloat, not the readable, unminified source itself.
+    expect(Buffer.byteLength(text)).toBeLessThan(200 * 1024);
   }, 30000);
 });

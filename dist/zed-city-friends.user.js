@@ -274,6 +274,42 @@
 
   // src/store.js
   var storageKey = (playerId) => `zcf:v1:${playerId}`;
+  var RECENT_EMOJI_KEY = "zed-ui.recent-emojis";
+  var RECENT_EMOJI_MAX = 18;
+  function defaultStorage(storage) {
+    if (storage) return storage;
+    try {
+      return window.localStorage;
+    } catch (e) {
+      warnOnce("store-recent-emoji-storage", e);
+      return null;
+    }
+  }
+  function readGameRecentEmojis(storage) {
+    const s = defaultStorage(storage);
+    if (!s) return [];
+    try {
+      const raw = s.getItem(RECENT_EMOJI_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x) => typeof x === "string").slice(0, RECENT_EMOJI_MAX);
+    } catch (e) {
+      warnOnce("store-recent-emoji-read", e);
+      return [];
+    }
+  }
+  function rememberGameRecentEmoji(storage, name) {
+    const s = defaultStorage(storage);
+    if (!s) return;
+    try {
+      const current = readGameRecentEmojis(s);
+      const next = [name, ...current.filter((n) => n !== name)].slice(0, RECENT_EMOJI_MAX);
+      s.setItem(RECENT_EMOJI_KEY, JSON.stringify(next));
+    } catch (e) {
+      warnOnce("store-recent-emoji-write", e);
+    }
+  }
   function createStore({ playerId, storage = window.localStorage, win = window, now = () => Date.now() }) {
     const key = storageKey(playerId);
     const subs = /* @__PURE__ */ new Set();
@@ -638,6 +674,2211 @@
     };
   }
 
+  // src/emoji-data.js
+  var EMOJI_GROUPS = {
+    "misc": `🇦	regional_indicator_a
+🇧	regional_indicator_b
+🇨	regional_indicator_c
+🇩	regional_indicator_d
+🇪	regional_indicator_e
+🇫	regional_indicator_f
+🇬	regional_indicator_g
+🇭	regional_indicator_h
+🇮	regional_indicator_i
+🇯	regional_indicator_j
+🇰	regional_indicator_k
+🇱	regional_indicator_l
+🇲	regional_indicator_m
+🇳	regional_indicator_n
+🇴	regional_indicator_o
+🇵	regional_indicator_p
+🇶	regional_indicator_q
+🇷	regional_indicator_r
+🇸	regional_indicator_s
+🇹	regional_indicator_t
+🇺	regional_indicator_u
+🇻	regional_indicator_v
+🇼	regional_indicator_w
+🇽	regional_indicator_x
+🇾	regional_indicator_y
+🇿	regional_indicator_z
+😀	grinning	grinning_face
+😃	smiley	grinning_face_with_big_eyes
+😄	smile	grinning_face_with_closed_eyes
+😁	grin	beaming_face
+😆	laughing	lol,satisfied,squinting_face
+😅	sweat_smile	grinning_face_with_sweat
+🤣	rofl
+😂	joy	lmao,tears_of_joy
+🙂	slightly_smiling_face
+🙃	upside_down_face
+🫠	melting_face	melt
+😉	wink	winking_face
+😊	blush	smiling_face_with_closed_eyes
+😇	innocent	halo
+🥰	smiling_face_with_three_hearts	smiling_face_with_3_hearts
+😍	heart_eyes	smiling_face_with_heart_eyes
+🤩	star_struck
+😘	kissing_heart	blowing_a_kiss
+😗	kissing	kissing_face
+☺	relaxed	smiling_face
+😚	kissing_closed_eyes	kissing_face_with_closed_eyes
+😙	kissing_smiling_eyes	kissing_face_with_smiling_eyes
+🥲	smiling_face_with_tear
+😋	yum	savoring_food
+😛	stuck_out_tongue	face_with_tongue
+😜	stuck_out_tongue_winking_eye
+🤪	zany_face	zany
+😝	stuck_out_tongue_closed_eyes
+🤑	money_mouth_face
+🤗	hugs	hug,hugging,hugging_face
+🤭	hand_over_mouth	face_with_hand_over_mouth
+🫢	face_with_open_eyes_and_hand_over_mouth	face_with_open_eyes_hand_over_mouth,gasp
+🫣	face_with_peeking_eye	peek
+🤫	shushing_face	shush
+🤔	thinking	thinking_face,wtf
+🫡	saluting_face	salute
+🤐	zipper_mouth_face	zipper_mouth
+🤨	raised_eyebrow	face_with_raised_eyebrow
+😐	neutral_face	neutral
+😑	expressionless	expressionless_face
+😶	no_mouth
+🫥	dotted_line_face
+😶‍🌫	face_in_clouds	in_clouds
+😏	smirk	smirking,smirking_face
+😒	unamused	unamused_face
+🙄	roll_eyes	rolling_eyes
+😬	grimacing	grimacing_face
+😮‍💨	face_exhaling	exhale,exhaling
+🤥	lying_face	lying
+🫨	shaking_face	shaking
+🙂‍↔	head_shaking_horizontally
+🙂‍↕	head_shaking_vertically
+😌	relieved	relieved_face
+😔	pensive	pensive_face
+😪	sleepy	sleepy_face
+🤤	drooling_face	drooling
+😴	sleeping	sleeping_face
+🫩	face_with_eye_bags
+😷	mask	medical_mask
+🤒	face_with_thermometer
+🤕	face_with_head_bandage
+🤢	nauseated_face	nauseated
+🤮	vomiting_face	face_vomiting,vomiting
+🤧	sneezing_face	sneezing
+🥵	hot_face	hot
+🥶	cold_face	cold
+🥴	woozy_face	woozy
+😵	dizzy_face	knocked_out
+😵‍💫	face_with_spiral_eyes	dizzy_eyes
+🤯	exploding_head
+🤠	cowboy_hat_face	cowboy,cowboy_face
+🥳	partying_face	hooray,partying
+🥸	disguised_face	disguised
+😎	sunglasses	smiling_face_with_sunglasses,sunglasses_cool,too_cool
+🤓	nerd_face	nerd
+🧐	monocle_face	face_with_monocle
+😕	confused	confused_face
+🫤	face_with_diagonal_mouth
+😟	worried	worried_face
+🙁	slightly_frowning_face
+☹	frowning_face	white_frowning_face
+😮	open_mouth	face_with_open_mouth
+😯	hushed	hushed_face
+😲	astonished	astonished_face
+😳	flushed	flushed_face
+🫪	distorted_face
+🥺	pleading_face	pleading
+🥹	face_holding_back_tears	watery_eyes
+😦	frowning	frowning_face
+😧	anguished	anguished_face
+😨	fearful	fearful_face
+😰	cold_sweat	anxious,anxious_face
+😥	disappointed_relieved	sad_relieved_face
+😢	cry	crying_face
+😭	sob	loudly_crying_face
+😱	scream	screaming_in_fear
+😖	confounded	confounded_face
+😣	persevere	persevering_face
+😞	disappointed	disappointed_face
+😓	sweat	downcast_face
+😩	weary	weary_face
+😫	tired_face	tired
+🥱	yawning_face	yawn,yawning
+😤	triumph	nose_steam
+😡	pout	pouting_face,rage
+😠	angry	angry_face
+🤬	cursing_face	censored,face_with_symbols_on_mouth
+😈	smiling_imp
+👿	imp	angry_imp
+💀	skull
+☠	skull_and_crossbones
+💩	hankey	poop,shit
+🤡	clown_face	clown
+👹	japanese_ogre	ogre
+👺	japanese_goblin	goblin
+👻	ghost
+👽	alien
+👾	space_invader	alien_monster
+🤖	robot	robot_face
+😺	smiley_cat	grinning_cat
+😸	smile_cat	grinning_cat_with_closed_eyes
+😹	joy_cat	tears_of_joy_cat
+😻	heart_eyes_cat	smiling_cat_with_heart_eyes
+😼	smirk_cat	wry_smile_cat
+😽	kissing_cat
+🙀	scream_cat	weary_cat
+😿	crying_cat_face	crying_cat
+😾	pouting_cat
+🙈	see_no_evil
+🙉	hear_no_evil
+🙊	speak_no_evil
+💌	love_letter
+💘	cupid	heart_with_arrow
+💝	gift_heart	heart_with_ribbon
+💖	sparkling_heart
+💗	heartpulse	growing_heart
+💓	heartbeat	beating_heart
+💞	revolving_hearts
+💕	two_hearts
+💟	heart_decoration
+❣	heavy_heart_exclamation	heart_exclamation
+💔	broken_heart
+❤‍🔥	heart_on_fire
+❤‍🩹	mending_heart
+❤	heart	red_heart
+🩷	pink_heart
+🧡	orange_heart
+💛	yellow_heart
+💚	green_heart
+💙	blue_heart
+🩵	light_blue_heart
+💜	purple_heart
+🤎	brown_heart
+🖤	black_heart
+🩶	grey_heart	gray_heart
+🤍	white_heart
+💋	kiss
+💯	100
+💢	anger
+🫯	fight_cloud
+💥	boom	collision
+💫	dizzy
+💦	sweat_drops
+💨	dash	dashing_away
+🕳	hole
+💬	speech_balloon
+👁‍🗨️	eye_speech_bubble	eye_in_speech_bubble
+🗨	left_speech_bubble
+🗯	right_anger_bubble
+💭	thought_balloon
+💤	zzz
+🏻	tone1	tone_light
+🏼	tone2	tone_medium_light
+🏽	tone3	tone_medium
+🏾	tone4	tone_medium_dark
+🏿	tone5	tone_dark
+🦰	red_hair
+🦱	curly_hair
+🦳	white_hair
+🦲	no_hair`,
+    "people & body": `👋	wave	waving_hand
+🤚	raised_back_of_hand
+🖐	raised_hand_with_fingers_splayed
+✋	hand	high_five,raised_hand
+🖖	vulcan_salute	vulcan
+🫱	rightwards_hand
+🫲	leftwards_hand
+🫳	palm_down_hand	palm_down
+🫴	palm_up_hand	palm_up
+🫷	leftwards_pushing_hand
+🫸	rightwards_pushing_hand
+👌	ok_hand
+🤌	pinched_fingers	pinch
+🤏	pinching_hand
+✌	v	victory
+🤞	crossed_fingers	fingers_crossed
+🫰	hand_with_index_finger_and_thumb_crossed
+🤟	love_you_gesture
+🤘	metal	sign_of_the_horns
+🤙	call_me_hand
+👈	point_left
+👉	point_right
+👆	point_up_2	point_up
+🖕	fu	middle_finger
+👇	point_down
+☝	point_up	point_up_2
+🫵	index_pointing_at_the_viewer	point_forward
+👍	+1	thumbsup,yes
+👎	-1	no,thumbsdown
+✊	fist
+👊	facepunch	punch
+🤛	fist_left	left_facing_fist
+🤜	fist_right	right_facing_fist
+👏	clap	clapping_hands
+🙌	raised_hands
+🫶	heart_hands
+👐	open_hands
+🤲	palms_up_together
+🤝	handshake
+🙏	pray	folded_hands
+✍	writing_hand
+💅	nail_care	nail_polish
+🤳	selfie
+💪	muscle	right_bicep
+🦾	mechanical_arm
+🦿	mechanical_leg
+🦵	leg
+🦶	foot
+👂	ear
+🦻	ear_with_hearing_aid	hearing_aid
+👃	nose
+🧠	brain
+🫀	anatomical_heart
+🫁	lungs
+🦷	tooth
+🦴	bone
+👀	eyes
+👁	eye
+👅	tongue
+👄	lips	mouth
+🫦	biting_lip
+👶	baby
+🧒	child
+👦	boy
+👧	girl
+🧑	adult
+👱	blond_haired_person	blond_haired
+👨	man
+🧔	bearded_person	person_bearded
+🧔‍♂	man_beard	man_bearded
+🧔‍♀	woman_beard	woman_bearded
+👨‍🦰	red_haired_man	man_red_haired
+👨‍🦱	curly_haired_man	man_curly_haired
+👨‍🦳	white_haired_man	man_white_haired
+👨‍🦲	bald_man	man_bald
+👩	woman
+👩‍🦰	red_haired_woman	woman_red_haired
+🧑‍🦰	person_red_hair	red_haired
+👩‍🦱	curly_haired_woman	woman_curly_haired
+🧑‍🦱	person_curly_hair	curly_haired
+👩‍🦳	white_haired_woman	woman_white_haired
+🧑‍🦳	person_white_hair	white_haired
+👩‍🦲	bald_woman	woman_bald
+🧑‍🦲	person_bald	bald
+👱‍♀	blond_haired_woman	woman_blond_haired
+👱‍♂	blond_haired_man	man_blond_haired
+🧓	older_adult
+👴	older_man
+👵	older_woman
+🙍	frowning_person	person_frowning
+🙍‍♂	frowning_man	man_frowning
+🙍‍♀	frowning_woman	woman_frowning
+🙎	pouting_face	person_pouting,pouting
+🙎‍♂	pouting_man	man_pouting
+🙎‍♀	pouting_woman	woman_pouting
+🙅	no_good	person_gesturing_no
+🙅‍♂	ng_man	man_gesturing_no
+🙅‍♀	ng_woman	woman_gesturing_no
+🙆	ok_person	all_good,person_gesturing_ok
+🙆‍♂	ok_man	man_gesturing_ok
+🙆‍♀	ok_woman	woman_gesturing_ok
+💁	information_desk_person	person_tipping_hand
+💁‍♂	sassy_man	man_tipping_hand
+💁‍♀	sassy_woman	woman_tipping_hand
+🙋	raising_hand	person_raising_hand
+🙋‍♂	raising_hand_man	man_raising_hand
+🙋‍♀	raising_hand_woman	woman_raising_hand
+🧏	deaf_person
+🧏‍♂	deaf_man
+🧏‍♀	deaf_woman
+🙇	bow	person_bowing
+🙇‍♂	bowing_man	man_bowing
+🙇‍♀	bowing_woman	woman_bowing
+🤦	facepalm	person_facepalming
+🤦‍♂	man_facepalming
+🤦‍♀	woman_facepalming
+🤷	shrug	person_shrugging
+🤷‍♂	man_shrugging
+🤷‍♀	woman_shrugging
+🧑‍⚕	health_worker
+👨‍⚕	man_health_worker
+👩‍⚕	woman_health_worker
+🧑‍🎓	student
+👨‍🎓	man_student
+👩‍🎓	woman_student
+🧑‍🏫	teacher
+👨‍🏫	man_teacher
+👩‍🏫	woman_teacher
+🧑‍⚖	judge
+👨‍⚖	man_judge
+👩‍⚖	woman_judge
+🧑‍🌾	farmer
+👨‍🌾	man_farmer
+👩‍🌾	woman_farmer
+🧑‍🍳	cook
+👨‍🍳	man_cook
+👩‍🍳	woman_cook
+🧑‍🔧	mechanic
+👨‍🔧	man_mechanic
+👩‍🔧	woman_mechanic
+🧑‍🏭	factory_worker
+👨‍🏭	man_factory_worker
+👩‍🏭	woman_factory_worker
+🧑‍💼	office_worker
+👨‍💼	man_office_worker
+👩‍💼	woman_office_worker
+🧑‍🔬	scientist
+👨‍🔬	man_scientist
+👩‍🔬	woman_scientist
+🧑‍💻	technologist
+👨‍💻	man_technologist
+👩‍💻	woman_technologist
+🧑‍🎤	singer
+👨‍🎤	man_singer
+👩‍🎤	woman_singer
+🧑‍🎨	artist
+👨‍🎨	man_artist
+👩‍🎨	woman_artist
+🧑‍✈	pilot
+👨‍✈	man_pilot
+👩‍✈	woman_pilot
+🧑‍🚀	astronaut
+👨‍🚀	man_astronaut
+👩‍🚀	woman_astronaut
+🧑‍🚒	firefighter
+👨‍🚒	man_firefighter
+👩‍🚒	woman_firefighter
+👮	cop	police_officer
+👮‍♂	policeman	man_police_officer
+👮‍♀	policewoman	woman_police_officer
+🕵	detective
+🕵‍♂️	male_detective	man_detective
+🕵‍♀️	female_detective	woman_detective
+💂	guard
+💂‍♂	guardsman	man_guard
+💂‍♀	guardswoman	woman_guard
+🥷	ninja
+👷	construction_worker
+👷‍♂	construction_worker_man	man_construction_worker
+👷‍♀	construction_worker_woman	woman_construction_worker
+🫅	person_with_crown	royalty
+🤴	prince
+👸	princess
+👳	person_with_turban	person_wearing_turban
+👳‍♂	man_with_turban	man_wearing_turban
+👳‍♀	woman_with_turban	woman_wearing_turban
+👲	man_with_gua_pi_mao	person_with_skullcap
+🧕	woman_with_headscarf
+🤵	person_in_tuxedo
+🤵‍♂	man_in_tuxedo
+🤵‍♀	woman_in_tuxedo
+👰	person_with_veil
+👰‍♂	man_with_veil
+👰‍♀	bride_with_veil	woman_with_veil
+🤰	pregnant_woman
+🫃	pregnant_man
+🫄	pregnant_person
+🤱	breast_feeding
+👩‍🍼	woman_feeding_baby
+👨‍🍼	man_feeding_baby
+🧑‍🍼	person_feeding_baby
+👼	angel
+🎅	santa
+🤶	mrs_claus
+🧑‍🎄	mx_claus
+🦸	superhero
+🦸‍♂	superhero_man	man_superhero
+🦸‍♀	superhero_woman	woman_superhero
+🦹	supervillain
+🦹‍♂	supervillain_man	man_supervillain
+🦹‍♀	supervillain_woman	woman_supervillain
+🧙	mage
+🧙‍♂	mage_man	man_mage
+🧙‍♀	mage_woman	woman_mage
+🧚	fairy
+🧚‍♂	fairy_man	man_fairy
+🧚‍♀	fairy_woman	woman_fairy
+🧛	vampire
+🧛‍♂	vampire_man	man_vampire
+🧛‍♀	vampire_woman	woman_vampire
+🧜	merperson
+🧜‍♂	merman
+🧜‍♀	mermaid
+🧝	elf
+🧝‍♂	elf_man	man_elf
+🧝‍♀	elf_woman	woman_elf
+🧞	genie
+🧞‍♂	genie_man	man_genie
+🧞‍♀	genie_woman	woman_genie
+🧟	zombie
+🧟‍♂	zombie_man	man_zombie
+🧟‍♀	zombie_woman	woman_zombie
+🧌	troll
+🫈	hairy_creature
+💆	massage	person_getting_massage
+💆‍♂	massage_man	man_getting_massage
+💆‍♀	massage_woman	woman_getting_massage
+💇	haircut	person_getting_haircut
+💇‍♂	haircut_man	man_getting_haircut
+💇‍♀	haircut_woman	woman_getting_haircut
+🚶	walking	person_walking
+🚶‍♂	walking_man	man_walking
+🚶‍♀	walking_woman	woman_walking
+🚶‍➡	person_walking_right
+🚶‍♀‍➡️	woman_walking_right
+🚶‍♂‍➡️	man_walking_right
+🧍	standing_person	person_standing,standing
+🧍‍♂	standing_man	man_standing
+🧍‍♀	standing_woman	woman_standing
+🧎	kneeling_person	kneeling,person_kneeling
+🧎‍♂	kneeling_man	man_kneeling
+🧎‍♀	kneeling_woman	woman_kneeling
+🧎‍➡	person_kneeling_right
+🧎‍♀‍➡️	woman_kneeling_right
+🧎‍♂‍➡️	man_kneeling_right
+🧑‍🦯	person_with_probing_cane	person_with_white_cane
+🧑‍🦯‍➡	person_with_white_cane_right
+👨‍🦯	man_with_probing_cane	man_with_white_cane
+👨‍🦯‍➡	man_with_white_cane_right
+👩‍🦯	woman_with_probing_cane	woman_with_white_cane
+👩‍🦯‍➡	woman_with_white_cane_right
+🧑‍🦼	person_in_motorized_wheelchair
+🧑‍🦼‍➡	person_in_motorized_wheelchair_right
+👨‍🦼	man_in_motorized_wheelchair
+👨‍🦼‍➡	man_in_motorized_wheelchair_right
+👩‍🦼	woman_in_motorized_wheelchair
+👩‍🦼‍➡	woman_in_motorized_wheelchair_right
+🧑‍🦽	person_in_manual_wheelchair
+🧑‍🦽‍➡	person_in_manual_wheelchair_right
+👨‍🦽	man_in_manual_wheelchair
+👨‍🦽‍➡	man_in_manual_wheelchair_right
+👩‍🦽	woman_in_manual_wheelchair
+👩‍🦽‍➡	woman_in_manual_wheelchair_right
+🏃	runner	person_running,running
+🏃‍♂	running_man	man_running
+🏃‍♀	running_woman	woman_running
+🏃‍➡	person_running_right
+🏃‍♀‍➡️	woman_running_right
+🏃‍♂‍➡️	man_running_right
+🧑‍🩰	ballet_dancer
+💃	dancer	woman_dancing
+🕺	man_dancing
+🕴	business_suit_levitating	levitate,levitating,person_in_suit_levitating
+👯	dancers	people_with_bunny_ears_partying
+👯‍♂	dancing_men	men_with_bunny_ears_partying
+👯‍♀	dancing_women	women_with_bunny_ears_partying
+🧖	sauna_person	person_in_steamy_room
+🧖‍♂	sauna_man	man_in_steamy_room
+🧖‍♀	sauna_woman	woman_in_steamy_room
+🧗	climbing	person_climbing
+🧗‍♂	climbing_man	man_climbing
+🧗‍♀	climbing_woman	woman_climbing
+🤺	person_fencing	fencer,fencing
+🏇	horse_racing
+⛷	skier	person_skiing,skiing
+🏂	snowboarder	person_snowboarding,snowboarding
+🏌	golfing	golfer,person_golfing
+🏌‍♂️	golfing_man	man_golfing
+🏌‍♀️	golfing_woman	woman_golfing
+🏄	surfer	person_surfing,surfing
+🏄‍♂	surfing_man	man_surfing
+🏄‍♀	surfing_woman	woman_surfing
+🚣	rowboat	person_rowing_boat
+🚣‍♂	rowing_man	man_rowing_boat
+🚣‍♀	rowing_woman	woman_rowing_boat
+🏊	swimmer	person_swimming,swimming
+🏊‍♂	swimming_man	man_swimming
+🏊‍♀	swimming_woman	woman_swimming
+⛹	bouncing_ball_person	person_bouncing_ball
+⛹‍♂️	basketball_man	man_bouncing_ball
+⛹‍♀️	basketball_woman	woman_bouncing_ball
+🏋	weight_lifting	person_lifting_weights,weight_lifter
+🏋‍♂️	weight_lifting_man	man_lifting_weights
+🏋‍♀️	weight_lifting_woman	woman_lifting_weights
+🚴	bicyclist	biking,person_biking
+🚴‍♂	biking_man	man_biking
+🚴‍♀	biking_woman	woman_biking
+🚵	mountain_bicyclist	mountain_biking,person_mountain_biking
+🚵‍♂	mountain_biking_man	man_mountain_biking
+🚵‍♀	mountain_biking_woman	woman_mountain_biking
+🤸	cartwheeling	person_cartwheel
+🤸‍♂	man_cartwheeling
+🤸‍♀	woman_cartwheeling
+🤼	wrestling	people_wrestling,wrestlers
+🤼‍♂	men_wrestling
+🤼‍♀	women_wrestling
+🤽	water_polo	person_playing_water_polo
+🤽‍♂	man_playing_water_polo
+🤽‍♀	woman_playing_water_polo
+🤾	handball_person	handball,person_playing_handball
+🤾‍♂	man_playing_handball
+🤾‍♀	woman_playing_handball
+🤹	juggling_person	juggler,juggling,person_juggling
+🤹‍♂	man_juggling
+🤹‍♀	woman_juggling
+🧘	lotus_position	person_in_lotus_position
+🧘‍♂	lotus_position_man	man_in_lotus_position
+🧘‍♀	lotus_position_woman	woman_in_lotus_position
+🛀	bath	person_taking_bath
+🛌	sleeping_bed	person_in_bed,sleeping_accommodation
+🧑‍🤝‍🧑	people_holding_hands
+👭	two_women_holding_hands
+👫	couple
+👬	two_men_holding_hands
+💏	couplekiss	couple_kiss
+👩‍❤‍💋‍👨	couplekiss_man_woman	kiss_mw,kiss_wm
+👨‍❤‍💋‍👨	couplekiss_man_man	kiss_mm
+👩‍❤‍💋‍👩	couplekiss_woman_woman	kiss_ww
+💑	couple_with_heart
+👩‍❤‍👨	couple_with_heart_woman_man	couple_with_heart_mw,couple_with_heart_wm
+👨‍❤‍👨	couple_with_heart_man_man	couple_with_heart_mm
+👩‍❤‍👩	couple_with_heart_woman_woman	couple_with_heart_ww
+👨‍👩‍👦	family_man_woman_boy	family_mwb
+👨‍👩‍👧	family_man_woman_girl	family_mwg
+👨‍👩‍👧‍👦	family_man_woman_girl_boy	family_mwgb
+👨‍👩‍👦‍👦	family_man_woman_boy_boy	family_mwbb
+👨‍👩‍👧‍👧	family_man_woman_girl_girl	family_mwgg
+👨‍👨‍👦	family_man_man_boy	family_mmb
+👨‍👨‍👧	family_man_man_girl	family_mmg
+👨‍👨‍👧‍👦	family_man_man_girl_boy	family_mmgb
+👨‍👨‍👦‍👦	family_man_man_boy_boy	family_mmbb
+👨‍👨‍👧‍👧	family_man_man_girl_girl	family_mmgg
+👩‍👩‍👦	family_woman_woman_boy	family_wwb
+👩‍👩‍👧	family_woman_woman_girl	family_wwg
+👩‍👩‍👧‍👦	family_woman_woman_girl_boy	family_wwgb
+👩‍👩‍👦‍👦	family_woman_woman_boy_boy	family_wwbb
+👩‍👩‍👧‍👧	family_woman_woman_girl_girl	family_wwgg
+👨‍👦	family_man_boy	family_mb
+👨‍👦‍👦	family_man_boy_boy	family_mbb
+👨‍👧	family_man_girl	family_mg
+👨‍👧‍👦	family_man_girl_boy	family_mgb
+👨‍👧‍👧	family_man_girl_girl	family_mgg
+👩‍👦	family_woman_boy	family_wb
+👩‍👦‍👦	family_woman_boy_boy	family_wbb
+👩‍👧	family_woman_girl	family_wg
+👩‍👧‍👦	family_woman_girl_boy	family_wgb
+👩‍👧‍👧	family_woman_girl_girl	family_wgg
+🗣	speaking_head
+👤	bust_in_silhouette
+👥	busts_in_silhouette
+🫂	people_hugging
+👪	family
+🧑‍🧑‍🧒	family_aac
+🧑‍🧑‍🧒‍🧒	family_aacc
+🧑‍🧒	family_aa	family_ac
+🧑‍🧒‍🧒	family_acc
+👣	footprints
+🫆	fingerprint`,
+    "animals & nature": `🐵	monkey_face
+🐒	monkey
+🦍	gorilla
+🦧	orangutan
+🐶	dog	dog_face
+🐕	dog2	dog
+🦮	guide_dog
+🐕‍🦺	service_dog
+🐩	poodle
+🐺	wolf	wolf_face
+🦊	fox_face	fox
+🦝	raccoon
+🐱	cat	cat_face
+🐈	cat2	cat
+🐈‍⬛	black_cat
+🦁	lion	lion_face
+🐯	tiger	tiger_face
+🐅	tiger2	tiger
+🐆	leopard
+🐴	horse	horse_face
+🫎	moose
+🫏	donkey
+🐎	racehorse	horse
+🦄	unicorn	unicorn_face
+🦓	zebra
+🦌	deer
+🦬	bison
+🐮	cow	cow_face
+🐂	ox
+🐃	water_buffalo
+🐄	cow2	cow
+🐷	pig	pig_face
+🐖	pig2	pig
+🐗	boar
+🐽	pig_nose
+🐏	ram
+🐑	sheep	ewe
+🐐	goat
+🐪	dromedary_camel
+🐫	camel
+🦙	llama
+🦒	giraffe
+🐘	elephant
+🦣	mammoth
+🦏	rhinoceros	rhino
+🦛	hippopotamus	hippo
+🐭	mouse	mouse_face
+🐁	mouse2	mouse
+🐀	rat
+🐹	hamster	hamster_face
+🐰	rabbit	rabbit_face
+🐇	rabbit2	rabbit
+🐿	chipmunk
+🦫	beaver
+🦔	hedgehog
+🦇	bat
+🐻	bear	bear_face
+🐻‍❄	polar_bear	polar_bear_face
+🐨	koala	koala_face
+🐼	panda_face	panda
+🦥	sloth
+🦦	otter
+🦨	skunk
+🦘	kangaroo
+🦡	badger
+🐾	feet	paw_prints
+🦃	turkey
+🐔	chicken	chicken_face
+🐓	rooster
+🐣	hatching_chick
+🐤	baby_chick
+🐥	hatched_chick
+🐦	bird	bird_face
+🐧	penguin	penguin_face
+🕊	dove
+🦅	eagle
+🦆	duck
+🦢	swan
+🦉	owl
+🦤	dodo
+🪶	feather
+🦩	flamingo
+🦚	peacock
+🦜	parrot
+🪽	wing
+🐦‍⬛	black_bird
+🪿	goose
+🐦‍🔥	phoenix
+🐸	frog	frog_face
+🐊	crocodile
+🐢	turtle
+🦎	lizard
+🐍	snake
+🐲	dragon_face
+🐉	dragon
+🦕	sauropod
+🦖	t-rex	trex
+🐳	whale	spouting_whale
+🐋	whale2	whale
+🐬	dolphin
+🫍	orca
+🦭	seal
+🐟	fish
+🐠	tropical_fish
+🐡	blowfish
+🦈	shark
+🐙	octopus
+🐚	shell
+🪸	coral
+🪼	jellyfish
+🦀	crab
+🦞	lobster
+🦐	shrimp
+🦑	squid
+🦪	oyster
+🐌	snail
+🦋	butterfly
+🐛	bug
+🐜	ant
+🐝	bee
+🪲	beetle
+🐞	lady_beetle
+🦗	cricket
+🪳	cockroach
+🕷	spider
+🕸	spider_web
+🦂	scorpion
+🦟	mosquito
+🪰	fly
+🪱	worm
+🦠	microbe
+💐	bouquet
+🌸	cherry_blossom
+💮	white_flower
+🪷	lotus
+🏵	rosette
+🌹	rose
+🥀	wilted_flower
+🌺	hibiscus
+🌻	sunflower
+🌼	blossom
+🌷	tulip
+🪻	hyacinth
+🌱	seedling
+🪴	potted_plant
+🌲	evergreen_tree
+🌳	deciduous_tree
+🌴	palm_tree
+🌵	cactus
+🌾	ear_of_rice	sheaf_of_rice
+🌿	herb
+☘	shamrock
+🍀	four_leaf_clover
+🍁	maple_leaf
+🍂	fallen_leaf
+🍃	leaves
+🪹	empty_nest	nest
+🪺	nest_with_eggs
+🍄	mushroom
+🪾	leafless_tree`,
+    "food & drink": `🍇	grapes
+🍈	melon
+🍉	watermelon
+🍊	mandarin	orange,tangerine
+🍋	lemon
+🍋‍🟩	lime
+🍌	banana
+🍍	pineapple
+🥭	mango
+🍎	apple	red_apple
+🍏	green_apple
+🍐	pear
+🍑	peach
+🍒	cherries
+🍓	strawberry
+🫐	blueberries
+🥝	kiwi_fruit	kiwi
+🍅	tomato
+🫒	olive
+🥥	coconut
+🥑	avocado
+🍆	eggplant
+🥔	potato
+🥕	carrot
+🌽	corn	ear_of_corn
+🌶	hot_pepper
+🫑	bell_pepper
+🥒	cucumber
+🥬	leafy_green
+🥦	broccoli
+🧄	garlic
+🧅	onion
+🥜	peanuts
+🫘	beans
+🌰	chestnut
+🫚	ginger_root	ginger
+🫛	pea_pod	pea
+🍄‍🟫	brown_mushroom
+🫜	root_vegetable
+🍞	bread
+🥐	croissant
+🥖	baguette_bread
+🫓	flatbread
+🥨	pretzel
+🥯	bagel
+🥞	pancakes
+🧇	waffle
+🧀	cheese
+🍖	meat_on_bone
+🍗	poultry_leg
+🥩	cut_of_meat
+🥓	bacon
+🍔	hamburger
+🍟	fries	french_fries
+🍕	pizza
+🌭	hotdog
+🥪	sandwich
+🌮	taco
+🌯	burrito
+🫔	tamale
+🥙	stuffed_flatbread
+🧆	falafel
+🥚	egg
+🍳	fried_egg	cooking
+🥘	shallow_pan_of_food
+🍲	stew	pot_of_food
+🫕	fondue
+🥣	bowl_with_spoon
+🥗	green_salad	salad
+🍿	popcorn
+🧈	butter
+🧂	salt
+🥫	canned_food
+🍱	bento	bento_box
+🍘	rice_cracker
+🍙	rice_ball
+🍚	rice	cooked_rice
+🍛	curry	curry_rice
+🍜	ramen	steaming_bowl
+🍝	spaghetti
+🍠	sweet_potato
+🍢	oden
+🍣	sushi
+🍤	fried_shrimp
+🍥	fish_cake
+🥮	moon_cake
+🍡	dango
+🥟	dumpling
+🥠	fortune_cookie
+🥡	takeout_box
+🍦	icecream	soft_serve
+🍧	shaved_ice
+🍨	ice_cream
+🍩	doughnut
+🍪	cookie
+🎂	birthday	birthday_cake
+🍰	cake	shortcake
+🧁	cupcake
+🥧	pie
+🍫	chocolate_bar
+🍬	candy
+🍭	lollipop
+🍮	custard
+🍯	honey_pot
+🍼	baby_bottle
+🥛	milk_glass	glass_of_milk,milk
+☕	coffee
+🫖	teapot
+🍵	tea
+🍶	sake
+🍾	champagne
+🍷	wine_glass
+🍸	cocktail
+🍹	tropical_drink
+🍺	beer
+🍻	beers
+🥂	clinking_glasses
+🥃	tumbler_glass	whisky
+🫗	pouring_liquid	pour
+🥤	cup_with_straw
+🧋	bubble_tea	boba_drink
+🧃	beverage_box	juice_box
+🧉	mate
+🧊	ice_cube	ice
+🥢	chopsticks
+🍽	plate_with_cutlery	fork_knife_plate
+🍴	fork_and_knife
+🥄	spoon
+🔪	hocho	knife
+🫙	jar
+🏺	amphora`,
+    "travel & places": `🌍	earth_africa	earth_europe
+🌎	earth_americas
+🌏	earth_asia
+🌐	globe_with_meridians
+🗺	world_map
+🗾	japan	japan_map
+🧭	compass
+🏔	mountain_snow
+⛰	mountain
+🛘	landslide
+🌋	volcano
+🗻	mount_fuji
+🏕	camping
+🏖	beach_umbrella	beach,beach_with_umbrella
+🏜	desert
+🏝	desert_island	island
+🏞	national_park
+🏟	stadium
+🏛	classical_building
+🏗	building_construction	construction_site
+🧱	bricks
+🪨	rock
+🪵	wood
+🛖	hut
+🏘	houses	homes
+🏚	derelict_house	house_abandoned
+🏠	house
+🏡	house_with_garden
+🏢	office
+🏣	post_office
+🏤	european_post_office
+🏥	hospital
+🏦	bank
+🏨	hotel
+🏩	love_hotel
+🏪	convenience_store
+🏫	school
+🏬	department_store
+🏭	factory
+🏯	japanese_castle
+🏰	european_castle	castle
+💒	wedding
+🗼	tokyo_tower
+🗽	statue_of_liberty
+⛪	church
+🕌	mosque
+🛕	hindu_temple
+🕍	synagogue
+⛩	shinto_shrine
+🕋	kaaba
+⛲	fountain
+⛺	tent
+🌁	foggy
+🌃	night_with_stars
+🏙	cityscape
+🌄	sunrise_over_mountains
+🌅	sunrise
+🌆	city_sunset	city_dusk
+🌇	city_sunrise	city_sunset
+🌉	bridge_at_night
+♨	hotsprings
+🎠	carousel_horse
+🛝	playground_slide	slide
+🎡	ferris_wheel
+🎢	roller_coaster
+💈	barber	barber_pole
+🎪	circus_tent
+🚂	steam_locomotive
+🚃	railway_car
+🚄	bullettrain_side
+🚅	bullettrain_front
+🚆	train2	train
+🚇	metro
+🚈	light_rail
+🚉	station
+🚊	tram
+🚝	monorail
+🚞	mountain_railway
+🚋	train	tram_car
+🚌	bus
+🚍	oncoming_bus
+🚎	trolleybus
+🚐	minibus
+🚑	ambulance
+🚒	fire_engine
+🚓	police_car
+🚔	oncoming_police_car
+🚕	taxi
+🚖	oncoming_taxi
+🚗	car	red_car
+🚘	oncoming_automobile
+🚙	blue_car	suv
+🛻	pickup_truck
+🚚	truck	delivery_truck
+🚛	articulated_lorry
+🚜	tractor
+🏎	racing_car
+🏍	motorcycle
+🛵	motor_scooter
+🦽	manual_wheelchair
+🦼	motorized_wheelchair
+🛺	auto_rickshaw
+🚲	bike	bicycle
+🛴	kick_scooter	scooter
+🛹	skateboard
+🛼	roller_skate
+🚏	busstop
+🛣	motorway
+🛤	railway_track
+🛢	oil_drum
+⛽	fuelpump
+🛞	wheel
+🚨	rotating_light
+🚥	traffic_light
+🚦	vertical_traffic_light
+🛑	stop_sign	octagonal_sign
+🚧	construction
+⚓	anchor
+🛟	ring_buoy	lifebuoy
+⛵	boat	sailboat
+🛶	canoe
+🚤	speedboat
+🛳	passenger_ship	cruise_ship
+⛴	ferry
+🛥	motor_boat	motorboat
+🚢	ship
+✈	airplane
+🛩	small_airplane
+🛫	flight_departure	airplane_departure
+🛬	flight_arrival	airplane_arriving
+🪂	parachute
+💺	seat
+🚁	helicopter
+🚟	suspension_railway
+🚠	mountain_cableway
+🚡	aerial_tramway
+🛰	artificial_satellite	satellite
+🚀	rocket
+🛸	flying_saucer
+🛎	bellhop_bell	bellhop
+🧳	luggage
+⌛	hourglass
+⏳	hourglass_flowing_sand
+⌚	watch
+⏰	alarm_clock
+⏱	stopwatch
+⏲	timer_clock
+🕰	mantelpiece_clock	clock
+🕛	clock12
+🕧	clock1230
+🕐	clock1
+🕜	clock130
+🕑	clock2
+🕝	clock230
+🕒	clock3
+🕞	clock330
+🕓	clock4
+🕟	clock430
+🕔	clock5
+🕠	clock530
+🕕	clock6
+🕡	clock630
+🕖	clock7
+🕢	clock730
+🕗	clock8
+🕣	clock830
+🕘	clock9
+🕤	clock930
+🕙	clock10
+🕥	clock1030
+🕚	clock11
+🕦	clock1130
+🌑	new_moon
+🌒	waxing_crescent_moon
+🌓	first_quarter_moon
+🌔	moon	waxing_gibbous_moon
+🌕	full_moon
+🌖	waning_gibbous_moon
+🌗	last_quarter_moon
+🌘	waning_crescent_moon
+🌙	crescent_moon
+🌚	new_moon_with_face
+🌛	first_quarter_moon_with_face
+🌜	last_quarter_moon_with_face
+🌡	thermometer
+☀	sunny	sun
+🌝	full_moon_with_face
+🌞	sun_with_face
+🪐	ringed_planet	saturn
+⭐	star
+🌟	star2	glowing_star
+🌠	stars	shooting_star
+🌌	milky_way
+☁	cloud
+⛅	partly_sunny	sun_behind_cloud
+⛈	cloud_with_lightning_and_rain	stormy,thunder_cloud_and_rain
+🌤	sun_behind_small_cloud	sunny
+🌥	sun_behind_large_cloud	cloudy
+🌦	sun_behind_rain_cloud	sun_and_rain
+🌧	cloud_with_rain	rainy
+🌨	cloud_with_snow	snowy
+🌩	cloud_with_lightning	lightning
+🌪	tornado
+🌫	fog
+🌬	wind_face	wind_blowing_face
+🌀	cyclone
+🌈	rainbow
+🌂	closed_umbrella
+☂	open_umbrella	umbrella
+☔	umbrella	umbrella_with_rain
+⛱	parasol_on_ground	beach_umbrella,umbrella_on_ground
+⚡	zap	high_voltage
+❄	snowflake
+☃	snowman_with_snow	snowman2
+⛄	snowman
+☄	comet
+🔥	fire
+💧	droplet
+🌊	ocean	water_wave`,
+    "activities": `🎃	jack_o_lantern
+🎄	christmas_tree
+🎆	fireworks
+🎇	sparkler
+🧨	firecracker
+✨	sparkles
+🎈	balloon
+🎉	tada	party,party_popper
+🎊	confetti_ball
+🎋	tanabata_tree
+🎍	bamboo
+🎎	dolls
+🎏	flags	carp_streamer
+🎐	wind_chime
+🎑	rice_scene	moon_ceremony
+🧧	red_envelope
+🎀	ribbon
+🎁	gift
+🎗	reminder_ribbon
+🎟	tickets	admission_tickets
+🎫	ticket
+🎖	medal_military	military_medal
+🏆	trophy
+🏅	medal_sports	sports_medal
+🥇	1st_place_medal	1st,first_place_medal
+🥈	2nd_place_medal	2nd,second_place_medal
+🥉	3rd_place_medal	3rd,third_place_medal
+⚽	soccer
+⚾	baseball
+🥎	softball
+🏀	basketball
+🏐	volleyball
+🏈	football
+🏉	rugby_football
+🎾	tennis
+🥏	flying_disc
+🎳	bowling
+🏏	cricket_game
+🏑	field_hockey
+🏒	ice_hockey	hockey
+🥍	lacrosse
+🏓	ping_pong
+🏸	badminton
+🥊	boxing_glove
+🥋	martial_arts_uniform
+🥅	goal_net
+⛳	golf
+⛸	ice_skate
+🎣	fishing_pole_and_fish	fishing_pole
+🤿	diving_mask
+🎽	running_shirt_with_sash	running_shirt
+🎿	ski
+🛷	sled
+🥌	curling_stone
+🎯	dart	bullseye,direct_hit
+🪀	yo_yo
+🪁	kite
+🔫	gun	pistol
+🎱	8ball	billiards
+🔮	crystal_ball
+🪄	magic_wand
+🎮	video_game	controller
+🕹	joystick
+🎰	slot_machine
+🎲	game_die
+🧩	jigsaw	puzzle_piece
+🧸	teddy_bear
+🪅	pinata
+🪩	mirror_ball	disco,disco_ball
+🪆	nesting_dolls
+♠	spades
+♥	hearts
+♦	diamonds
+♣	clubs
+♟	chess_pawn
+🃏	black_joker
+🀄	mahjong
+🎴	flower_playing_cards
+🎭	performing_arts
+🖼	framed_picture	frame_with_picture
+🎨	art	palette
+🧵	thread
+🪡	sewing_needle
+🧶	yarn
+🪢	knot`,
+    "objects": `👓	eyeglasses	glasses
+🕶	dark_sunglasses	sunglasses
+🥽	goggles
+🥼	lab_coat
+🦺	safety_vest
+👔	necktie
+👕	shirt
+👖	jeans
+🧣	scarf
+🧤	gloves
+🧥	coat
+🧦	socks
+👗	dress
+👘	kimono
+🥻	sari
+🩱	one_piece_swimsuit
+🩲	swim_brief	briefs
+🩳	shorts
+👙	bikini
+👚	womans_clothes
+🪭	folding_hand_fan	folding_fan
+👛	purse
+👜	handbag
+👝	pouch	clutch_bag
+🛍	shopping	shopping_bags
+🎒	school_satchel	backpack
+🩴	thong_sandal
+👞	mans_shoe
+👟	athletic_shoe	sneaker
+🥾	hiking_boot
+🥿	flat_shoe	womans_flat_shoe
+👠	high_heel
+👡	sandal
+🩰	ballet_shoes
+👢	boot
+🪮	hair_pick
+👑	crown
+👒	womans_hat
+🎩	tophat	top_hat
+🎓	mortar_board	graduation_cap
+🧢	billed_cap
+🪖	military_helmet
+⛑	rescue_worker_helmet	helmet_with_cross
+📿	prayer_beads
+💄	lipstick
+💍	ring
+💎	gem
+🔇	mute	no_sound
+🔈	speaker	low_volume,quiet_sound
+🔉	sound	medium_volumne
+🔊	loud_sound	high_volume
+📢	loudspeaker
+📣	mega	megaphone
+📯	postal_horn
+🔔	bell
+🔕	no_bell
+🎼	musical_score
+🎵	musical_note
+🎶	notes	musical_notes
+🎙	studio_microphone
+🎚	level_slider
+🎛	control_knobs
+🎤	microphone
+🎧	headphones
+📻	radio
+🎷	saxophone
+🎺	trumpet
+🪊	trombone
+🪗	accordion
+🎸	guitar
+🎹	musical_keyboard
+🎻	violin
+🪕	banjo
+🥁	drum
+🪘	long_drum
+🪇	maracas
+🪈	flute
+🪉	harp
+📱	iphone	android,mobile_phone
+📲	calling	mobile_phone_arrow
+☎	phone	telephone
+📞	telephone_receiver
+📟	pager
+📠	fax	fax_machine
+🔋	battery
+🪫	low_battery
+🔌	electric_plug
+💻	computer	laptop
+🖥	desktop_computer	computer
+🖨	printer
+⌨	keyboard
+🖱	computer_mouse
+🖲	trackball
+💽	minidisc	computer_disk
+💾	floppy_disk
+💿	cd	optical_disk
+📀	dvd
+🧮	abacus
+🎥	movie_camera
+🎞	film_strip	film_frames
+📽	film_projector
+🎬	clapper
+📺	tv
+📷	camera
+📸	camera_flash	camera_with_flash
+📹	video_camera
+📼	vhs	videocassette
+🔍	mag
+🔎	mag_right
+🕯	candle
+💡	bulb	light_bulb
+🔦	flashlight
+🏮	izakaya_lantern	red_paper_lantern
+🪔	diya_lamp
+📔	notebook_with_decorative_cover
+📕	closed_book
+📖	book	open_book
+📗	green_book
+📘	blue_book
+📙	orange_book
+📚	books
+📓	notebook
+📒	ledger
+📃	page_with_curl
+📜	scroll
+📄	page_facing_up
+📰	newspaper
+🗞	newspaper_roll	rolled_up_newspaper
+📑	bookmark_tabs
+🔖	bookmark
+🏷	label
+🪙	coin
+💰	moneybag
+🪎	treasure_chest
+💴	yen
+💵	dollar
+💶	euro
+💷	pound
+💸	money_with_wings
+💳	credit_card
+🧾	receipt
+💹	chart
+✉	envelope
+📧	e-mail	email
+📨	incoming_envelope
+📩	envelope_with_arrow
+📤	outbox_tray
+📥	inbox_tray
+📦	package
+📫	mailbox
+📪	mailbox_closed
+📬	mailbox_with_mail
+📭	mailbox_with_no_mail
+📮	postbox
+🗳	ballot_box
+✏	pencil2	pencil
+✒	black_nib
+🖋	fountain_pen
+🖊	pen
+🖌	paintbrush
+🖍	crayon
+📝	memo
+💼	briefcase
+📁	file_folder
+📂	open_file_folder
+🗂	card_index_dividers
+📅	date
+📆	calendar
+🗒	spiral_notepad	notepad_spiral
+🗓	spiral_calendar	calendar_spiral
+📇	card_index
+📈	chart_with_upwards_trend	chart_increasing
+📉	chart_with_downwards_trend	chart_decreasing
+📊	bar_chart
+📋	clipboard
+📌	pushpin
+📍	round_pushpin
+📎	paperclip
+🖇	paperclips
+📏	straight_ruler
+📐	triangular_ruler
+✂	scissors
+🗃	card_file_box
+🗄	file_cabinet
+🗑	wastebasket	trashcan
+🔒	lock	locked
+🔓	unlock	unlocked
+🔏	lock_with_ink_pen	locked_with_pen
+🔐	closed_lock_with_key	locked_with_key
+🔑	key
+🗝	old_key
+🔨	hammer
+🪓	axe
+⛏	pick
+⚒	hammer_and_pick
+🛠	hammer_and_wrench
+🗡	dagger
+⚔	crossed_swords
+💣	bomb
+🪃	boomerang
+🏹	bow_and_arrow
+🛡	shield
+🪚	carpentry_saw
+🔧	wrench
+🪛	screwdriver
+🔩	nut_and_bolt
+⚙	gear
+🗜	clamp	compression
+⚖	balance_scale	scales
+🦯	probing_cane	white_cane
+🔗	link
+⛓‍💥	broken_chain
+⛓	chains
+🪝	hook
+🧰	toolbox
+🧲	magnet
+🪜	ladder
+🪏	shovel
+⚗	alembic
+🧪	test_tube
+🧫	petri_dish
+🧬	dna	double_helix
+🔬	microscope
+🔭	telescope
+📡	satellite	satellite_antenna
+💉	syringe
+🩸	drop_of_blood
+💊	pill
+🩹	adhesive_bandage	bandaid
+🩼	crutch
+🩺	stethoscope
+🩻	x_ray	x-ray,xray
+🚪	door
+🛗	elevator
+🪞	mirror
+🪟	window
+🛏	bed
+🛋	couch_and_lamp
+🪑	chair
+🚽	toilet
+🪠	plunger
+🚿	shower
+🛁	bathtub
+🪤	mouse_trap
+🪒	razor
+🧴	lotion_bottle
+🧷	safety_pin
+🧹	broom
+🧺	basket
+🧻	roll_of_paper	toilet_paper
+🪣	bucket
+🧼	soap
+🫧	bubbles
+🪥	toothbrush
+🧽	sponge
+🧯	fire_extinguisher
+🛒	shopping_cart
+🚬	smoking	cigarette
+⚰	coffin
+🪦	headstone
+⚱	funeral_urn
+🧿	nazar_amulet
+🪬	hamsa
+🗿	moyai	moai
+🪧	placard
+🪪	identification_card	id_card`,
+    "symbols": `🏧	atm
+🚮	put_litter_in_its_place	litter_bin
+🚰	potable_water
+♿	wheelchair	handicapped
+🚹	mens
+🚺	womens
+🚻	restroom	bathroom
+🚼	baby_symbol
+🚾	wc	water_closet
+🛂	passport_control
+🛃	customs
+🛄	baggage_claim
+🛅	left_luggage
+⚠	warning
+🚸	children_crossing
+⛔	no_entry
+🚫	no_entry_sign
+🚳	no_bicycles
+🚭	no_smoking
+🚯	do_not_litter	no_littering
+🚱	non-potable_water
+🚷	no_pedestrians
+📵	no_mobile_phones
+🔞	underage	no_one_under_18
+☢	radioactive
+☣	biohazard
+⬆	arrow_up
+↗	arrow_upper_right
+➡	arrow_right
+↘	arrow_lower_right
+⬇	arrow_down
+↙	arrow_lower_left
+⬅	arrow_left
+↖	arrow_upper_left
+↕	arrow_up_down
+↔	left_right_arrow
+↩	leftwards_arrow_with_hook	arrow_left_hook
+↪	arrow_right_hook	rightwards_arrow_with_hook
+⤴	arrow_heading_up
+⤵	arrow_heading_down
+🔃	arrows_clockwise	clockwise
+🔄	arrows_counterclockwise	counterclockwise
+🔙	back
+🔚	end
+🔛	on
+🔜	soon
+🔝	top
+🛐	place_of_worship
+⚛	atom_symbol	atom
+🕉	om
+✡	star_of_david
+☸	wheel_of_dharma
+☯	yin_yang
+✝	latin_cross
+☦	orthodox_cross
+☪	star_and_crescent
+☮	peace_symbol	peace
+🕎	menorah
+🔯	six_pointed_star
+🪯	khanda
+♈	aries
+♉	taurus
+♊	gemini
+♋	cancer
+♌	leo
+♍	virgo
+♎	libra
+♏	scorpius
+♐	sagittarius
+♑	capricorn
+♒	aquarius
+♓	pisces
+⛎	ophiuchus
+🔀	twisted_rightwards_arrows	shuffle
+🔁	repeat
+🔂	repeat_one
+▶	arrow_forward	play
+⏩	fast_forward
+⏭	next_track_button	next_track
+⏯	play_or_pause_button	play_pause
+◀	arrow_backward	reverse
+⏪	rewind	fast_reverse
+⏮	previous_track_button	previous_track
+🔼	arrow_up_small	up
+⏫	arrow_double_up	fast_up
+🔽	arrow_down_small	down
+⏬	arrow_double_down	fast_down
+⏸	pause_button	pause
+⏹	stop_button	stop
+⏺	record_button	record
+⏏	eject_button	eject
+🎦	cinema
+🔅	low_brightness	dim_button
+🔆	high_brightness	bright_button
+📶	signal_strength	antenna_bars
+🛜	wireless
+📳	vibration_mode
+📴	mobile_phone_off
+♀	female_sign	female
+♂	male_sign	male
+⚧	transgender_symbol
+✖	heavy_multiplication_x	multiplication,multiply
+➕	heavy_plus_sign	plus
+➖	heavy_minus_sign	minus
+➗	heavy_division_sign	divide,division
+🟰	heavy_equals_sign
+♾	infinity
+‼	bangbang	double_exclamation
+⁉	interrobang	exclamation_question
+❓	question
+❔	grey_question	white_question
+❕	grey_exclamation	white_exclamation
+❗	exclamation
+〰	wavy_dash
+💱	currency_exchange
+💲	heavy_dollar_sign
+⚕	medical_symbol	medical
+♻	recycle	recycling_symbol
+⚜	fleur_de_lis	fleur-de-lis
+🔱	trident
+📛	name_badge
+🔰	beginner
+⭕	o	hollow_red_circle,red_o
+✅	white_check_mark	check_mark_button
+☑	ballot_box_with_check
+✔	heavy_check_mark	check_mark
+❌	x	cross_mark
+❎	negative_squared_cross_mark	cross_mark_button
+➰	curly_loop
+➿	loop	double_curly_loop
+〽	part_alternation_mark
+✳	eight_spoked_asterisk
+✴	eight_pointed_black_star
+❇	sparkle
+©	copyright
+®	registered
+™	tm	trade_mark
+🫟	splatter
+#⃣	hash	number_sign
+*⃣	asterisk
+0⃣	zero
+1⃣	one
+2⃣	two
+3⃣	three
+4⃣	four
+5⃣	five
+6⃣	six
+7⃣	seven
+8⃣	eight
+9⃣	nine
+🔟	keycap_ten	ten
+🔠	capital_abcd
+🔡	abcd
+🔢	1234
+🔣	symbols
+🔤	abc
+🅰	a	a_blood
+🆎	ab	ab_blood
+🅱	b	b_blood
+🆑	cl
+🆒	cool
+🆓	free
+ℹ	information_source	info
+🆔	id
+Ⓜ	m
+🆕	new
+🆖	ng
+🅾	o2	o,o_blood
+🆗	ok
+🅿	parking
+🆘	sos
+🆙	up	up2
+🆚	vs
+🈁	koko	ja_here
+🈂	sa	ja_service_charge
+🈷	u6708	ja_monthly_amount
+🈶	u6709	ja_not_free_of_carge
+🈯	u6307	ja_reserved
+🉐	ideograph_advantage	ja_bargain
+🈹	u5272	ja_discount
+🈚	u7121	ja_free_of_charge
+🈲	u7981	ja_prohibited
+🉑	accept	ja_acceptable
+🈸	u7533	ja_application
+🈴	u5408	ja_passing_grade
+🈳	u7a7a	ja_vacancy
+㊗	congratulations	ja_congratulations
+㊙	secret	ja_secret
+🈺	u55b6	ja_open_for_business
+🈵	u6e80	ja_no_vacancy
+🔴	red_circle
+🟠	orange_circle
+🟡	yellow_circle
+🟢	green_circle
+🔵	large_blue_circle	blue_circle
+🟣	purple_circle
+🟤	brown_circle
+⚫	black_circle
+⚪	white_circle
+🟥	red_square
+🟧	orange_square
+🟨	yellow_square
+🟩	green_square
+🟦	blue_square
+🟪	purple_square
+🟫	brown_square
+⬛	black_large_square
+⬜	white_large_square
+◼	black_medium_square
+◻	white_medium_square
+◾	black_medium_small_square
+◽	white_medium_small_square
+▪	black_small_square
+▫	white_small_square
+🔶	large_orange_diamond
+🔷	large_blue_diamond
+🔸	small_orange_diamond
+🔹	small_blue_diamond
+🔺	small_red_triangle
+🔻	small_red_triangle_down
+💠	diamond_shape_with_a_dot_inside	diamond_with_a_dot
+🔘	radio_button
+🔳	white_square_button
+🔲	black_square_button`,
+    "flags": `🏁	checkered_flag
+🚩	triangular_flag_on_post	triangular_flag
+🎌	crossed_flags
+🏴	black_flag
+🏳	white_flag
+🏳‍🌈	rainbow_flag
+🏳‍⚧️	transgender_flag
+🏴‍☠	pirate_flag	jolly_roger
+🇦🇨	ascension_island	flag_ac
+🇦🇩	andorra	flag_ad
+🇦🇪	united_arab_emirates	flag_ae
+🇦🇫	afghanistan	flag_af
+🇦🇬	antigua_barbuda	flag_ag
+🇦🇮	anguilla	flag_ai
+🇦🇱	albania	flag_al
+🇦🇲	armenia	flag_am
+🇦🇴	angola	flag_ao
+🇦🇶	antarctica	flag_aq
+🇦🇷	argentina	flag_ar
+🇦🇸	american_samoa	flag_as
+🇦🇹	austria	flag_at
+🇦🇺	australia	flag_au
+🇦🇼	aruba	flag_aw
+🇦🇽	aland_islands	flag_ax
+🇦🇿	azerbaijan	flag_az
+🇧🇦	bosnia_herzegovina	flag_ba
+🇧🇧	barbados	flag_bb
+🇧🇩	bangladesh	flag_bd
+🇧🇪	belgium	flag_be
+🇧🇫	burkina_faso	flag_bf
+🇧🇬	bulgaria	flag_bg
+🇧🇭	bahrain	flag_bh
+🇧🇮	burundi	flag_bi
+🇧🇯	benin	flag_bj
+🇧🇱	st_barthelemy	flag_bl
+🇧🇲	bermuda	flag_bm
+🇧🇳	brunei	flag_bn
+🇧🇴	bolivia	flag_bo
+🇧🇶	caribbean_netherlands	flag_bq
+🇧🇷	brazil	flag_br
+🇧🇸	bahamas	flag_bs
+🇧🇹	bhutan	flag_bt
+🇧🇻	bouvet_island	flag_bv
+🇧🇼	botswana	flag_bw
+🇧🇾	belarus	flag_by
+🇧🇿	belize	flag_bz
+🇨🇦	canada	flag_ca
+🇨🇨	cocos_islands	flag_cc
+🇨🇩	congo_kinshasa	flag_cd
+🇨🇫	central_african_republic	flag_cf
+🇨🇬	congo_brazzaville	flag_cg
+🇨🇭	switzerland	flag_ch
+🇨🇮	cote_divoire	flag_ci
+🇨🇰	cook_islands	flag_ck
+🇨🇱	chile	flag_cl
+🇨🇲	cameroon	flag_cm
+🇨🇳	cn	china,flag_cn
+🇨🇴	colombia	flag_co
+🇨🇵	clipperton_island	flag_cp
+🇨🇶	flag_cq	sark
+🇨🇷	costa_rica	flag_cr
+🇨🇺	cuba	flag_cu
+🇨🇻	cape_verde	flag_cv
+🇨🇼	curacao	flag_cw
+🇨🇽	christmas_island	flag_cx
+🇨🇾	cyprus	flag_cy
+🇨🇿	czech_republic	czechia,flag_cz
+🇩🇪	de	flag_de,germany
+🇩🇬	diego_garcia	flag_dg
+🇩🇯	djibouti	flag_dj
+🇩🇰	denmark	flag_dk
+🇩🇲	dominica	flag_dm
+🇩🇴	dominican_republic	flag_do
+🇩🇿	algeria	flag_dz
+🇪🇦	ceuta_melilla	flag_ea
+🇪🇨	ecuador	flag_ec
+🇪🇪	estonia	flag_ee
+🇪🇬	egypt	flag_eg
+🇪🇭	western_sahara	flag_eh
+🇪🇷	eritrea	flag_er
+🇪🇸	es	flag_es,spain
+🇪🇹	ethiopia	flag_et
+🇪🇺	eu	european_union,flag_eu
+🇫🇮	finland	flag_fi
+🇫🇯	fiji	flag_fj
+🇫🇰	falkland_islands	flag_fk
+🇫🇲	micronesia	flag_fm
+🇫🇴	faroe_islands	flag_fo
+🇫🇷	fr	flag_fr,france
+🇬🇦	gabon	flag_ga
+🇬🇧	gb	flag_gb,uk,united_kingdom
+🇬🇩	grenada	flag_gd
+🇬🇪	georgia	flag_ge
+🇬🇫	french_guiana	flag_gf
+🇬🇬	guernsey	flag_gg
+🇬🇭	ghana	flag_gh
+🇬🇮	gibraltar	flag_gi
+🇬🇱	greenland	flag_gl
+🇬🇲	gambia	flag_gm
+🇬🇳	guinea	flag_gn
+🇬🇵	guadeloupe	flag_gp
+🇬🇶	equatorial_guinea	flag_gq
+🇬🇷	greece	flag_gr
+🇬🇸	south_georgia_south_sandwich_islands	flag_gs
+🇬🇹	guatemala	flag_gt
+🇬🇺	guam	flag_gu
+🇬🇼	guinea_bissau	flag_gw
+🇬🇾	guyana	flag_gy
+🇭🇰	hong_kong	flag_hk
+🇭🇲	heard_mcdonald_islands	flag_hm
+🇭🇳	honduras	flag_hn
+🇭🇷	croatia	flag_hr
+🇭🇹	haiti	flag_ht
+🇭🇺	hungary	flag_hu
+🇮🇨	canary_islands	flag_ic
+🇮🇩	indonesia	flag_id
+🇮🇪	ireland	flag_ie
+🇮🇱	israel	flag_il
+🇮🇲	isle_of_man	flag_im
+🇮🇳	india	flag_in
+🇮🇴	british_indian_ocean_territory	flag_io
+🇮🇶	iraq	flag_iq
+🇮🇷	iran	flag_ir
+🇮🇸	iceland	flag_is
+🇮🇹	it	flag_it,italy
+🇯🇪	jersey	flag_je
+🇯🇲	jamaica	flag_jm
+🇯🇴	jordan	flag_jo
+🇯🇵	jp	flag_jp,japan
+🇰🇪	kenya	flag_ke
+🇰🇬	kyrgyzstan	flag_kg
+🇰🇭	cambodia	flag_kh
+🇰🇮	kiribati	flag_ki
+🇰🇲	comoros	flag_km
+🇰🇳	st_kitts_nevis	flag_kn
+🇰🇵	north_korea	flag_kp
+🇰🇷	kr	flag_kr,south_korea
+🇰🇼	kuwait	flag_kw
+🇰🇾	cayman_islands	flag_ky
+🇰🇿	kazakhstan	flag_kz
+🇱🇦	laos	flag_la
+🇱🇧	lebanon	flag_lb
+🇱🇨	st_lucia	flag_lc
+🇱🇮	liechtenstein	flag_li
+🇱🇰	sri_lanka	flag_lk
+🇱🇷	liberia	flag_lr
+🇱🇸	lesotho	flag_ls
+🇱🇹	lithuania	flag_lt
+🇱🇺	luxembourg	flag_lu
+🇱🇻	latvia	flag_lv
+🇱🇾	libya	flag_ly
+🇲🇦	morocco	flag_ma
+🇲🇨	monaco	flag_mc
+🇲🇩	moldova	flag_md
+🇲🇪	montenegro	flag_me
+🇲🇫	st_martin	flag_mf
+🇲🇬	madagascar	flag_mg
+🇲🇭	marshall_islands	flag_mh
+🇲🇰	macedonia	flag_mk
+🇲🇱	mali	flag_ml
+🇲🇲	myanmar	burma,flag_mm
+🇲🇳	mongolia	flag_mn
+🇲🇴	macau	flag_mo,macao
+🇲🇵	northern_mariana_islands	flag_mp
+🇲🇶	martinique	flag_mq
+🇲🇷	mauritania	flag_mr
+🇲🇸	montserrat	flag_ms
+🇲🇹	malta	flag_mt
+🇲🇺	mauritius	flag_mu
+🇲🇻	maldives	flag_mv
+🇲🇼	malawi	flag_mw
+🇲🇽	mexico	flag_mx
+🇲🇾	malaysia	flag_my
+🇲🇿	mozambique	flag_mz
+🇳🇦	namibia	flag_na
+🇳🇨	new_caledonia	flag_nc
+🇳🇪	niger	flag_ne
+🇳🇫	norfolk_island	flag_nf
+🇳🇬	nigeria	flag_ng
+🇳🇮	nicaragua	flag_ni
+🇳🇱	netherlands	flag_nl
+🇳🇴	norway	flag_no
+🇳🇵	nepal	flag_np
+🇳🇷	nauru	flag_nr
+🇳🇺	niue	flag_nu
+🇳🇿	new_zealand	flag_nz
+🇴🇲	oman	flag_om
+🇵🇦	panama	flag_pa
+🇵🇪	peru	flag_pe
+🇵🇫	french_polynesia	flag_pf
+🇵🇬	papua_new_guinea	flag_pg
+🇵🇭	philippines	flag_ph
+🇵🇰	pakistan	flag_pk
+🇵🇱	poland	flag_pl
+🇵🇲	st_pierre_miquelon	flag_pm
+🇵🇳	pitcairn_islands	flag_pn
+🇵🇷	puerto_rico	flag_pr
+🇵🇸	palestinian_territories	flag_ps
+🇵🇹	portugal	flag_pt
+🇵🇼	palau	flag_pw
+🇵🇾	paraguay	flag_py
+🇶🇦	qatar	flag_qa
+🇷🇪	reunion	flag_re
+🇷🇴	romania	flag_ro
+🇷🇸	serbia	flag_rs
+🇷🇺	ru	flag_ru,russia
+🇷🇼	rwanda	flag_rw
+🇸🇦	saudi_arabia	flag_sa
+🇸🇧	solomon_islands	flag_sb
+🇸🇨	seychelles	flag_sc
+🇸🇩	sudan	flag_sd
+🇸🇪	sweden	flag_se
+🇸🇬	singapore	flag_sg
+🇸🇭	st_helena	flag_sh
+🇸🇮	slovenia	flag_si
+🇸🇯	svalbard_jan_mayen	flag_sj
+🇸🇰	slovakia	flag_sk
+🇸🇱	sierra_leone	flag_sl
+🇸🇲	san_marino	flag_sm
+🇸🇳	senegal	flag_sn
+🇸🇴	somalia	flag_so
+🇸🇷	suriname	flag_sr
+🇸🇸	south_sudan	flag_ss
+🇸🇹	sao_tome_principe	flag_st
+🇸🇻	el_salvador	flag_sv
+🇸🇽	sint_maarten	flag_sx
+🇸🇾	syria	flag_sy
+🇸🇿	swaziland	eswatini,flag_sz
+🇹🇦	tristan_da_cunha	flag_ta
+🇹🇨	turks_caicos_islands	flag_tc
+🇹🇩	chad	flag_td
+🇹🇫	french_southern_territories	flag_tf
+🇹🇬	togo	flag_tg
+🇹🇭	thailand	flag_th
+🇹🇯	tajikistan	flag_tj
+🇹🇰	tokelau	flag_tk
+🇹🇱	timor_leste	flag_tl
+🇹🇲	turkmenistan	flag_tm
+🇹🇳	tunisia	flag_tn
+🇹🇴	tonga	flag_to
+🇹🇷	tr	flag_tr,turkey_tr
+🇹🇹	trinidad_tobago	flag_tt
+🇹🇻	tuvalu	flag_tv
+🇹🇼	taiwan	flag_tw
+🇹🇿	tanzania	flag_tz
+🇺🇦	ukraine	flag_ua
+🇺🇬	uganda	flag_ug
+🇺🇲	us_outlying_islands	flag_um
+🇺🇳	united_nations	flag_un,un
+🇺🇸	us	flag_us,united_states,usa
+🇺🇾	uruguay	flag_uy
+🇺🇿	uzbekistan	flag_uz
+🇻🇦	vatican_city	flag_va
+🇻🇨	st_vincent_grenadines	flag_vc
+🇻🇪	venezuela	flag_ve
+🇻🇬	british_virgin_islands	flag_vg
+🇻🇮	us_virgin_islands	flag_vi
+🇻🇳	vietnam	flag_vn
+🇻🇺	vanuatu	flag_vu
+🇼🇫	wallis_futuna	flag_wf
+🇼🇸	samoa	flag_ws
+🇽🇰	kosovo	flag_xk
+🇾🇪	yemen	flag_ye
+🇾🇹	mayotte	flag_yt
+🇿🇦	south_africa	flag_za
+🇿🇲	zambia	flag_zm
+🇿🇼	zimbabwe	flag_zw
+🏴󠁧󠁢󠁥󠁮󠁧󠁿	england	flag_gbeng
+🏴󠁧󠁢󠁳󠁣󠁴󠁿	scotland	flag_gbsct
+🏴󠁧󠁢󠁷󠁬󠁳󠁿	wales	flag_gbwls`
+  };
+  var ZED_EMOJIS = `zed_pack	zp	/items/zed_pack.webp
+zed_city	zc	/items/zc.webp
+tape		/items/craft_tape.webp
+barley		/items/barley.webp
+dirty_water		/items/dirty_water.webp
+rock		/items/craft_rock.webp
+barricade		/items/barricade.webp
+barley_seeds		/items/barley_seeds.webp
+water		/items/water.webp
+cloth		/items/cloth.webp
+zed_juice		/items/zed_juice.webp
+nails		/items/craft_nails.webp
+brick		/items/brick.webp
+unrefined_plastic		/items/unrefined_plastic.webp
+car_parts		/items/car_parts.webp
+empty_fuel_container		/items/empty_fuel_container.webp
+fuel_container		/items/fuel_container.webp
+defense_kit		/items/defense_kit.webp
+oil		/items/oil.webp
+cement		/items/cement.webp
+hide		/items/hide.webp
+quartz		/items/quartz.webp
+rebar		/items/rebar.webp
+silicon		/items/silicon.webp
+alloy_bar		/items/alloy_bar.webp
+thread		/items/thread.webp
+fuel		/items/fuel.webp
+amber		/items/amber.webp
+tin_plate		/items/tin_plate.webp
+double_lining		/items/double_lining.webp
+reinforced_lining		/items/reinforced_lining.webp
+nimble_lining		/items/nimble_lining.webp
+light_lining		/items/light_lining.webp
+accuracy_kit		/items/accuracy_kit.webp
+damage_kit		/items/damage_kit.webp
+log		/items/craft_log.webp
+scrapnote		/items/scrapnote.webp
+bolts		/items/bolts.webp
+ectoplasm		/items/ectoplasm.webp
+cross_necklace		/items/cross_necklace.webp
+demon_stone		/items/demon_stone.webp
+building_hammer		/items/building_hammer.webp
+bauble		/items/bauble.webp
+dreidel		/items/dreidel.webp
+seasonal_gift		/items/seasonal_gift.webp
+snowball		/items/snowball.webp
+solstice_lantern		/items/solstice_lantern.webp
+wrapping_paper		/items/wrapping_paper.webp
+reinforced_pane		/items/reinforced_pane.webp
+regal_fabric		/items/regal_fabric.webp
+survivors_journal_old		/items/survivors_journal_old.webp
+survivors_journal_modern		/items/survivors_journal_modern.webp
+survivors_journal_military		/items/survivors_journal_military.webp
+survivors_journal_free		/items/survivors_journal_free.webp
+survivors_prisoner		/items/survivors_prisoner.webp
+survivors_hiking_magazine		/items/survivors_hiking_magazine.webp
+survivors_science_magazine		/items/survivors_science_magazine.webp
+survivors_business_magazine		/items/survivors_business_magazine.webp
+wire		/items/craft_wire.webp
+rope		/items/craft_rope.webp
+scrap		/items/craft_scrap.webp
+explosives		/items/explosives.webp
+coal		/items/coal.webp
+electrical_components		/items/electrical_components.webp
+salvaged_tech		/items/salvaged_tech.webp
+computer_board		/items/computer_board.webp
+broken_radio		/items/broken_radio.webp
+broken_remote		/items/broken_remote.webp
+broken_screen		/items/broken_screen.webp
+automation_arm		/items/automation_arm.webp
+serum		/items/serum.webp
+plastic		/items/plastic.webp
+gears		/items/gears.webp
+gun_powder		/items/gun_powder.webp
+planks		/items/craft_planks.webp
+reclaimed_components		/items/reclaimed_components.webp
+bone_offering		/items/bone_offering.webp
+iron_bar		/items/iron_bar.webp
+crystal_water		/items/crystal_water.webp
+sand		/items/sand.webp
+advanced_tools		/items/advanced_tools.webp
+steel		/items/steel.webp
+tarp		/items/tarp.webp
+iron_ore		/items/iron_ore.webp
+flux		/items/flux.webp
+tincture		/items/tincture.webp
+mechanic_wrench		/items/mechanic_wrench.webp
+simple_ammo		/items/simple_ammo.webp
+shotgun_slug		/items/shotgun_slug.webp
+rifle_ammo		/items/rifle_ammo.webp
+pistol_ammo		/items/pistol_ammo.webp
+ammo_arrows		/items/ammo_arrows.webp
+bass		/items/bass.webp
+perch		/items/perch.webp
+carp		/items/carp.webp
+barnaclefish		/items/barnaclefish.webp
+angelfish		/items/angelfish.webp
+rockfish		/items/rockfish.webp
+sandfish		/items/sandfish.webp`;
+
+  // src/emoji.js
+  var CATEGORY_DEFS = [
+    { key: "recent", label: "Recently used", icon: "fas fa-history" },
+    { key: "zed city", label: "Zed City", img: "/icons/favicon.svg" },
+    { key: "people & body", label: "Smileys & people", icon: "fas fa-smile-beam" },
+    { key: "animals & nature", label: "Animals & nature", icon: "fas fa-leaf" },
+    { key: "food & drink", label: "Food & drink", icon: "fas fa-hamburger" },
+    { key: "activities", label: "Activities", icon: "fas fa-basketball-ball" },
+    { key: "travel & places", label: "Travel & places", icon: "fas fa-car-side" },
+    { key: "objects", label: "Objects", icon: "fas fa-lightbulb" },
+    { key: "symbols", label: "Symbols", icon: "fas fa-heart" },
+    { key: "flags", label: "Flags", icon: "fas fa-flag" },
+    { key: "misc", label: "Misc", icon: "fas fa-puzzle-piece" }
+  ];
+  var STANDARD_MAP = null;
+  var ZED_MAP = null;
+  var GROUP_ITEMS = null;
+  var FLAG_NAMES = null;
+  var FLAG_RE = null;
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function parse() {
+    if (STANDARD_MAP) return;
+    STANDARD_MAP = /* @__PURE__ */ new Map();
+    ZED_MAP = /* @__PURE__ */ new Map();
+    GROUP_ITEMS = /* @__PURE__ */ new Map();
+    FLAG_NAMES = /* @__PURE__ */ new Map();
+    for (const [group, block] of Object.entries(EMOJI_GROUPS)) {
+      const items = [];
+      for (const line of block.split("\n")) {
+        if (!line) continue;
+        const [emoji, name, aliasCsv] = line.split("	");
+        if (!emoji || !name) continue;
+        const aliases = aliasCsv ? aliasCsv.split(",") : [];
+        items.push({ emoji, name, aliases });
+        STANDARD_MAP.set(name.toLowerCase(), { name, emoji });
+        for (const alias of aliases) STANDARD_MAP.set(alias.toLowerCase(), { name, emoji });
+        if (group === "flags" && !FLAG_NAMES.has(emoji)) FLAG_NAMES.set(emoji, name);
+      }
+      GROUP_ITEMS.set(group, items);
+    }
+    const zedItems = [];
+    for (const line of ZED_EMOJIS.split("\n")) {
+      if (!line) continue;
+      const [name, aliasCsv, src] = line.split("	");
+      if (!name || !src) continue;
+      const aliases = aliasCsv ? aliasCsv.split(",") : [];
+      zedItems.push({ name, src, aliases });
+      ZED_MAP.set(name.toLowerCase(), { name, src });
+      for (const alias of aliases) ZED_MAP.set(alias.toLowerCase(), { name, src });
+    }
+    GROUP_ITEMS.set("zed city", zedItems);
+    if (FLAG_NAMES.size) {
+      const alternatives = [...FLAG_NAMES.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp);
+      FLAG_RE = new RegExp(alternatives.join("|"), "g");
+    }
+  }
+  function emojiCategories() {
+    parse();
+    return CATEGORY_DEFS.map((c) => ({ ...c, items: c.key === "recent" ? [] : GROUP_ITEMS.get(c.key) || [] }));
+  }
+  function findEmoji(name) {
+    parse();
+    const key = String(name ?? "").trim().replace(/^:+|:+$/g, "").toLowerCase();
+    if (!key) return null;
+    return STANDARD_MAP.get(key) || ZED_MAP.get(key) || null;
+  }
+  function normalizeQuery(s) {
+    return String(s ?? "").trim().replace(/^:+/, "").toLowerCase().replace(/[_-]/g, " ").trim();
+  }
+  function normalizeName(s) {
+    return s.toLowerCase().replace(/[_-]/g, " ");
+  }
+  function searchEmoji(query, limit = 60) {
+    parse();
+    const q = normalizeQuery(query);
+    if (!q) return [];
+    const ranked = [];
+    for (const items of GROUP_ITEMS.values()) {
+      for (const item of items) {
+        const name = normalizeName(item.name);
+        let rank;
+        if (name === q) rank = 0;
+        else if (name.startsWith(q)) rank = 1;
+        else if (item.aliases.some((a) => normalizeName(a).startsWith(q))) rank = 2;
+        else if (name.includes(q) || item.aliases.some((a) => normalizeName(a).includes(q))) rank = 3;
+        else continue;
+        ranked.push({ rank, item });
+      }
+    }
+    ranked.sort((a, b) => a.rank - b.rank);
+    return ranked.slice(0, limit).map((r) => r.item);
+  }
+  function flagImageUrl(emoji) {
+    const codePoints = [...String(emoji)].map((ch) => ch.codePointAt(0).toString(16)).join("-");
+    const url = `https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/${codePoints}.png`;
+    return `https://cdn.zed.city/?url=${encodeURIComponent(url)}`;
+  }
+  function isFlag(emoji) {
+    parse();
+    return FLAG_NAMES.has(emoji);
+  }
+  var SHORTCODE_RE = /:([a-z0-9_+-]+):/gi;
+  function substituteShortcodes(text) {
+    const parts = [];
+    let buf = "";
+    let last = 0;
+    SHORTCODE_RE.lastIndex = 0;
+    let m;
+    while (m = SHORTCODE_RE.exec(text)) {
+      buf += text.slice(last, m.index);
+      const rec = findEmoji(m[1]);
+      if (rec && rec.src) {
+        if (buf) parts.push({ type: "text", text: buf });
+        buf = "";
+        parts.push({ type: "emoji", name: rec.name, src: rec.src });
+      } else if (rec && rec.emoji) {
+        buf += rec.emoji;
+      } else {
+        buf += m[0];
+      }
+      last = m.index + m[0].length;
+    }
+    buf += text.slice(last);
+    if (buf || parts.length === 0) parts.push({ type: "text", text: buf });
+    return parts;
+  }
+  function splitFlags(text) {
+    parse();
+    if (!FLAG_RE) return [{ type: "text", text }];
+    const parts = [];
+    let last = 0;
+    FLAG_RE.lastIndex = 0;
+    let m;
+    while (m = FLAG_RE.exec(text)) {
+      if (m.index > last) parts.push({ type: "text", text: text.slice(last, m.index) });
+      const emoji = m[0];
+      parts.push({ type: "emoji", name: FLAG_NAMES.get(emoji), src: flagImageUrl(emoji), emoji });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length || parts.length === 0) parts.push({ type: "text", text: text.slice(last) });
+    return parts;
+  }
+  function emojiParts(text) {
+    const out = [];
+    for (const part of substituteShortcodes(text)) {
+      if (part.type === "text") out.push(...splitFlags(part.text));
+      else out.push(part);
+    }
+    return out;
+  }
+
   // src/mail.js
   var GROUP_WINDOW_MS = 9e5;
   var flag = (v) => v === true || Number(v) > 0;
@@ -665,8 +2906,13 @@
       last = m.index + m[0].length;
     }
     if (last < s.length || raw.length === 0) raw.push({ type: "text", text: s.slice(last) });
-    const parts = [];
+    const expanded = [];
     for (const p of raw) {
+      if (p.type === "text") expanded.push(...emojiParts(p.text));
+      else expanded.push(p);
+    }
+    const parts = [];
+    for (const p of expanded) {
       if (p.type === "text" && p.text === "") continue;
       const top = parts[parts.length - 1];
       if (p.type === "text" && top && top.type === "text") top.text += p.text;
@@ -675,7 +2921,7 @@
     return parts.length ? parts : [{ type: "text", text: "" }];
   }
   function previewText(text) {
-    const s = messageParts(text).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.text).join("");
+    const s = messageParts(text).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.type === "emoji" ? p.emoji || `:${p.name}:` : p.text).join("");
     return s.replace(/\s+/g, " ").trim();
   }
   function normalizeMessage(raw) {
@@ -1974,6 +4220,107 @@
     return { el, open, close, toggle, destroy };
   }
 
+  // src/ui/emoji-picker.js
+  function createEmojiPicker({ doc = document, storage, onPick } = {}) {
+    const categories = emojiCategories();
+    let opened = false;
+    let activeKey = "people & body";
+    const searchInput = h("input", { class: "zcf-em-search", type: "text", placeholder: "Search emoji…", "aria-label": "Search emoji" });
+    const tabsRow = h("div", { class: "zcf-em-tabs" });
+    const grid = h("div", { class: "zcf-em-grid" });
+    const el = h("div", { class: "zcf-empanel", hidden: true }, searchInput, tabsRow, grid);
+    function recentItems() {
+      return readGameRecentEmojis(storage).map((name) => findEmoji(name)).filter(Boolean);
+    }
+    function defaultCategory() {
+      return recentItems().length ? "recent" : "people & body";
+    }
+    function handlePick(item) {
+      const picked = item.src ? { name: item.name, src: item.src } : isFlag(item.emoji) ? { name: item.name, emoji: item.emoji, src: flagImageUrl(item.emoji) } : { name: item.name, emoji: item.emoji };
+      rememberGameRecentEmoji(storage, item.name);
+      onPick(picked);
+      close();
+    }
+    function itemButton(item) {
+      const flag2 = typeof item.emoji === "string" && isFlag(item.emoji);
+      const btn = h(
+        "button",
+        { class: "zcf-em-btn", type: "button", title: `:${item.name}:` },
+        item.src || flag2 ? h("img", { class: "zcf-em-img", src: item.src || flagImageUrl(item.emoji), alt: "", draggable: "false", loading: "lazy" }) : item.emoji
+      );
+      btn.addEventListener("click", safe("emoji-picker-pick", () => handlePick(item)));
+      return btn;
+    }
+    function renderGrid() {
+      clear(grid);
+      const query = searchInput.value.trim();
+      const items = query ? searchEmoji(query) : activeKey === "recent" ? recentItems() : (categories.find((c) => c.key === activeKey) || {}).items || [];
+      if (!items.length) {
+        grid.appendChild(h("div", { class: "zcf-em-empty" }, query ? "No emoji found." : activeKey === "recent" ? "No recent emoji yet." : "No emoji here."));
+        return;
+      }
+      for (const item of items) grid.appendChild(itemButton(item));
+    }
+    function updateTabs() {
+      const searching = !!searchInput.value.trim();
+      for (const [key, btn] of tabButtons) btn.classList.toggle("zcf-active", !searching && key === activeKey);
+    }
+    function selectCategory(key) {
+      activeKey = key;
+      searchInput.value = "";
+      updateTabs();
+      renderGrid();
+    }
+    const tabButtons = /* @__PURE__ */ new Map();
+    for (const cat of categories) {
+      const iconEl = cat.img ? h("img", { class: "zcf-em-tab-icon", src: cat.img, alt: "" }) : h("i", { class: cat.icon, "aria-hidden": "true" });
+      const btn = h("button", { class: "zcf-mini zcf-em-tab", type: "button", title: cat.label, "aria-label": cat.label }, iconEl);
+      btn.addEventListener("click", safe("emoji-picker-tab", () => selectCategory(cat.key)));
+      tabsRow.appendChild(btn);
+      tabButtons.set(cat.key, btn);
+    }
+    searchInput.addEventListener("input", safe("emoji-picker-search", () => {
+      updateTabs();
+      renderGrid();
+    }));
+    const onDocKeydown = safe("emoji-picker-keydown", (e) => {
+      if (opened && e.key === "Escape") close();
+    });
+    doc.addEventListener("keydown", onDocKeydown);
+    function open() {
+      if (opened) return;
+      opened = true;
+      el.hidden = false;
+      searchInput.value = "";
+      activeKey = defaultCategory();
+      updateTabs();
+      renderGrid();
+    }
+    function close() {
+      if (!opened) return;
+      opened = false;
+      el.hidden = true;
+    }
+    function toggle() {
+      if (opened) close();
+      else open();
+    }
+    function destroy() {
+      close();
+      doc.removeEventListener("keydown", onDocKeydown);
+    }
+    return {
+      el,
+      open,
+      close,
+      toggle,
+      get isOpen() {
+        return opened;
+      },
+      destroy
+    };
+  }
+
   // src/ui/dm-window.js
   var BUSY_TEXT = {
     fight: "Mail is unavailable while you are in a fight.",
@@ -1982,7 +4329,7 @@
     offline: "Mail is unavailable while the game is offline."
   };
   function createDmWindow(services, userId) {
-    const { store, actions, conversations, presence, router, myId, myName, fetchImpl } = services;
+    const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -2003,6 +4350,7 @@
     const scroller = h("div", { class: "zcf-scroll" }, loader, log, pendingEl);
     const newChip = h("button", { class: "zcf-newchip", type: "button", hidden: true }, "New messages ↓");
     const input = h("textarea", { class: "zcf-input zcf-compose", rows: 1, placeholder: "Message…", "aria-label": "Message" });
+    const emojiBtn = h("button", { class: "zcf-emojibtn", type: "button", title: "Insert an emoji", "aria-label": "Insert an emoji", "aria-expanded": "false" }, h("i", { class: "far fa-smile", "aria-hidden": "true" }));
     const gifBtn = h("button", { class: "zcf-gifbtn", type: "button", title: "Send a GIF", "aria-label": "Send a GIF", "aria-expanded": "false" }, "GIF");
     const sendBtn = h("button", { class: "zcf-send", type: "button" }, "Send");
     const gifPicker = createGifPicker({
@@ -2015,12 +4363,31 @@
         conv.send(`![${title2 || "GIF"}](${url})`);
       }
     });
-    const composer = h("div", { class: "zcf-composer" }, input, gifBtn, sendBtn);
-    const body = h("div", { class: "chat-content zcf-body zcf-dm-body" }, notice, scroller, newChip, gifPicker.el, composer);
+    const emojiPicker = createEmojiPicker({
+      doc: document,
+      storage,
+      onPick: (picked) => {
+        emojiBtn.setAttribute("aria-expanded", "false");
+        insertAtCaret(picked.src ? `:${picked.name}:` : picked.emoji);
+      }
+    });
+    const composer = h("div", { class: "zcf-composer" }, input, emojiBtn, gifBtn, sendBtn);
+    const body = h("div", { class: "chat-content zcf-body zcf-dm-body" }, notice, scroller, newChip, emojiPicker.el, gifPicker.el, composer);
     const el = h("div", { class: "chat-container zcf zcf-dm", dataset: { zcfDm: String(userId) } }, header, body);
     const syncGifBtn = () => gifBtn.setAttribute("aria-expanded", String(!gifPicker.el.hidden));
     const gifObserver = new MutationObserver(syncGifBtn);
     gifObserver.observe(gifPicker.el, { attributes: true, attributeFilter: ["hidden"] });
+    const syncEmojiBtn = () => emojiBtn.setAttribute("aria-expanded", String(!emojiPicker.el.hidden));
+    const emojiObserver = new MutationObserver(syncEmojiBtn);
+    emojiObserver.observe(emojiPicker.el, { attributes: true, attributeFilter: ["hidden"] });
+    function insertAtCaret(text) {
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? input.value.length;
+      input.value = input.value.slice(0, start) + text + input.value.slice(end);
+      const pos = start + text.length;
+      input.focus();
+      input.selectionStart = input.selectionEnd = pos;
+    }
     const stop = (fn) => (e) => {
       e.stopPropagation();
       fn(e);
@@ -2037,8 +4404,16 @@
     newChip.addEventListener("click", () => scrollToBottom());
     sendBtn.addEventListener("click", () => submit());
     gifBtn.addEventListener("click", () => {
+      emojiPicker.close();
+      syncEmojiBtn();
       gifPicker.toggle();
       syncGifBtn();
+    });
+    emojiBtn.addEventListener("click", () => {
+      gifPicker.close();
+      syncGifBtn();
+      emojiPicker.toggle();
+      syncEmojiBtn();
     });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -2087,8 +4462,18 @@
       img.addEventListener("error", () => img.replaceWith(document.createTextNode(part.alt)));
       return img;
     }
+    function renderEmoji(part) {
+      const alt = `:${part.name}:`;
+      const img = h("img", { class: "zcf-emoji", src: part.src, alt, title: alt, draggable: "false", loading: "lazy" });
+      img.addEventListener("error", () => img.replaceWith(document.createTextNode(alt)));
+      return img;
+    }
     function renderText(text) {
-      return messageParts(text).map((part) => part.type === "image" ? renderGif(part) : document.createTextNode(part.text));
+      return messageParts(text).map((part) => {
+        if (part.type === "image") return renderGif(part);
+        if (part.type === "emoji") return renderEmoji(part);
+        return document.createTextNode(part.text);
+      });
     }
     function renderItem(item) {
       if (item.type === "divider") return h("div", { class: "zcf-divider" }, item.label);
@@ -2118,6 +4503,7 @@
       input.disabled = conv.state.blocked;
       sendBtn.disabled = conv.state.blocked || !!conv.state.busy;
       gifBtn.disabled = conv.state.blocked || !!conv.state.busy;
+      emojiBtn.disabled = conv.state.blocked || !!conv.state.busy;
     }
     function renderConversation() {
       renderNotice();
@@ -2174,6 +4560,8 @@
       if (!open) {
         gifPicker.close();
         syncGifBtn();
+        emojiPicker.close();
+        syncEmojiBtn();
       }
       wasOpen = open;
     }
@@ -2185,6 +4573,8 @@
         conversations.release(userId);
         gifObserver.disconnect();
         gifPicker.destroy();
+        emojiObserver.disconnect();
+        emojiPicker.destroy();
       }
     };
   }
@@ -2552,6 +4942,7 @@
       myId: playerId,
       myName: playerName,
       store,
+      storage,
       actions,
       presence,
       players,
@@ -2700,6 +5091,7 @@
 .zcf-time{opacity:.4;margin-left:8px;font-size:11px}
 .zcf-text{opacity:.9;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
+.zcf .zcf-emoji{height:1.35em;width:auto;vertical-align:-0.3em;display:inline;margin:0 1px}
 .zcf-system .zcf-text{font-style:italic;opacity:.7}
 .zcf-pending-msg .zcf-text{opacity:.55}
 .zcf-failed .zcf-text{opacity:.5}
@@ -2722,6 +5114,21 @@
 .zcf-gif-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .zcf-gif-thumb{display:block;width:100%;height:70px;object-fit:cover;border-radius:3px;background:#202327;cursor:pointer}
 .zcf-gif-thumb:hover{outline:2px solid #0a748f}
+.zcf-emojibtn{background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font-size:14px;padding:7px 9px;cursor:pointer;line-height:1;display:flex;align-items:center}
+.zcf-emojibtn:hover{background:#ffffff1f;color:#fff}
+.zcf-emojibtn:disabled{opacity:.4;cursor:default}
+.zcf-emojibtn[aria-expanded="true"]{background:#3d8b40;color:#fff}
+.zcf-empanel{flex:none;max-height:240px;overflow-y:auto;background:#16181c;border:1px solid #000;border-radius:4px;margin:0 8px;padding:8px}
+.zcf-em-search{display:block;box-sizing:border-box;width:100%;background:#0e1013;border:1px solid #0a748f;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:6px 8px;margin-bottom:6px}
+.zcf-em-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.zcf-em-tab{display:flex;align-items:center;justify-content:center}
+.zcf-em-tab.zcf-active{background:#3d8b40;color:#fff}
+.zcf-em-tab-icon{width:11px;height:11px;display:block}
+.zcf-em-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.zcf-em-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:none;border:0;border-radius:3px;color:inherit;font-size:20px;line-height:1;cursor:pointer;padding:0}
+.zcf-em-btn:hover{background:#ffffff14}
+.zcf-em-img{width:22px;height:22px;object-fit:contain;display:block}
+.zcf-em-empty{grid-column:1/-1;font-size:11px;opacity:.5;text-align:center;padding:10px 0}
 .zcf-toasts{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);z-index:4000;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}

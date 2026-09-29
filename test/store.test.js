@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createStore, storageKey } from '../src/store.js';
+import { createStore, storageKey, readGameRecentEmojis, rememberGameRecentEmoji } from '../src/store.js';
 import { addFriend } from '../src/state.js';
 import { memoryStorage } from './helpers.js';
+
+const RECENT_KEY = 'zed-ui.recent-emojis';
 
 // Builds a storage-event Object matching what jsdom would dispatch, for our fake `win` EventTargets.
 const storageEvent = (key) => Object.assign(new Event('storage'), { key });
@@ -237,5 +239,57 @@ describe('store', () => {
     // A kept subscriber list would still notify fn2 on a plain update() after destroy().
     store.update((s) => addFriend(s, { id: 3, username: 'c' }, 0));
     expect(fn2).not.toHaveBeenCalled();
+  });
+});
+
+describe('recent-emoji storage helpers', () => {
+  it('returns an empty array when nothing is saved', () => {
+    expect(readGameRecentEmojis(memoryStorage())).toEqual([]);
+  });
+
+  it('reads back a saved list', () => {
+    const storage = memoryStorage({ [RECENT_KEY]: JSON.stringify(['joy', 'zed_pack']) });
+    expect(readGameRecentEmojis(storage)).toEqual(['joy', 'zed_pack']);
+  });
+
+  it('ignores bad JSON without throwing', () => {
+    const storage = memoryStorage({ [RECENT_KEY]: '{not json' });
+    expect(() => readGameRecentEmojis(storage)).not.toThrow();
+    expect(readGameRecentEmojis(storage)).toEqual([]);
+  });
+
+  it('ignores a non-array value', () => {
+    const storage = memoryStorage({ [RECENT_KEY]: JSON.stringify({ oops: true }) });
+    expect(readGameRecentEmojis(storage)).toEqual([]);
+  });
+
+  it('drops non-string entries and caps at 18', () => {
+    const list = [...Array(20).keys()].map((i) => (i === 5 ? 42 : `e${i}`));
+    const storage = memoryStorage({ [RECENT_KEY]: JSON.stringify(list) });
+    const out = readGameRecentEmojis(storage);
+    expect(out.every((x) => typeof x === 'string')).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(18);
+  });
+
+  it('never throws when storage is blocked', () => {
+    const storage = {
+      getItem: () => { throw new Error('blocked'); },
+      setItem: () => { throw new Error('blocked'); },
+    };
+    expect(() => readGameRecentEmojis(storage)).not.toThrow();
+    expect(readGameRecentEmojis(storage)).toEqual([]);
+    expect(() => rememberGameRecentEmoji(storage, 'joy')).not.toThrow();
+  });
+
+  it('writes the picked emoji most-recent-first, deduped, capped at 18', () => {
+    const storage = memoryStorage();
+    rememberGameRecentEmoji(storage, 'joy');
+    rememberGameRecentEmoji(storage, 'zed_pack');
+    rememberGameRecentEmoji(storage, 'joy'); // re-picking moves it back to the front
+    expect(readGameRecentEmojis(storage)).toEqual(['joy', 'zed_pack']);
+    for (let i = 0; i < 20; i += 1) rememberGameRecentEmoji(storage, `e${i}`);
+    const out = readGameRecentEmojis(storage);
+    expect(out).toHaveLength(18);
+    expect(out[0]).toBe('e19');
   });
 });

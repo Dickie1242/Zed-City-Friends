@@ -4,6 +4,7 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 
 - **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players.
 - **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
+- **GIFs and emoji.** Pick a GIF or an emoji right from the composer, rendered the same way the game's own chat does, including its custom Zed City emojis.
 - **Add Friend button** on player profiles, between Trade and Mail.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.

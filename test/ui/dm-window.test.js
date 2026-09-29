@@ -257,6 +257,71 @@ describe('dm window', () => {
     expect(services.store.get().dock.dms[0].open).toBe(false);
   });
 
+  it('opens the emoji picker from the composer', async () => {
+    const { el } = mount();
+    await flush();
+    const emojiBtn = el.querySelector('.zcf-emojibtn');
+    expect(emojiBtn).not.toBeNull();
+    expect(el.querySelector('.zcf-empanel').hidden).toBe(true);
+    emojiBtn.click();
+    expect(el.querySelector('.zcf-empanel').hidden).toBe(false);
+    expect(emojiBtn.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('picking a standard emoji inserts the unicode character at the caret', async () => {
+    const { el } = mount();
+    await flush();
+    const input = el.querySelector('textarea');
+    input.value = 'hi ';
+    input.selectionStart = input.selectionEnd = 3;
+    el.querySelector('.zcf-emojibtn').click();
+    const search = el.querySelector('.zcf-em-search');
+    search.value = 'joy';
+    search.dispatchEvent(new Event('input'));
+    el.querySelector('.zcf-em-grid .zcf-em-btn').click();
+    expect(input.value).toBe('hi 😂');
+    expect(input.selectionStart).toBe(input.value.length);
+    expect(document.activeElement).toBe(input);
+    expect(el.querySelector('.zcf-empanel').hidden).toBe(true);
+  });
+
+  it('picking a Zed City emoji inserts its :name: shortcode', async () => {
+    const { el } = mount();
+    await flush();
+    const input = el.querySelector('textarea');
+    el.querySelector('.zcf-emojibtn').click();
+    el.querySelector('[title="Zed City"]').click();
+    el.querySelector('.zcf-em-grid .zcf-em-btn').click();
+    expect(input.value).toMatch(/^:[a-z0-9_]+:$/);
+  });
+
+  it('opening the emoji picker closes the GIF picker', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ json: async () => ({ results: [] }) });
+    const { el } = mount({}, { fetchImpl });
+    await flush();
+    el.querySelector('.zcf-gifbtn').click();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(false);
+    el.querySelector('.zcf-emojibtn').click();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(true);
+    expect(el.querySelector('.zcf-gifbtn').getAttribute('aria-expanded')).toBe('false');
+    expect(el.querySelector('.zcf-empanel').hidden).toBe(false);
+  });
+
+  it('disables the emoji button whenever sending is disabled', async () => {
+    const { el } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: false, kind: 'access' }) });
+    await flush();
+    expect(el.querySelector('.zcf-emojibtn').disabled).toBe(true);
+  });
+
+  it('renders a received Zed City emoji shortcode as its item image', async () => {
+    const { el } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'nice :zed_pack:', '2026-09-28 14:02:00')] }) });
+    await flush();
+    const img = el.querySelector('.zcf-log img.zcf-emoji');
+    expect(img).not.toBeNull();
+    expect(img.getAttribute('src')).toBe('/items/zed_pack.webp');
+    expect(img.getAttribute('alt')).toBe(':zed_pack:');
+  });
+
   it('header buttons minimize, close and open the inbox', async () => {
     const { el, services } = mount();
     await flush();

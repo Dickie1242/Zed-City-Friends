@@ -4,6 +4,50 @@ import { warnOnce } from './util.js';
 
 export const storageKey = (playerId) => `zcf:v1:${playerId}`;
 
+// Shared with the game itself: its own emoji picker reads/writes the exact same key, the exact
+// same way (JSON array of shortcode names, most-recent-first, capped at 18).
+const RECENT_EMOJI_KEY = 'zed-ui.recent-emojis';
+const RECENT_EMOJI_MAX = 18;
+
+function defaultStorage(storage) {
+  if (storage) return storage;
+  try {
+    return window.localStorage;
+  } catch (e) {
+    warnOnce('store-recent-emoji-storage', e);
+    return null;
+  }
+}
+
+// Never throws: a missing/blocked storage, bad JSON, a non-array, or non-string entries all just
+// read back as [].
+export function readGameRecentEmojis(storage) {
+  const s = defaultStorage(storage);
+  if (!s) return [];
+  try {
+    const raw = s.getItem(RECENT_EMOJI_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x) => typeof x === 'string').slice(0, RECENT_EMOJI_MAX);
+  } catch (e) {
+    warnOnce('store-recent-emoji-read', e);
+    return [];
+  }
+}
+
+export function rememberGameRecentEmoji(storage, name) {
+  const s = defaultStorage(storage);
+  if (!s) return;
+  try {
+    const current = readGameRecentEmojis(s);
+    const next = [name, ...current.filter((n) => n !== name)].slice(0, RECENT_EMOJI_MAX);
+    s.setItem(RECENT_EMOJI_KEY, JSON.stringify(next));
+  } catch (e) {
+    warnOnce('store-recent-emoji-write', e);
+  }
+}
+
 export function createStore({ playerId, storage = window.localStorage, win = window, now = () => Date.now() }) {
   const key = storageKey(playerId);
   const subs = new Set();

@@ -220,6 +220,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     myId: playerId,
     myName: playerName,
     store,
+    storage,
     actions,
     presence,
     players,
