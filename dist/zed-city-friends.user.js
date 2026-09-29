@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.3.1
+// @version      0.4.0
 // @description  Friends list and Torn-style DM windows in Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
@@ -205,6 +205,16 @@
     }
     return changed;
   }
+  var MAX_NOTE = 200;
+  function setFriendNote(state, id, note) {
+    const f = state.friends[id];
+    if (!f) return false;
+    const text2 = typeof note === "string" ? note.trim().slice(0, MAX_NOTE).trim() : "";
+    if ((f.note || "") === text2) return false;
+    if (text2) f.note = text2;
+    else delete f.note;
+    return true;
+  }
   function threadEntry(state, id) {
     if (!state.threads[id]) state.threads[id] = { lastSeenReply: 0, lastNotifiedReply: 0, unread: 0 };
     return state.threads[id];
@@ -315,19 +325,19 @@
     const subs = /* @__PURE__ */ new Set();
     let saved = true;
     function read({ repair } = {}) {
-      let text = null;
+      let text2 = null;
       try {
-        text = storage.getItem(key);
+        text2 = storage.getItem(key);
       } catch (e) {
         warnOnce("store-read", e);
         return { doc: null, ok: false };
       }
-      if (!text) return { doc: emptyState(), ok: true };
+      if (!text2) return { doc: emptyState(), ok: true };
       let parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(text2);
       } catch (e) {
-        return corrupt(text, e, repair);
+        return corrupt(text2, e, repair);
       }
       if (parsed && typeof parsed === "object" && typeof parsed.v === "number" && parsed.v > 1) {
         warnOnce("store-newer", parsed.v);
@@ -336,14 +346,14 @@
       try {
         return { doc: normalizeState(parsed), ok: true };
       } catch (e) {
-        return corrupt(text, e, repair);
+        return corrupt(text2, e, repair);
       }
     }
-    function corrupt(text, e, repair) {
+    function corrupt(text2, e, repair) {
       warnOnce("store-corrupt", e);
       if (!repair) return { doc: null, ok: false };
       try {
-        storage.setItem(`${key}:corrupt:${now()}`, text);
+        storage.setItem(`${key}:corrupt:${now()}`, text2);
         storage.removeItem(key);
       } catch {
         return { doc: null, ok: false };
@@ -576,6 +586,25 @@
     if (info.active) return `Active ${timeAgo(info.active, now)}`;
     return "Offline";
   }
+  function longAgo(ts, now = Date.now()) {
+    const s = Math.max(0, Math.floor((now - ts) / 1e3));
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m} min ago`;
+    const h2 = Math.floor(m / 60);
+    if (h2 < 24) return `${h2} hr ago`;
+    const d = Math.floor(h2 / 24);
+    const unit = (n, word) => `${n} ${word}${n === 1 ? "" : "s"} ago`;
+    if (d < 30) return unit(d, "day");
+    if (d < 365) return unit(Math.floor(d / 30), "month");
+    return unit(Math.floor(d / 365), "year");
+  }
+  function longStatusText(info, now = Date.now()) {
+    if (!info) return "";
+    if (info.online) return "Online";
+    if (info.active) return `Active ${longAgo(info.active, now)}`;
+    return "Offline";
+  }
 
   // src/presence.js
   function lastActive(value, now) {
@@ -586,6 +615,17 @@
       if (n < 1e9) return now - n * 1e3;
     }
     return parseSentAt(value);
+  }
+  function profileDetails(data) {
+    const level = Number(data.rank ?? data.level);
+    const f = data.faction && typeof data.faction === "object" ? data.faction : null;
+    const factionId = f ? toId(f.id) : null;
+    return {
+      level: Number.isFinite(level) && level > 0 ? level : null,
+      faction: factionId ? { id: factionId, name: typeof f.name === "string" ? f.name : "" } : null,
+      injured: !!data.is_injured,
+      traveling: !!data.traveling
+    };
   }
   function createPresence({
     fetchProfile,
@@ -611,17 +651,23 @@
         }
       }
     }
-    function store(id, info, at) {
+    function store(id, info, at, profile) {
       if (!info || typeof info !== "object") return;
-      cache.set(id, { online: !!info.online, active: lastActive(info.active, now()), fetchedAt: at });
+      const prev = cache.get(id);
+      cache.set(id, {
+        online: !!info.online,
+        active: lastActive(info.active, now()),
+        fetchedAt: at,
+        profile: profile || prev && prev.profile || null
+      });
       emit(id);
     }
     function set(id, info) {
       store(id, info, now());
     }
-    function isStale(id) {
+    function isStale(id, maxAgeMs = staleMs) {
       const c = cache.get(id);
-      return !c || now() - c.fetchedAt >= staleMs;
+      return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
     }
     function pause() {
       pausedUntil = now() + pauseMs;
@@ -637,7 +683,7 @@
         inFlight += 1;
         Promise.resolve().then(() => fetchProfile(id)).then((r) => {
           if (r && r.ok && r.data) {
-            store(id, r.data, queuedAt);
+            store(id, r.data, queuedAt, profileDetails(r.data));
             if (onProfile) onProfile(id, r.data);
           } else if (r && !r.ok && (r.kind === "rate" || r.kind === "auth")) {
             pause();
@@ -2830,14 +2876,14 @@ sandfish		/items/sandfish.webp`;
     return FLAG_NAMES.has(emoji);
   }
   var SHORTCODE_RE = /:([a-z0-9_+-]+):/gi;
-  function substituteShortcodes(text) {
+  function substituteShortcodes(text2) {
     const parts = [];
     let buf = "";
     let last = 0;
     SHORTCODE_RE.lastIndex = 0;
     let m;
-    while (m = SHORTCODE_RE.exec(text)) {
-      buf += text.slice(last, m.index);
+    while (m = SHORTCODE_RE.exec(text2)) {
+      buf += text2.slice(last, m.index);
       const rec = findEmoji(m[1]);
       if (rec && rec.src) {
         if (buf) parts.push({ type: "text", text: buf });
@@ -2850,29 +2896,29 @@ sandfish		/items/sandfish.webp`;
       }
       last = m.index + m[0].length;
     }
-    buf += text.slice(last);
+    buf += text2.slice(last);
     if (buf || parts.length === 0) parts.push({ type: "text", text: buf });
     return parts;
   }
-  function splitFlags(text) {
+  function splitFlags(text2) {
     parse();
-    if (!FLAG_RE) return [{ type: "text", text }];
+    if (!FLAG_RE) return [{ type: "text", text: text2 }];
     const parts = [];
     let last = 0;
     FLAG_RE.lastIndex = 0;
     let m;
-    while (m = FLAG_RE.exec(text)) {
-      if (m.index > last) parts.push({ type: "text", text: text.slice(last, m.index) });
+    while (m = FLAG_RE.exec(text2)) {
+      if (m.index > last) parts.push({ type: "text", text: text2.slice(last, m.index) });
       const emoji = m[0];
       parts.push({ type: "emoji", name: FLAG_NAMES.get(emoji), src: flagImageUrl(emoji), emoji });
       last = m.index + m[0].length;
     }
-    if (last < text.length || parts.length === 0) parts.push({ type: "text", text: text.slice(last) });
+    if (last < text2.length || parts.length === 0) parts.push({ type: "text", text: text2.slice(last) });
     return parts;
   }
-  function emojiParts(text) {
+  function emojiParts(text2) {
     const out = [];
-    for (const part of substituteShortcodes(text)) {
+    for (const part of substituteShortcodes(text2)) {
       if (part.type === "text") out.push(...splitFlags(part.text));
       else out.push(part);
     }
@@ -2894,8 +2940,8 @@ sandfish		/items/sandfish.webp`;
   }
   var IMAGE_RE = /!\[([^\]]*)\]\((https:\/\/cdn\.zed\.city\/[^\s()<>"'\\]*)\)/g;
   var MAX_ALT_LEN = 200;
-  function messageParts(text) {
-    const s = typeof text === "string" ? text : String(text ?? "");
+  function messageParts(text2) {
+    const s = typeof text2 === "string" ? text2 : String(text2 ?? "");
     const raw = [];
     let last = 0;
     IMAGE_RE.lastIndex = 0;
@@ -2920,8 +2966,8 @@ sandfish		/items/sandfish.webp`;
     }
     return parts.length ? parts : [{ type: "text", text: "" }];
   }
-  function previewText(text) {
-    const s = messageParts(text).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.type === "emoji" ? p.emoji || `:${p.name}:` : p.text).join("");
+  function previewText(text2) {
+    const s = messageParts(text2).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.type === "emoji" ? p.emoji || `:${p.name}:` : p.text).join("");
     return s.replace(/\s+/g, " ").trim();
   }
   function normalizeMessage(raw) {
@@ -3152,8 +3198,8 @@ sandfish		/items/sandfish.webp`;
       loadInitial();
       refreshInfo();
     }
-    async function send(text) {
-      const body = String(text || "").trim();
+    async function send(text2) {
+      const body = String(text2 || "").trim();
       if (!body || state.blocked) return false;
       const p = { localId: ++localSeq, text: body, ts: now(), error: false, realId: null };
       pending.push(p);
@@ -3433,13 +3479,13 @@ sandfish		/items/sandfish.webp`;
 
   // src/backup.js
   function exportFriends(state, playerId) {
-    const friends = Object.values(state.friends).map((f) => ({ id: f.id, username: f.username }));
+    const friends = Object.values(state.friends).map((f) => f.note ? { id: f.id, username: f.username, note: f.note } : { id: f.id, username: f.username });
     return JSON.stringify({ v: 1, playerId, friends }, null, 2);
   }
-  function parseImport(text, playerId) {
+  function parseImport(text2, playerId) {
     let doc;
     try {
-      doc = JSON.parse(text);
+      doc = JSON.parse(text2);
     } catch {
       return { ok: false, error: "That file is not valid JSON." };
     }
@@ -3455,10 +3501,24 @@ sandfish		/items/sandfish.webp`;
       const id = toId(f && f.id);
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      const username = typeof f.username === "string" ? f.username.slice(0, 32) : "";
-      friends.push({ id, username: username || `#${id}` });
+      const username = (typeof f.username === "string" ? f.username.slice(0, 32) : "") || `#${id}`;
+      const note = typeof f.note === "string" ? f.note.trim().slice(0, MAX_NOTE).trim() : "";
+      friends.push(note ? { id, username, note } : { id, username });
     }
     return { ok: true, friends };
+  }
+  function mergeImport(state, friends, now) {
+    let added = 0;
+    let notes = 0;
+    for (const f of friends) {
+      if (addFriend(state, f, now)) added += 1;
+      if (f.note && !state.friends[f.id].note && setFriendNote(state, f.id, f.note)) notes += 1;
+    }
+    return { added, notes };
+  }
+  function importMessage({ added, notes = 0 }) {
+    const friends = `${added} new friend${added === 1 ? "" : "s"}`;
+    return notes ? `Imported ${friends} and ${notes} note${notes === 1 ? "" : "s"}.` : `Imported ${friends}.`;
   }
 
   // src/ui/dom.js
@@ -3508,8 +3568,8 @@ sandfish		/items/sandfish.webp`;
     if (typeof online === "boolean") wrap.appendChild(h("span", { class: `zcf-dot ${online ? "zcf-on" : "zcf-off"}` }));
     return wrap;
   }
-  function highlightMatch(text, query) {
-    const s = String(text ?? "");
+  function highlightMatch(text2, query) {
+    const s = String(text2 ?? "");
     const q = String(query || "").trim();
     const ql = q.toLowerCase();
     let i = -1;
@@ -3534,8 +3594,8 @@ sandfish		/items/sandfish.webp`;
     el.textContent = String(count);
     el.hidden = !(visible && count > 0);
   }
-  function downloadText(filename, text, doc = document) {
-    const blob = new Blob([text], { type: "application/json" });
+  function downloadText(filename, text2, doc = document) {
+    const blob = new Blob([text2], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = h("a", { href: url, download: filename, style: { display: "none" } });
     doc.body.appendChild(a);
@@ -3544,16 +3604,57 @@ sandfish		/items/sandfish.webp`;
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
   }
 
+  // src/ui/keeper.js
+  function createKeeper({ doc = document, win = window } = {}) {
+    const mounts = /* @__PURE__ */ new Set();
+    let observer = null;
+    let frame = 0;
+    function runDetached() {
+      for (const m of [...mounts]) if (!m.attached()) safe(`keeper-${m.name}`, m.ensure)();
+    }
+    function onMutations() {
+      if (frame) return;
+      for (const m of mounts) {
+        if (m.attached()) continue;
+        frame = win.requestAnimationFrame(() => {
+          frame = 0;
+          runDetached();
+        });
+        return;
+      }
+    }
+    return {
+      // mount: { name, attached: () => boolean, ensure: () => void }. Returns a function that removes it.
+      add(mount) {
+        mounts.add(mount);
+        if (!observer) {
+          observer = new win.MutationObserver(safe("keeper-observer", onMutations));
+          observer.observe(doc.body, { childList: true, subtree: true });
+        }
+        return () => mounts.delete(mount);
+      },
+      destroy() {
+        if (observer) observer.disconnect();
+        observer = null;
+        if (frame) win.cancelAnimationFrame(frame);
+        frame = 0;
+        mounts.clear();
+      }
+    };
+  }
+
   // src/ui/dock.js
   var SMALL_QUERY = "(max-width: 599.98px)";
   function hasClassToken(value, cls) {
     return (value || "").split(/\s+/).includes(cls);
   }
-  function createDock({ doc = document, win = window, onGameChatOpened = () => {
+  function createDock({ doc = document, win = window, keeper = null, onGameChatOpened = () => {
   } } = {}) {
     const root = h("div", { class: "zcf-root" });
     let dockEl = null;
-    let frame = 0;
+    const ownKeeper = keeper ? null : createKeeper({ doc, win });
+    const keep = keeper || ownKeeper;
+    let unkeep = null;
     const mql = typeof win.matchMedia === "function" ? win.matchMedia(SMALL_QUERY) : null;
     const smallChangeUnsubs = /* @__PURE__ */ new Set();
     const isSmall = () => mql ? mql.matches : win.innerWidth < 600;
@@ -3602,15 +3703,6 @@ sandfish		/items/sandfish.webp`;
       reconcileOpenGameChat();
       return true;
     }
-    const bodyObserver = new win.MutationObserver(
-      safe("dock-body-observer", () => {
-        if (frame || root.isConnected) return;
-        frame = win.requestAnimationFrame(() => {
-          frame = 0;
-          safe("dock-ensure", ensure)();
-        });
-      })
-    );
     let clickedThisTurn = /* @__PURE__ */ new WeakSet();
     function minimizeGameChats() {
       if (!dockEl) return;
@@ -3632,13 +3724,13 @@ sandfish		/items/sandfish.webp`;
       minimizeGameChats,
       start() {
         ensure();
-        bodyObserver.observe(doc.body, { childList: true, subtree: true });
+        if (!unkeep) unkeep = keep.add({ name: "dock", attached: () => root.isConnected, ensure });
       },
       destroy() {
-        bodyObserver.disconnect();
+        if (unkeep) unkeep();
+        unkeep = null;
+        if (ownKeeper) ownKeeper.destroy();
         classObserver.disconnect();
-        if (frame) win.cancelAnimationFrame(frame);
-        frame = 0;
         dockEl = null;
         for (const unsubscribe of [...smallChangeUnsubs]) unsubscribe();
         root.remove();
@@ -3654,9 +3746,9 @@ sandfish		/items/sandfish.webp`;
     const input = h("input", { class: "zcf-input", type: "text", placeholder: "Name or player ID", "aria-label": "Find a player" });
     const list = h("div", { class: "zcf-results" });
     const el = h("div", { class: "zcf-pop", hidden: true }, h("div", { class: "zcf-pop-title" }, "Add friend"), input, list);
-    function message(text) {
+    function message(text2) {
       clear(list);
-      if (text) list.appendChild(h("div", { class: "zcf-empty" }, text));
+      if (text2) list.appendChild(h("div", { class: "zcf-empty" }, text2));
     }
     function row(p) {
       const action = isFriend2(p.id) ? h("span", { class: "zcf-done" }, "✓ Friend") : h("button", {
@@ -3844,15 +3936,15 @@ sandfish		/items/sandfish.webp`;
         toast("That file is too large to be a friends export.", { error: true });
         return;
       }
-      let text;
+      let text2;
       try {
-        text = await file.text();
+        text2 = await file.text();
       } catch {
         toast("Couldn't read that file.", { error: true });
         return;
       }
-      const res = actions.importFriends(text);
-      toast(res.ok ? `Imported ${res.added} new friend${res.added === 1 ? "" : "s"}.` : res.error, { error: !res.ok });
+      const res = actions.importFriends(text2);
+      toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
     }));
     function onDocMousedown(e) {
       if (pop.isOpen && !pop.el.contains(e.target) && !addBtn.contains(e.target)) pop.close();
@@ -4380,11 +4472,11 @@ sandfish		/items/sandfish.webp`;
     const syncEmojiBtn = () => emojiBtn.setAttribute("aria-expanded", String(!emojiPicker.el.hidden));
     const emojiObserver = new MutationObserver(syncEmojiBtn);
     emojiObserver.observe(emojiPicker.el, { attributes: true, attributeFilter: ["hidden"] });
-    function insertAtCaret(text) {
+    function insertAtCaret(text2) {
       const start = input.selectionStart ?? input.value.length;
       const end = input.selectionEnd ?? input.value.length;
-      input.value = input.value.slice(0, start) + text + input.value.slice(end);
-      const pos = start + text.length;
+      input.value = input.value.slice(0, start) + text2 + input.value.slice(end);
+      const pos = start + text2.length;
       input.focus();
       input.selectionStart = input.selectionEnd = pos;
     }
@@ -4439,10 +4531,10 @@ sandfish		/items/sandfish.webp`;
     }
     function submit() {
       if (!input.value.trim() || conv.state.blocked) return;
-      const text = input.value;
+      const text2 = input.value;
       input.value = "";
       atBottom = true;
-      conv.send(text);
+      conv.send(text2);
     }
     function displayName() {
       const s = store.get();
@@ -4468,8 +4560,8 @@ sandfish		/items/sandfish.webp`;
       img.addEventListener("error", () => img.replaceWith(document.createTextNode(alt)));
       return img;
     }
-    function renderText(text) {
-      return messageParts(text).map((part) => {
+    function renderText(text2) {
+      return messageParts(text2).map((part) => {
         if (part.type === "image") return renderGif(part);
         if (part.type === "emoji") return renderEmoji(part);
         return document.createTextNode(part.text);
@@ -4497,9 +4589,9 @@ sandfish		/items/sandfish.webp`;
       }
     }
     function renderNotice() {
-      const text = conv.state.blocked ? "You can't message this player." : conv.state.busy ? BUSY_TEXT[conv.state.busy] || "Mail is unavailable right now." : "";
-      notice.textContent = text;
-      notice.hidden = !text;
+      const text2 = conv.state.blocked ? "You can't message this player." : conv.state.busy ? BUSY_TEXT[conv.state.busy] || "Mail is unavailable right now." : "";
+      notice.textContent = text2;
+      notice.hidden = !text2;
       input.disabled = conv.state.blocked;
       sendBtn.disabled = conv.state.blocked || !!conv.state.busy;
       gifBtn.disabled = conv.state.blocked || !!conv.state.busy;
@@ -4622,12 +4714,12 @@ sandfish		/items/sandfish.webp`;
   // src/ui/toast.js
   function createToaster(doc = document) {
     let host = null;
-    return function toast(text, { error = false, ms = 3500 } = {}) {
+    return function toast(text2, { error = false, ms = 3500 } = {}) {
       if (!host || !host.isConnected) {
         host = h("div", { class: "zcf-toasts", role: "status", "aria-live": "polite" });
         doc.body.appendChild(host);
       }
-      const el = h("div", { class: `zcf-toast${error ? " zcf-toast-error" : ""}` }, text);
+      const el = h("div", { class: `zcf-toast${error ? " zcf-toast-error" : ""}` }, text2);
       host.appendChild(el);
       setTimeout(() => el.remove(), ms);
     };
@@ -4764,10 +4856,628 @@ sandfish		/items/sandfish.webp`;
     return { onRoute, refresh, tryInsert, destroy };
   }
 
+  // src/friends-table.js
+  var DEFAULT_SORT = { key: "status", dir: "asc" };
+  var FIRST_DIR = { name: "asc", level: "desc", status: "asc", faction: "asc" };
+  var text = (a, b) => a.localeCompare(b, void 0, { sensitivity: "base" });
+  var byName2 = (a, b) => text(a.username, b.username);
+  var statusRank = (p) => p.online ? 0 : p.active ? 1 : 2;
+  var SORTS = {
+    name: { has: () => true, cmp: byName2 },
+    level: { has: (r) => !!(r.profile && r.profile.level), cmp: (a, b) => a.profile.level - b.profile.level },
+    faction: { has: (r) => !!(r.profile && r.profile.faction), cmp: (a, b) => text(a.profile.faction.name, b.profile.faction.name) },
+    status: {
+      has: (r) => !!r.presence,
+      // Online first (A-Z via the tie-break), then offline by most recently active, then offline with no time.
+      cmp: (a, b) => {
+        const d = statusRank(a.presence) - statusRank(b.presence);
+        if (d || statusRank(a.presence) !== 1) return d;
+        return b.presence.active - a.presence.active;
+      }
+    }
+  };
+  function sortRows(rows, sort = DEFAULT_SORT) {
+    const { has, cmp } = SORTS[sort.key] || SORTS.status;
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return rows.slice().sort((a, b) => {
+      const ha = has(a);
+      const hb = has(b);
+      if (ha !== hb) return ha ? -1 : 1;
+      return (ha ? sign * cmp(a, b) : 0) || byName2(a, b);
+    });
+  }
+  function nextSort(sort, key) {
+    if (sort.key === key) return { key, dir: sort.dir === "asc" ? "desc" : "asc" };
+    return { key, dir: FIRST_DIR[key] || "asc" };
+  }
+  function buildFriendsTable({ friends, presence, threads = {}, tab = "all", query = "", sort = DEFAULT_SORT }) {
+    const q = String(query || "").trim().toLowerCase();
+    const all = Object.values(friends).map((f) => {
+      const p = presence(f.id);
+      return {
+        id: f.id,
+        username: f.username,
+        avatar: f.avatar || null,
+        note: f.note || "",
+        presence: p ? { online: !!p.online, active: p.active || null } : null,
+        profile: p && p.profile || null,
+        unread: threads[f.id] && threads[f.id].unread || 0
+      };
+    });
+    const isOnline = (r) => !!(r.presence && r.presence.online);
+    const online = all.filter(isOnline).length;
+    const counts = { all: all.length, online, offline: all.length - online };
+    const inTab = all.filter((r) => tab === "all" || tab === "online" === isOnline(r));
+    const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
+    return { rows: sortRows(inTab.filter(matches), sort), counts };
+  }
+  function countOnline(friends, presence) {
+    let n = 0;
+    for (const f of Object.values(friends)) {
+      const p = presence(f.id);
+      if (p && p.online) n += 1;
+    }
+    return n;
+  }
+
+  // src/ui/friends-page.js
+  var FRIENDS_PATH = "/friends";
+  var PAGE_CLASS = "zcf-on-friends";
+  var HIDE_404_CSS = `html.${PAGE_CLASS} .q-page-container > .fixed-center{display:none!important}`;
+  var WARN_MS = 1e4;
+  var isFriendsPath = (path) => path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`;
+  function hideGame404Early(doc = document, win = window) {
+    if (!doc.getElementById("zcf-early-styles")) {
+      const style = doc.createElement("style");
+      style.id = "zcf-early-styles";
+      style.textContent = HIDE_404_CSS;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+    const on = isFriendsPath(win.location.pathname);
+    doc.documentElement.classList.toggle(PAGE_CLASS, on);
+    return on;
+  }
+  var TABS = [["all", "All"], ["online", "Online"], ["offline", "Offline"]];
+  var COLUMNS = [
+    { col: "name", label: "Name", sort: "name" },
+    { col: "level", label: "Level", sort: "level" },
+    { col: "status", label: "Status", sort: "status" },
+    { col: "faction", label: "Faction", sort: "faction" },
+    { col: "note", label: "Note" },
+    { col: "act", label: "" }
+  ];
+  var plainClick = (e) => e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
+  function createFriendsPage(services, { doc = document, win = window, keeper = null } = {}) {
+    const { store, actions, presence, players, router, toast } = services;
+    let active = false;
+    let tab = "all";
+    let query = "";
+    let sort = DEFAULT_SORT;
+    let editId = null;
+    let editInput = null;
+    let confirmId = null;
+    let menuId = null;
+    let rendering = false;
+    let frame = 0;
+    let headSig = null;
+    let currentIds = [];
+    let unkeep = null;
+    let warnTimer = null;
+    const rowEls = /* @__PURE__ */ new Map();
+    const link = (href, className, children, extra = {}) => h("a", {
+      class: className,
+      href,
+      onclick: (e) => {
+        if (!plainClick(e)) return;
+        e.preventDefault();
+        router.navigate(href);
+      },
+      ...extra
+    }, children);
+    const subtitle = h("div", { class: "zcf-page-sub" });
+    const addBtn = h(
+      "button",
+      { class: "zcf-page-add", type: "button", "aria-expanded": "false" },
+      icon("plus"),
+      h("span", { class: "zcf-page-add-long" }, "Add friend"),
+      h("span", { class: "zcf-page-add-short" }, "Add")
+    );
+    const pop = createAddFriendPopover({
+      players,
+      isFriend: (id) => isFriend(store.get(), id),
+      onAdd: (p) => {
+        actions.addFriend(p);
+        toast(`${p.username} added to friends`);
+      },
+      onClose: () => syncAddBtn()
+    });
+    const title = h(
+      "div",
+      { class: "zcf-page-title" },
+      h("div", { class: "zcf-page-side" }, link("/city", "zcf-page-back", [icon("chevron-left"), "City"])),
+      h("div", { class: "zcf-page-mid" }, h("div", { class: "text-h4 text-uppercase text-no-bg zcf-page-h" }, "Friends"), subtitle),
+      h("div", { class: "zcf-page-side zcf-page-side-r" }, h("div", { class: "zcf-page-addwrap" }, addBtn, pop.el))
+    );
+    const tabEls = /* @__PURE__ */ new Map();
+    for (const [key, label] of TABS) {
+      const count = h("b");
+      const b = h("button", {
+        class: "zcf-page-tab",
+        type: "button",
+        "aria-pressed": "false",
+        onclick: () => {
+          tab = key;
+          render();
+        }
+      }, label, count);
+      tabEls.set(key, { b, count });
+    }
+    const search = h("input", { class: "zcf-page-input", type: "text", placeholder: "Search names and notes…", "aria-label": "Search friends" });
+    const bar = h(
+      "div",
+      { class: "zcf-page-bar" },
+      h("div", { class: "zcf-page-tabs" }, [...tabEls.values()].map((t) => t.b)),
+      h("label", { class: "zcf-page-search" }, icon("search"), search)
+    );
+    const headRow = h("tr");
+    const tbody = h("tbody");
+    const table = h("table", { class: "zcf-page-table" }, h("thead", null, headRow), tbody);
+    const empty = h("div", { class: "zcf-page-empty", hidden: true });
+    const el = h("main", { class: "q-page q-layout-padding zcf zcf-page" }, title, bar, h("div", { class: "zcf-page-panel" }, table, empty));
+    search.addEventListener("input", () => {
+      query = search.value;
+      render();
+    });
+    addBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (pop.isOpen) pop.close();
+      else pop.open();
+      syncAddBtn();
+    });
+    function syncAddBtn() {
+      addBtn.setAttribute("aria-expanded", String(pop.isOpen));
+      addBtn.classList.toggle("zcf-page-add-on", pop.isOpen);
+    }
+    function onDocMousedown(e) {
+      if (pop.isOpen && !pop.el.contains(e.target) && !addBtn.contains(e.target)) pop.close();
+      if (menuId !== null && !(e.target.closest && e.target.closest(".zcf-page-menu, .zcf-act-more"))) {
+        menuId = null;
+        render();
+      }
+    }
+    function focusKey(...keys) {
+      for (const key of keys) {
+        const target = el.querySelector(`[data-zcf-focus="${key}"]`);
+        if (!target) continue;
+        target.focus();
+        if (doc.activeElement === target) return;
+      }
+    }
+    function startEdit(id) {
+      if (editId === id) return;
+      commitEdit();
+      const f = store.get().friends[id];
+      if (!f) return;
+      menuId = null;
+      confirmId = null;
+      editId = id;
+      editInput = h("input", { class: "zcf-note-input", type: "text", maxlength: MAX_NOTE, value: f.note || "", "aria-label": `Note for ${f.username}` });
+      editInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commitEdit({ refocus: true });
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelEdit();
+        }
+      });
+      editInput.addEventListener("blur", () => {
+        if (!rendering) commitEdit();
+      });
+      render();
+      editInput.focus();
+      const end = editInput.value.length;
+      editInput.setSelectionRange(end, end);
+    }
+    function commitEdit({ refocus = false } = {}) {
+      if (editId === null) return;
+      const id = editId;
+      const text2 = editInput.value;
+      editId = null;
+      editInput = null;
+      actions.setFriendNote(id, text2);
+      render();
+      if (refocus) focusKey(`edit:${id}`, `more:${id}`);
+    }
+    function cancelEdit() {
+      if (editId === null) return;
+      const id = editId;
+      editId = null;
+      editInput = null;
+      render();
+      focusKey(`edit:${id}`, `more:${id}`);
+    }
+    function askRemove(id) {
+      commitEdit();
+      menuId = null;
+      confirmId = id;
+      render();
+      focusKey(`cancel:${id}`);
+    }
+    function cancelRemove(id) {
+      confirmId = null;
+      render();
+      focusKey(`remove:${id}`, `more:${id}`);
+    }
+    function doRemove(id) {
+      const i = currentIds.indexOf(id);
+      const next = currentIds[i + 1] ?? currentIds[i - 1];
+      confirmId = null;
+      actions.removeFriend(id);
+      render();
+      if (next !== void 0) focusKey(`name:${next}`);
+    }
+    function renderHead() {
+      const sig = `${sort.key}:${sort.dir}`;
+      if (sig === headSig) return;
+      headSig = sig;
+      clear(headRow);
+      for (const c of COLUMNS) {
+        if (!c.sort) {
+          headRow.appendChild(h("th", { class: `zcf-col-${c.col}` }, c.label));
+          continue;
+        }
+        const on = sort.key === c.sort;
+        headRow.appendChild(h(
+          "th",
+          { class: `zcf-col-${c.col}`, "aria-sort": on ? sort.dir === "asc" ? "ascending" : "descending" : "none" },
+          h("button", {
+            class: `zcf-page-sort${on ? " zcf-page-sort-on" : ""}`,
+            type: "button",
+            "data-zcf-focus": `sort:${c.sort}`,
+            onclick: () => {
+              sort = nextSort(sort, c.sort);
+              render();
+              focusKey(`sort:${c.sort}`);
+            }
+          }, c.label, on ? h("span", { class: "zcf-page-arrow", "aria-hidden": "true" }, sort.dir === "asc" ? "▲" : "▼") : null)
+        ));
+      }
+    }
+    function rowSig(r, now) {
+      if (confirmId === r.id) return JSON.stringify(["confirm", r.id, r.username]);
+      if (editId === r.id) return JSON.stringify(["edit", r.id]);
+      return JSON.stringify([r.id, r.username, r.avatar, r.note, r.unread, !!r.presence, longStatusText(r.presence, now), r.profile, menuId === r.id, query.trim()]);
+    }
+    function confirmRow(r) {
+      return h(
+        "tr",
+        { class: "zcf-page-row zcf-page-confirm", dataset: { id: String(r.id) } },
+        h(
+          "td",
+          { colspan: String(COLUMNS.length) },
+          h(
+            "div",
+            {
+              class: "zcf-confirm",
+              onkeydown: (e) => {
+                if (e.key !== "Escape") return;
+                e.stopPropagation();
+                cancelRemove(r.id);
+              }
+            },
+            h("span", { class: "zcf-confirm-text" }, `Remove ${r.username} from your friends?`),
+            h("button", { class: "zcf-page-btn zcf-page-danger", type: "button", "data-zcf-focus": `confirm:${r.id}`, onclick: () => doRemove(r.id) }, "Remove"),
+            h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": `cancel:${r.id}`, onclick: () => cancelRemove(r.id) }, "Cancel")
+          )
+        )
+      );
+    }
+    function buildRow(r, now) {
+      if (confirmId === r.id) return confirmRow(r);
+      const online = !!(r.presence && r.presence.online);
+      const p = r.profile;
+      const level = p && p.level ? String(p.level) : "—";
+      const meta = [`Lv ${level}`, p && p.faction ? p.faction.name : null].filter(Boolean).join(" · ");
+      const nameCell = h(
+        "td",
+        { class: "zcf-col-name" },
+        link(`/profile/${r.id}`, "zcf-chip", [
+          avatar({ avatar: r.avatar, online: r.presence ? online : void 0, size: 24 }),
+          h("span", { class: "zcf-chip-name" }, highlightMatch(r.username, query))
+        ], { "data-zcf-focus": `name:${r.id}`, title: r.username }),
+        h("div", { class: "zcf-c-sub" }, meta),
+        r.note ? h("div", { class: "zcf-c-sub zcf-c-subnote" }, r.note) : null
+      );
+      const statusCell = h(
+        "td",
+        { class: "zcf-col-status" },
+        h("span", { class: r.presence ? online ? "zcf-st-on" : "zcf-st-off" : "zcf-st-unknown" }, r.presence ? longStatusText(r.presence, now) : "…"),
+        p && p.injured ? h("i", { class: "fas fa-skull-crossbones zcf-st-icon", role: "img", title: "Injured", "aria-label": "Injured" }) : null,
+        p && p.traveling ? h("i", { class: "fas fa-directions zcf-st-icon", role: "img", title: "Travelling", "aria-label": "Travelling" }) : null
+      );
+      const factionCell = h(
+        "td",
+        { class: "zcf-col-faction" },
+        p && p.faction ? link(`/faction/${p.faction.id}`, "zcf-fac", [h("i", { class: "fas fa-campground", "aria-hidden": "true" }), p.faction.name || `#${p.faction.id}`]) : h("span", { class: "zcf-dim" }, "—")
+      );
+      const noteCell = editId === r.id ? h("td", { class: "zcf-col-note" }, editInput, h("div", { class: "zcf-note-hint" }, "Enter to save · Esc to cancel · only you can see notes")) : h(
+        "td",
+        { class: "zcf-col-note" },
+        h("button", {
+          class: `zcf-note${r.note ? "" : " zcf-note-empty"}`,
+          type: "button",
+          title: r.note || "Add a note",
+          "data-zcf-focus": `note:${r.id}`,
+          onclick: () => startEdit(r.id)
+        }, r.note ? highlightMatch(r.note, query) : "Add a note")
+      );
+      const acts = h(
+        "div",
+        { class: "zcf-acts" },
+        h("button", {
+          class: "zcf-act zcf-act-msg",
+          type: "button",
+          title: "Message",
+          "aria-label": `Message ${r.username}`,
+          "data-zcf-focus": `msg:${r.id}`,
+          onclick: () => actions.openDm(r.id, { expand: true, username: r.username, avatar: r.avatar })
+        }, h("i", { class: "fas fa-comment-alt", "aria-hidden": "true" }), r.unread > 0 ? h("span", { class: "zcf-pill" }, String(r.unread)) : null),
+        h("button", { class: "zcf-act zcf-act-wide", type: "button", title: "Edit note", "aria-label": `Edit note for ${r.username}`, "data-zcf-focus": `edit:${r.id}`, onclick: () => startEdit(r.id) }, icon("pen")),
+        h("button", { class: "zcf-act zcf-act-wide", type: "button", title: "Remove", "aria-label": `Remove ${r.username}`, "data-zcf-focus": `remove:${r.id}`, onclick: () => askRemove(r.id) }, icon("times")),
+        h("button", {
+          class: "zcf-act zcf-act-more",
+          type: "button",
+          title: "More",
+          "aria-haspopup": "menu",
+          "aria-expanded": String(menuId === r.id),
+          "data-zcf-focus": `more:${r.id}`,
+          onclick: () => {
+            menuId = menuId === r.id ? null : r.id;
+            render();
+          }
+        }, icon("ellipsis-h")),
+        menuId === r.id ? h(
+          "div",
+          { class: "zcf-page-menu", role: "menu" },
+          h("button", {
+            type: "button",
+            role: "menuitem",
+            onclick: () => {
+              menuId = null;
+              router.navigate(`/profile/${r.id}`);
+            }
+          }, "Profile"),
+          h("button", { type: "button", role: "menuitem", onclick: () => startEdit(r.id) }, "Edit note"),
+          h("button", { type: "button", role: "menuitem", onclick: () => askRemove(r.id) }, "Remove")
+        ) : null
+      );
+      return h(
+        "tr",
+        { class: `zcf-page-row${editId === r.id ? " zcf-editing" : ""}`, dataset: { id: String(r.id) } },
+        nameCell,
+        h("td", { class: "zcf-col-level" }, level),
+        statusCell,
+        factionCell,
+        noteCell,
+        h("td", { class: "zcf-col-act" }, acts)
+      );
+    }
+    function render() {
+      if (frame) {
+        win.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      if (!active) return;
+      const s = store.get();
+      const now = Date.now();
+      const { rows, counts } = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads, tab, query, sort });
+      const ids = rows.map((r) => r.id);
+      if (editId !== null && !ids.includes(editId)) {
+        commitEdit();
+        return;
+      }
+      if (confirmId !== null && !ids.includes(confirmId)) confirmId = null;
+      if (menuId !== null && !ids.includes(menuId)) menuId = null;
+      currentIds = ids;
+      subtitle.textContent = `${counts.online} of ${counts.all} online`;
+      for (const [key, { b, count }] of tabEls) {
+        count.textContent = String(counts[key]);
+        b.setAttribute("aria-pressed", String(key === tab));
+        b.classList.toggle("zcf-page-tab-on", key === tab);
+      }
+      renderHead();
+      const focused = doc.activeElement;
+      const focusBefore = focused && focused !== editInput && el.contains(focused) ? focused.dataset.zcfFocus : void 0;
+      const editSel = editInput && focused === editInput ? [editInput.selectionStart, editInput.selectionEnd] : null;
+      rendering = true;
+      try {
+        const seen = /* @__PURE__ */ new Set();
+        rows.forEach((r, i) => {
+          const sig = rowSig(r, now);
+          let entry = rowEls.get(r.id);
+          if (!entry || entry.sig !== sig) {
+            const fresh = buildRow(r, now);
+            if (entry) entry.el.replaceWith(fresh);
+            entry = { sig, el: fresh };
+            rowEls.set(r.id, entry);
+          }
+          seen.add(r.id);
+          if (tbody.children[i] !== entry.el) tbody.insertBefore(entry.el, tbody.children[i] || null);
+        });
+        for (const [id, entry] of rowEls) {
+          if (seen.has(id)) continue;
+          entry.el.remove();
+          rowEls.delete(id);
+        }
+      } finally {
+        rendering = false;
+      }
+      table.hidden = rows.length === 0;
+      empty.hidden = rows.length > 0;
+      if (!rows.length) {
+        clear(empty);
+        const q = query.trim();
+        if (!counts.all) append(empty, ["No friends yet. Use ", h("b", null, "Add friend"), " above, or ", h("b", null, "Add Friend"), " on a player's profile."]);
+        else if (q) empty.textContent = `No friends match "${q}".`;
+        else empty.textContent = tab === "online" ? "No friends online right now." : "No offline friends.";
+      }
+      if (pop.isOpen) pop.refresh();
+      if (editSel && editInput && doc.activeElement !== editInput) {
+        editInput.focus();
+        editInput.setSelectionRange(editSel[0], editSel[1]);
+      } else if (focusBefore && !el.contains(doc.activeElement)) {
+        focusKey(focusBefore);
+      }
+    }
+    function scheduleRender() {
+      if (frame || !active) return;
+      frame = win.requestAnimationFrame(() => {
+        frame = 0;
+        safe("friends-page-render", render)();
+      });
+    }
+    function ensure() {
+      if (!active || el.isConnected) return;
+      const slot = doc.querySelector(".q-page-container");
+      if (!slot) return;
+      doc.documentElement.classList.add(PAGE_CLASS);
+      slot.appendChild(el);
+    }
+    function show() {
+      active = true;
+      doc.documentElement.classList.add(PAGE_CLASS);
+      doc.addEventListener("mousedown", onDocMousedown);
+      ensure();
+      render();
+      clearTimeout(warnTimer);
+      warnTimer = setTimeout(() => {
+        if (!active || el.isConnected) return;
+        warnOnce("friends-page-no-slot");
+        doc.documentElement.classList.remove(PAGE_CLASS);
+      }, WARN_MS);
+    }
+    function hide() {
+      commitEdit();
+      active = false;
+      confirmId = null;
+      menuId = null;
+      pop.close();
+      clearTimeout(warnTimer);
+      if (frame) {
+        win.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      doc.removeEventListener("mousedown", onDocMousedown);
+      doc.documentElement.classList.remove(PAGE_CLASS);
+      el.remove();
+    }
+    function onRoute(path) {
+      const want = isFriendsPath(path);
+      if (want && !active) show();
+      else if (!want && active) hide();
+      else if (!want) doc.documentElement.classList.remove(PAGE_CLASS);
+    }
+    return {
+      el,
+      start() {
+        if (!unkeep && keeper) unkeep = keeper.add({ name: "friends-page", attached: () => !active || el.isConnected, ensure });
+      },
+      onRoute,
+      render,
+      scheduleRender,
+      get active() {
+        return active;
+      },
+      destroy() {
+        if (active) hide();
+        if (unkeep) unkeep();
+        unkeep = null;
+      }
+    };
+  }
+
+  // src/ui/topbar-button.js
+  var MAIL_SELECTOR = 'header a.q-btn[href="/mail"]';
+  var WARN_MS2 = 1e4;
+  function createTopbarButton({ doc = document, keeper = null, router }) {
+    let wrap = null;
+    let button = null;
+    let badgeEl = null;
+    let count = 0;
+    let unkeep = null;
+    let warnTimer = null;
+    function render() {
+      if (!button) return;
+      badgeEl.textContent = String(count);
+      badgeEl.hidden = count < 1;
+      button.classList.toggle("text-grey-4", count >= 1);
+      button.classList.toggle("text-grey-7", count < 1);
+      const label = `Friends (${count} online)`;
+      button.setAttribute("title", label);
+      button.setAttribute("aria-label", label);
+    }
+    function onClick(e) {
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      router.navigate(FRIENDS_PATH);
+    }
+    function build(mail) {
+      button = mail.cloneNode(true);
+      for (const b of button.querySelectorAll(".q-badge")) b.remove();
+      button.setAttribute("href", FRIENDS_PATH);
+      const i = button.querySelector("i");
+      if (i) {
+        for (const c of [...i.classList]) if (/^fa-/.test(c)) i.classList.remove(c);
+        i.classList.add("fa-user-friends");
+      }
+      badgeEl = h("div", {
+        class: "q-badge flex inline items-center no-wrap q-badge--single-line q-badge--floating q-badge--rounded bg-positive text-white zcf-topbar-badge",
+        hidden: true
+      });
+      (button.querySelector(".q-btn__content") || button).appendChild(badgeEl);
+      button.addEventListener("click", safe("topbar-click", onClick));
+      wrap = h("div", { class: "zcf-topbar" }, button);
+    }
+    function ensure() {
+      if (wrap && wrap.isConnected) return;
+      const mail = doc.querySelector(MAIL_SELECTOR);
+      const mailWrap = mail && mail.parentElement;
+      if (!mailWrap || !mailWrap.parentElement) return;
+      if (!wrap) build(mail);
+      mailWrap.before(wrap);
+      render();
+    }
+    return {
+      start() {
+        ensure();
+        if (!unkeep && keeper) unkeep = keeper.add({ name: "topbar", attached: () => !!(wrap && wrap.isConnected), ensure });
+        clearTimeout(warnTimer);
+        warnTimer = setTimeout(() => {
+          if (!wrap || !wrap.isConnected) warnOnce("topbar-mail-button-not-found");
+        }, WARN_MS2);
+      },
+      setCount(n) {
+        if (n === count) return;
+        count = n;
+        render();
+      },
+      destroy() {
+        clearTimeout(warnTimer);
+        if (unkeep) unkeep();
+        unkeep = null;
+        if (wrap) wrap.remove();
+      }
+    };
+  }
+
   // src/app.js
   var CHATTING_MS = 5 * 60 * 1e3;
   var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4 };
   var PRESENCE_PER_SWEEP = 20;
+  var PRESENCE_BACKGROUND_PER_SWEEP = 5;
+  var PRESENCE_BACKGROUND_STALE_MS = 5 * 60 * 1e3;
   function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
     const store = createStore({ playerId, storage, win, now });
     const router = createRouter({ win, doc });
@@ -4858,25 +5568,35 @@ sandfish		/items/sandfish.webp`;
       interval: INTERVALS.dmInfo,
       doc
     });
+    const listOpen = () => store.get().dock.friendsOpen || page.active;
+    let fullSweepPending = true;
     const presencePoller = makePoller({
       run: () => {
+        const full = fullSweepPending || listOpen();
+        fullSweepPending = false;
+        const maxAge = full ? void 0 : PRESENCE_BACKGROUND_STALE_MS;
         const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
-        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
-        presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
+        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id, maxAge));
+        presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, full ? PRESENCE_PER_SWEEP : PRESENCE_BACKGROUND_PER_SWEEP));
         return { ok: true };
       },
       interval: INTERVALS.presence,
       doc
     });
     const pollers = [threadsPoller, activeDmPoller, infoPoller, presencePoller];
+    let wasListOpen = false;
     function syncPollers() {
       if (stopped) return;
       const s = store.get();
       const anyOpen = s.dock.dms.some((d) => d.open);
-      for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen], [presencePoller, s.dock.friendsOpen]]) {
+      for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen]]) {
         if (on) p.start();
         else p.stop();
       }
+      const open = listOpen();
+      if (!presencePoller.active) presencePoller.start();
+      else if (open && !wasListOpen) presencePoller.poke();
+      wasListOpen = open;
     }
     function stopAll() {
       stopped = true;
@@ -4891,13 +5611,15 @@ sandfish		/items/sandfish.webp`;
       threadsPoller.start();
       syncPollers();
     }
-    const dock = createDock({ doc, win, onGameChatOpened: () => store.update((s) => collapseAll(s)) });
+    const keeper = createKeeper({ doc, win });
+    const dock = createDock({ doc, win, keeper, onGameChatOpened: () => store.update((s) => collapseAll(s)) });
     const actions = {
       addFriend(p) {
         store.update((s) => addFriend(s, p, now()));
         presence.refresh([p.id]);
       },
       removeFriend: (id) => store.update((s) => removeFriend(s, id)),
+      setFriendNote: (id, note) => store.update((s) => setFriendNote(s, id, note)),
       openDm(id, { expand = true, username, avatar: avatar2 } = {}) {
         const small = dock.isSmall();
         store.update((s) => openDm(s, id, { expand, exclusive: small && expand, now: now(), username, avatar: avatar2 }));
@@ -4930,11 +5652,10 @@ sandfish		/items/sandfish.webp`;
         activeDmPoller.poke();
       },
       exportFriends: () => exportFriends(store.get(), playerId),
-      importFriends(text) {
-        const r = parseImport(text, playerId);
+      importFriends(text2) {
+        const r = parseImport(text2, playerId);
         if (!r.ok) return r;
-        const added = store.update((s) => r.friends.reduce((n, f) => n + (addFriend(s, f, now()) ? 1 : 0), 0));
-        return { ok: true, added };
+        return { ok: true, ...store.update((s) => mergeImport(s, r.friends, now())) };
       }
     };
     const services = {
@@ -4954,10 +5675,15 @@ sandfish		/items/sandfish.webp`;
     };
     const view = createDockView({ root: dock.root, services });
     const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+    const page = createFriendsPage(services, { doc, win, keeper });
+    const topbar = createTopbarButton({ doc, keeper, router });
+    const updateOnlineCount = () => topbar.setCount(countOnline(store.get().friends, presence.get));
     store.subscribe(() => {
       view.render();
       syncPollers();
       profileButton.refresh();
+      page.scheduleRender();
+      updateOnlineCount();
     });
     presence.subscribe(() => {
       view.friends.scheduleList();
@@ -4965,10 +5691,14 @@ sandfish		/items/sandfish.webp`;
         const w = view.dmWindow(d.id);
         if (w) w.update();
       }
+      page.scheduleRender();
+      updateOnlineCount();
     });
     inbox.subscribe(() => view.friends.scheduleList());
     router.onChange((path) => {
       profileButton.onRoute(path);
+      page.onRoute(path);
+      syncPollers();
       resumeIfLoggedIn();
     });
     function enforcePhoneRule() {
@@ -4990,9 +5720,13 @@ sandfish		/items/sandfish.webp`;
       view.render();
     });
     dock.start();
+    page.start();
+    topbar.start();
     if (dock.isSmall()) enforcePhoneRule();
     view.render();
     profileButton.onRoute(router.path);
+    page.onRoute(router.path);
+    updateOnlineCount();
     threadsPoller.start();
     syncPollers();
     return {
@@ -5006,6 +5740,10 @@ sandfish		/items/sandfish.webp`;
         for (const p of pollers) p.destroy();
         dock.destroy();
         profileButton.destroy();
+        page.destroy();
+        topbar.destroy();
+        keeper.destroy();
+        router.destroy();
         store.destroy();
       }
     };
@@ -5133,6 +5871,82 @@ sandfish		/items/sandfish.webp`;
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
 .q-btn.zcf-is-friend{color:#81c784!important}
+.zcf-topbar [hidden]{display:none!important}
+.zcf-page{max-width:1000px;margin:0 auto;color:#d9d9d9;font-size:13px}
+.zcf-page-title{display:flex;align-items:center;margin-bottom:16px}
+.zcf-page-side{flex:1;display:flex;align-items:center;min-width:0}
+.zcf-page-side-r{justify-content:flex-end}
+.zcf-page-mid{text-align:center}
+.zcf-page-sub{font-size:12px;color:#9e9e9e;margin-top:2px}
+.zcf-page-back{display:inline-flex;align-items:center;gap:6px;color:#bdbdbd;font-size:12px;text-transform:uppercase;text-decoration:none;padding:4px 8px;border-radius:4px}
+.zcf-page-back:hover{background:#ffffff0d;color:#e0e0e0}
+.zcf-page-back i{font-size:10px}
+.zcf-page-addwrap{position:relative}
+.zcf-page-add{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid #e0e0e0aa;border-radius:4px;color:#e0e0e0;font:inherit;font-size:12px;text-transform:uppercase;padding:5px 10px;cursor:pointer}
+.zcf-page-add:hover,.zcf-page-add.zcf-page-add-on{background:#ffffff14}
+.zcf-page-add i{font-size:10px}
+.zcf-page-add-short{display:none}
+.zcf-page .zcf-pop{top:calc(100% + 6px);right:0}
+.zcf-page-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.zcf-page-tabs{display:flex;gap:4px}
+.zcf-page-tab{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;background:#121417f5;border:1px solid #000;border-radius:4px;color:#9e9e9e;font-family:Oswald,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
+.zcf-page-tab b{font-weight:400;opacity:.55}
+.zcf-page-tab:hover{color:#e0e0e0}
+.zcf-page-tab.zcf-page-tab-on{background:#0f1114;color:#e6e6e6;box-shadow:inset 0 2px 0 #0a748f}
+.zcf-page-search{display:flex;align-items:center;gap:8px;margin-left:auto;width:260px;height:36px;padding:0 10px;background:#ffffff26;border-radius:4px}
+.zcf-page-search i{font-size:12px;opacity:.6}
+.zcf-page-input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#e0e0e0;font:inherit;font-size:13px}
+.zcf-page-input::placeholder{color:#ffffff80}
+.zcf-page-panel{background:#202327;border:1px solid #000;border-radius:4px}
+.zcf-page-table{width:100%;border-collapse:collapse}
+.zcf-page-table th{background:#090a0b;color:#a6a6a6;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:left;white-space:nowrap;padding:10px 12px;border-bottom:1px solid #000}
+.zcf-page-table td{padding:6px 12px;border-top:1px solid #2b3035;border-bottom:1px solid #090a0b;vertical-align:middle}
+.zcf-page-sort{background:none;border:0;padding:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+.zcf-page-sort:hover,.zcf-page-sort.zcf-page-sort-on{color:#e0e0e0}
+.zcf-page-arrow{color:#0d9bbf;margin-left:4px;font-size:9px}
+.zcf-page-table .zcf-col-level{width:60px}
+.zcf-page-table .zcf-col-status,.zcf-page-table .zcf-col-faction{white-space:nowrap}
+.zcf-page-table .zcf-col-note{width:32%;max-width:0}
+.zcf-page-table .zcf-col-act{width:1%;white-space:nowrap}
+.zcf-chip{display:inline-flex;align-items:center;gap:8px;min-width:160px;max-width:230px;padding:2px 10px 2px 2px;background:#151619;border-radius:6px;color:#d9d9d9;text-decoration:none}
+.zcf-chip:hover{background:#0e0f11}
+.zcf-page .zcf-chip .zcf-av-img{border-radius:4px}
+.zcf-page .zcf-chip .zcf-dot{width:8px;height:8px;border-width:2px;bottom:-2px;right:-2px}
+.zcf-chip-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zcf-page mark{background:#f2c03740;color:inherit;border-radius:2px}
+.zcf-c-sub{display:none;font-size:11px;color:#9e9e9e;margin-top:3px}
+.zcf-c-subnote{font-style:italic}
+.zcf-st-on{color:#69f0ae}
+.zcf-st-off{color:#ef5350}
+.zcf-st-unknown{color:#9e9e9e}
+.zcf-st-icon{color:#90a4ae;margin-left:7px;font-size:13px}
+.zcf-fac{display:inline-flex;align-items:center;gap:6px;color:#bdbdbd;text-decoration:none}
+.zcf-fac:hover{color:#e0e0e0;text-decoration:underline}
+.zcf-fac i{color:#90a4ae;font-size:11px}
+.zcf-dim{opacity:.35}
+.zcf-note{display:block;width:100%;background:none;border:0;padding:2px 0;color:#9e9e9e;font:inherit;font-style:italic;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text}
+.zcf-note:hover{color:#d9d9d9}
+.zcf-note.zcf-note-empty{opacity:.4}
+.zcf-page-row.zcf-editing td{background:#0a748f14}
+.zcf-note-input{display:block;box-sizing:border-box;width:100%;background:#0e1013;border:1px solid #0a748f;border-radius:3px;outline:0;color:#d9d9d9;font:inherit;font-size:12.5px;padding:5px 8px}
+.zcf-note-hint{font-size:10.5px;color:#9e9e9e;margin-top:4px}
+.zcf-acts{display:flex;justify-content:flex-end;gap:4px;position:relative}
+.zcf-act{position:relative;display:flex;align-items:center;justify-content:center;width:28px;height:26px;background:#ffffff0d;border:0;border-radius:4px;color:#bdbdbd;font-size:12px;cursor:pointer}
+.zcf-act:hover{background:#ffffff1f;color:#fff}
+.zcf-act.zcf-act-msg{background:#0a748f;color:#fff}
+.zcf-act.zcf-act-msg:hover{background:#0c86a6}
+.zcf-act .zcf-pill{position:absolute;top:-6px;right:-6px}
+.zcf-act.zcf-act-more{display:none}
+.zcf-page-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:10;min-width:140px;padding:4px 0;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 10px 24px #000000a0}
+.zcf-page-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#d9d9d9;font:inherit;font-size:13px;padding:8px 12px;cursor:pointer}
+.zcf-page-menu button:hover{background:#ffffff0a}
+.zcf-page-confirm td{background:#ff42420f}
+.zcf-confirm{display:flex;align-items:center;gap:8px}
+.zcf-confirm-text{flex:1}
+.zcf-page-btn{background:#ffffff0d;border:0;border-radius:4px;color:#bdbdbd;font:inherit;font-size:11px;text-transform:uppercase;padding:5px 12px;cursor:pointer}
+.zcf-page-btn:hover{background:#ffffff1f;color:#fff}
+.zcf-page-btn.zcf-page-danger{background:#ff42421f;color:#ff8a8a}
+.zcf-page-empty{padding:28px 16px;text-align:center;color:#9e9e9e}
 @media (min-width:600px){
   .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
   .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
@@ -5142,6 +5956,19 @@ sandfish		/items/sandfish.webp`;
 @media (max-width:599.98px){
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
+  .zcf-page-back{display:none}
+  .zcf-page-add-long{display:none}
+  .zcf-page-add-short{display:inline}
+  .zcf-page-search{width:100%;margin-left:0}
+  .zcf-page-table .zcf-col-level,.zcf-page-table .zcf-col-faction,.zcf-page-table .zcf-col-note{display:none}
+  .zcf-page-table .zcf-editing .zcf-col-note{display:table-cell}
+  .zcf-page-table .zcf-editing .zcf-col-status{display:none}
+  .zcf-page-table th,.zcf-page-table td{padding-left:8px;padding-right:8px}
+  .zcf-chip{min-width:0;max-width:170px}
+  .zcf-c-sub{display:block}
+  .zcf-act.zcf-act-wide{display:none}
+  .zcf-act.zcf-act-more{display:flex}
+  .q-gutter-xs > .zcf-topbar{margin-left:2px}
 }
 `;
   function injectStyles(doc = document) {
@@ -5154,12 +5981,13 @@ sandfish		/items/sandfish.webp`;
 
   // src/main.js
   var RETRY_MS = 15e3;
-  async function waitForPlayer(api, { retryMs = RETRY_MS, maxTries = Infinity } = {}) {
+  async function waitForPlayer(api, { retryMs = RETRY_MS, maxTries = Infinity, onWait } = {}) {
     for (let i = 0; i < maxTries; i += 1) {
       const r = await api.getStats();
       const me = r.ok ? statsPlayer(r.data) : null;
       if (me) return me;
       if (r.ok) warnOnce("stats-shape", r.data && typeof r.data === "object" ? Object.keys(r.data) : r.data);
+      if (onWait) onWait();
       await new Promise((resolve) => setTimeout(resolve, retryMs));
     }
     return null;
@@ -5168,7 +5996,8 @@ sandfish		/items/sandfish.webp`;
     if (win.__zcfStarted) return null;
     win.__zcfStarted = true;
     try {
-      const player = await waitForPlayer(api);
+      hideGame404Early(doc, win);
+      const player = await waitForPlayer(api, { onWait: () => doc.documentElement.classList.remove(PAGE_CLASS) });
       if (!player) return null;
       injectStyles(doc);
       return createApp({ api, playerId: player.id, playerName: player.username, doc, win });

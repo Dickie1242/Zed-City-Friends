@@ -43,6 +43,13 @@ Record the answers in this file under "Findings", and fix the code only if an an
 21. **Profile navigation:** go from another player's profile to your own, then between two different players' profiles: `ADD FRIEND` never appears on your own profile, and on a player's profile it always matches the player currently shown (never a stale button left over from the previous page).
 22. **Re-expanding a DM:** minimize then re-expand a DM that has unread messages — does the game's own unread/envelope count clear? (`getNewMessages` may not mark it read; if it doesn't, note that as a known gap.)
 23. **Routes without the dock:** browse to a few different pages/routes and note any where the dock (Friends tab, Global/Faction chat) is missing entirely.
+24. **Top bar:** a friends icon sits left of the mail envelope. Its green number matches how many friends are online, and it's hidden at 0. On a 360px-wide phone layout the icons stay on one line.
+25. **Friends page:** click the icon: `/friends` opens with no page reload and no "Sorry, nothing here" flash. Refresh `/friends` directly: the same page loads.
+26. Sort by Name, Level, Status and Faction (click twice to reverse). Tabs and search (names and notes) narrow the list.
+27. **Notes:** edit (Enter saves, Esc cancels, clicking away saves), reload, then open a second game tab: the note is there in both.
+28. **Message** opens the DM in the dock. **Remove** asks first. **Add friend** finds and adds a player, who appears in the table.
+29. Injured and traveling icons and the faction match those players' profiles.
+30. **Export → Import** round-trips notes. When idle with the page closed, the Network tab shows at most ~9 requests a minute.
 
 ## Findings
 
