@@ -1,6 +1,7 @@
 // Keeps our root inside the game's .chat-containers and coordinates the phone-layout "one open chat" rule.
 import { h } from './dom.js';
 import { safe } from '../util.js';
+import { createKeeper } from './keeper.js';
 
 export const SMALL_QUERY = '(max-width: 599.98px)';
 
@@ -9,11 +10,14 @@ function hasClassToken(value, cls) {
   return (value || '').split(/\s+/).includes(cls);
 }
 
-export function createDock({ doc = document, win = window, onGameChatOpened = () => {} } = {}) {
+export function createDock({ doc = document, win = window, keeper = null, onGameChatOpened = () => {} } = {}) {
   // display:contents lets our .chat-container children sit directly in the game's flex row.
   const root = h('div', { class: 'zcf-root' });
   let dockEl = null;
-  let frame = 0;
+  // The app passes its shared keeper; standalone (tests) the dock keeps its own.
+  const ownKeeper = keeper ? null : createKeeper({ doc, win });
+  const keep = keeper || ownKeeper;
+  let unkeep = null;
 
   // One MediaQueryList for the dock's lifetime; isSmall() and onSmallChange() both read/subscribe to it.
   const mql = typeof win.matchMedia === 'function' ? win.matchMedia(SMALL_QUERY) : null;
@@ -71,17 +75,6 @@ export function createDock({ doc = document, win = window, onGameChatOpened = ()
     return true;
   }
 
-  // One cheap check per animation frame, however many DOM mutations the game makes.
-  const bodyObserver = new win.MutationObserver(
-    safe('dock-body-observer', () => {
-      if (frame || root.isConnected) return;
-      frame = win.requestAnimationFrame(() => {
-        frame = 0;
-        safe('dock-ensure', ensure)();
-      });
-    }),
-  );
-
   // Containers whose header we already clicked this turn, so a second call before Vue's
   // microtask class update lands doesn't click (and re-open) them again.
   let clickedThisTurn = new WeakSet();
@@ -107,13 +100,13 @@ export function createDock({ doc = document, win = window, onGameChatOpened = ()
     minimizeGameChats,
     start() {
       ensure();
-      bodyObserver.observe(doc.body, { childList: true, subtree: true });
+      if (!unkeep) unkeep = keep.add({ name: 'dock', attached: () => root.isConnected, ensure });
     },
     destroy() {
-      bodyObserver.disconnect();
+      if (unkeep) unkeep();
+      unkeep = null;
+      if (ownKeeper) ownKeeper.destroy();
       classObserver.disconnect();
-      if (frame) win.cancelAnimationFrame(frame);
-      frame = 0;
       dockEl = null;
       for (const unsubscribe of [...smallChangeUnsubs]) unsubscribe();
       root.remove();

@@ -41,3 +41,25 @@ export const PROFILE_OTHER_HTML = `${TOP_BAR_HTML}<div class="profile-head"><div
 export const PROFILE_BLOCKED_HTML = `${TOP_BAR_HTML}<div class="profile-head"><div class="profile-actions">${qbtn('fa-ban', 'Unblock', 'text-red-4')}</div></div>`;
 
 export const PROFILE_OWN_HTML = `${TOP_BAR_HTML}<div class="profile-head"><div>${qbtn('fa-cog', 'Settings')}</div></div>`;
+
+const roundBtn = (href, iconClass, count) =>
+  `<div><a class="q-btn q-btn-item non-selectable no-outline q-btn--flat q-btn--round ${count ? 'text-grey-4' : 'text-grey-7'} q-btn--actionable q-focusable q-hoverable" tabindex="0" href="${href}" style="font-size: 10px;"><span class="q-focus-helper"></span><span class="q-btn__content text-center col items-center q-anchor--skip justify-center row"><i class="q-icon fal ${iconClass}" aria-hidden="true" role="img"></i>${count ? `<div class="q-badge flex inline items-center no-wrap q-badge--single-line bg-red-5 text-white q-badge--floating q-badge--rounded" role="status">${count}</div>` : ''}</span></a></div>`;
+
+// The logged-in layout's header, trimmed to the right-hand icon group: [Mail][Notifications][Profile menu].
+export const HEADER_HTML = `
+<header class="q-header q-layout__section--marginal fixed-top text-white q-pt-xs">
+  <div class="q-toolbar row no-wrap items-center">
+    <div class="col row items-center">
+      <div class="no-wrap col-xs-4 order-xs-first order-sm-none col-sm-auto">
+        <div class="full-width q-gutter-xs row items-center justify-end">
+          ${roundBtn('/mail', 'fa-envelope', 2)}
+          ${roundBtn('/notifications', 'fa-bell', 0)}
+          <div><button class="q-btn q-btn-item non-selectable no-outline q-btn--flat q-btn--rectangle q-btn--dense profile-menu" type="button"><span class="q-btn__content"><i class="q-icon fas fa-caret-down" aria-hidden="true"></i></span></button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>`;
+
+// The page slot while the layout's catch-all 404 route is showing (any unknown path, e.g. /friends).
+export const PAGE_404_HTML = '<div class="q-page-container"><div class="fixed-center text-center"><p class="text-faded">Sorry, nothing here...</p></div></div>';
