@@ -27,7 +27,7 @@ describe('user stylesheet', () => {
   it('gives an unlocked chat a containing block for its grips and a grab cursor', () => {
     const css = buildUserCss({ chats: { 'game:faction': { locked: false } } });
     expect(css).toContain('body .chat-containers > .chat-container.faction-chat{position:relative}');
-    expect(css).toContain('body .chat-containers > .chat-container.faction-chat > .chat-header{cursor:grab}');
+    expect(css).toContain('body .chat-containers > .chat-container.faction-chat > .chat-header{cursor:grab;touch-action:none}');
   });
 
   it('shows a live gesture over the saved entry', () => {

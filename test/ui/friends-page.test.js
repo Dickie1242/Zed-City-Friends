@@ -383,7 +383,8 @@ describe('friends page', () => {
     page.onRoute('/enemies');
     expect(page.kind).toBe('enemies');
     expect(names()).toEqual(['Rustbucket', 'Grim']);
-    expect(row(9).querySelector('.zcf-col-name .zcf-enemy-mark')).not.toBeNull();
+    const nameRow = row(9).querySelector('.zcf-col-name .zcf-name-row'); // skull and chip on one centred row
+    expect([...nameRow.children].map((c) => c.classList.contains('zcf-enemy-mark') ? 'skull' : c.className)).toEqual(['skull', 'zcf-chip']);
     const [f, e] = document.querySelectorAll('.zcf-page-h');
     expect(e.classList.contains('zcf-page-h-on')).toBe(true);
     expect(e.getAttribute('aria-current')).toBe('page');

@@ -12,6 +12,8 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 - **Customize any chat.** Every chat in the dock, the game's Global, Faction and Activity included, gets a padlock. Unlock it to drag the chat anywhere by its header, resize it from its edges, and lock it there; the return arrow sends it back to the row. Right-click a padlock for its menu: message size (80–200%, one chat at a time), size reset, return to row, and mute for a DM. Each chat remembers its own size, spot and message size, and your other game tabs follow along. Desktop only; on phones only message size applies.
 - **Chat settings.** The cog in the bottom-right corner: mark all chats read, close all private chats, every chat's settings with a Reset, an optional sound for new private messages, the version, and what's new.
 - **Mute.** The bell in a DM header mutes that conversation: no pop-up tab, no sound, and it's left out of the green count.
+- **Never miss a message.** Optional desktop notifications for new private messages while the game isn't in focus (off until you turn them on in Chat settings, with a Friends only switch), and your unread count in the browser tab's title. Pin conversations to the top of the Chats tab.
+- **Local time.** Chat settings can show message times in your own time zone instead of game time.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 
@@ -32,7 +34,7 @@ Zed City doesn't push new mail to the browser, so the script checks on a timer:
 | In a DM conversation | ~2s in that window, ~5s elsewhere | ~43 (the game's own inbox page: 60) |
 | Chatted in the last 5 minutes | ~5s | 12 |
 | Idle | ~15s (the game's envelope badge: 60s) | 4 |
-| Game tab in the background | checked the moment you return | 0 |
+| Game tab in the background | checked the moment you return | 0 (1 with desktop notifications on) |
 
 While the Private Messages window or Friends page is open, it also refreshes online/last-active status for your friends list, capped at 20 `getProfile` calls a minute (stalest friends first) no matter how many friends you have.
 

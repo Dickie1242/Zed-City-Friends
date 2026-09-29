@@ -6,6 +6,8 @@ import { enemyMark } from './marks.js';
 import { safe } from '../util.js';
 
 const ROW = '.msg-cont';
+// Past this many queued nodes (a hidden tab pauses the frame that drains them), drop the queue and rescan.
+const MAX_PENDING = 500;
 
 // names(): the Set of lower-cased enemy usernames (enemies.js enemyNames).
 export function createEnemyMarks({ doc = document, win = window, keeper = null, names }) {
@@ -13,6 +15,7 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
   let observer = null;
   let frame = 0;
   let pending = [];
+  let rescanWanted = false;
   let handled = new WeakSet(); // rows already looked at, so a burst of mutations doesn't redo them
   let unkeep = null;
 
@@ -36,6 +39,12 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
 
   function flushPending() {
     frame = 0;
+    if (rescanWanted) {
+      rescanWanted = false;
+      pending = [];
+      refresh();
+      return;
+    }
     const set = names();
     const nodes = pending;
     pending = [];
@@ -55,7 +64,11 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
         if (n.nodeType === 1 && !n.classList.contains('zcf-enemy-mark')) pending.push(n);
       }
     }
-    if (pending.length && !frame) frame = win.requestAnimationFrame(safe('enemy-marks', flushPending));
+    if (pending.length > MAX_PENDING) {
+      pending = [];
+      rescanWanted = true;
+    }
+    if ((pending.length || rescanWanted) && !frame) frame = win.requestAnimationFrame(safe('enemy-marks', flushPending));
   }
 
   // Every game chat row on screen, after the enemies list changed.

@@ -170,4 +170,18 @@ describe('enemy profile button', () => {
     route(own, '/profile/1');
     expect(document.querySelector('.zcf-profile-btn')).toBeNull();
   });
+
+  it('stops watching the page once it is your own profile', async () => {
+    const b = setupBoth('<div id="page"></div>');
+    route(b, '/profile/1');
+    document.getElementById('page').innerHTML = PROFILE_OWN_HTML;
+    await flush();
+    await flush();
+    const spy = vi.spyOn(document, 'querySelectorAll');
+    for (let i = 0; i < 3; i += 1) {
+      document.body.appendChild(document.createElement('p'));
+      await flush();
+    }
+    expect(spy.mock.calls.filter((c) => String(c[0]).includes('q-btn--outline'))).toHaveLength(0);
+  });
 });

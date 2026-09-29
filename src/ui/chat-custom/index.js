@@ -90,6 +90,14 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     syncGrips(rec.el, [], null);
   }
 
+  function syncControls(key) {
+    const c = chats.find((x) => x.key === key);
+    const rec = records.get(key);
+    if (!c || !rec) return;
+    const entry = entryOf(key);
+    rec.controls.sync(entry, (entry && entry.w) || c.el.getBoundingClientRect().width);
+  }
+
   function refresh() {
     chats = findChats(doc);
     dockEl = doc.querySelector('.chat-containers');
@@ -153,7 +161,8 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     win,
     onMove(key, rect) {
       live = { key, entry: rect };
-      refresh();
+      applyStyle();
+      syncControls(key); // the 400px header controls follow the live width; nothing else changes mid-resize
     },
     onCommit(key, rect) {
       live = null;

@@ -2,6 +2,29 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
+    version: '0.6.0',
+    date: '2026-09-29',
+    features: [
+      {
+        title: 'Never miss a message',
+        points: [
+          'Optional desktop notifications for new private messages (Chat settings), with a Friends only switch.',
+          "The browser tab's title shows your unread count, like (2) Zed City. You can turn it off in Chat settings.",
+        ],
+      },
+      { title: 'Pinned chats', points: ['Pin conversations to the top of the Chats tab with the pin on each row.'] },
+      { title: 'Phones', points: ['An open chat gets the full width, with every bubble on a row underneath.'] },
+      { title: 'Local time', points: ['Show message times in your own time zone instead of game time (Chat settings).'] },
+      {
+        title: 'Fixes',
+        points: [
+          'Chat times now match the game, and chats whose last message is an invite show up again.',
+          'Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus.',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.5.x',
     date: '2026-09-29',
     features: [

@@ -47,7 +47,7 @@ export function buildUserCss({ chats = {}, live = null, small = false, vw = 1280
     if (sized.length || isMoved(entry) || isLive) box.push('transition:none');
     if (box.length) rules.push(`${sel}{${box.join(';')}}`);
     if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(';')};flex:none}`);
-    if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab}`);
+    if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab;touch-action:none}`); // a touch drag moves it, not the page
   }
   return rules.join('\n');
 }

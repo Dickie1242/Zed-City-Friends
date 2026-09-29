@@ -229,4 +229,13 @@ describe('chat customization', () => {
     await flush();
     expect(document.querySelector('.activity-chat .zcf-cc-lock')).not.toBeNull();
   });
+
+  it('hands focus back to the padlock when Esc closes the chat menu', () => {
+    const { general } = setup();
+    const lock = lockOf(general);
+    lock.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(document.querySelector('.zcf-cmenu').contains(document.activeElement)).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.activeElement).toBe(lock);
+  });
 });

@@ -17,7 +17,9 @@ export function createChatMenu({ doc = document, win = window } = {}) {
   const onKey = (e) => {
     if (e.key !== 'Escape') return;
     e.stopPropagation();
+    const back = anchor;
     close();
+    if (back && back.isConnected) back.focus(); // back where the keyboard left off
   };
 
   function position() {
@@ -37,8 +39,13 @@ export function createChatMenu({ doc = document, win = window } = {}) {
     clear(el);
     el.appendChild(h('div', { class: 'zcf-cmenu-title' }, model.title));
     for (const row of model.rows) el.appendChild(h('div', { class: 'zcf-cmenu-row' }, h('span', { class: 'zcf-cmenu-label' }, row.label), row.controls));
-    const again = el.querySelectorAll('button');
-    if (focused >= 0 && again[Math.min(focused, again.length - 1)]) again[Math.min(focused, again.length - 1)].focus();
+    // Focus the same button again, or the nearest one still enabled (+ turns disabled at 200%).
+    const again = [...el.querySelectorAll('button')];
+    if (focused < 0 || !again.length) return;
+    const at = Math.min(focused, again.length - 1);
+    const order = again.map((b, i) => [Math.abs(i - at), b]).sort((a, b) => a[0] - b[0]);
+    const target = order.find(([, b]) => !b.disabled);
+    if (target) target[1].focus();
   }
 
   function open(anchorEl, chatKey, model) {
@@ -73,7 +80,9 @@ export function createChatMenu({ doc = document, win = window } = {}) {
     close,
     // Re-draws the open menu after its chat's settings changed.
     update(chatKey, model) {
-      if (armed && chatKey === key) render(model);
+      if (!armed || chatKey !== key) return;
+      render(model);
+      if (anchor && anchor.isConnected) position(); // its chat may have moved (Return to row)
     },
     isOpen: () => armed,
     get key() {

@@ -24,12 +24,24 @@ export function createSound({ win = window } = {}) {
     return ctx;
   }
 
-  // Plays a named sound; 'off' (or any unknown name) is silent. Returns whether anything was scheduled.
-  function play(name) {
+  // Plays a named sound; 'off' (or any unknown name) is silent. Returns whether anything was (or will be)
+  // scheduled. A suspended context is only waited for when the call comes from a click (`fromUser`):
+  // otherwise tones queued in it would all play at once on the player's first click.
+  function play(name, { fromUser = false } = {}) {
     const tones = TONES[name];
     if (!tones) return false;
     const ac = context();
     if (!ac) return false;
+    if (ac.state === 'running') {
+      schedule(ac, tones);
+      return true;
+    }
+    if (!fromUser || typeof ac.resume !== 'function') return false;
+    ac.resume().then(() => schedule(ac, tones), () => {});
+    return true;
+  }
+
+  function schedule(ac, tones) {
     const t0 = ac.currentTime;
     for (const tone of tones) {
       const osc = ac.createOscillator();
@@ -47,7 +59,6 @@ export function createSound({ win = window } = {}) {
       osc.start(start);
       osc.stop(end + 0.02);
     }
-    return true;
   }
 
   return {

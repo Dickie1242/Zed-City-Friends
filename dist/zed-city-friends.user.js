@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.5.2
+// @version      0.6.0
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -371,19 +371,33 @@
   var PM_TABS = ["chats", "friends", "faction", "blocked"];
   var SOUNDS = ["off", "chirp", "ping", "bell"];
   var MAX_MUTED = 500;
+  var MAX_PINNED = 20;
+  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "localTime"];
   function defaultSettings() {
-    return { v: 1, pmTab: "chats", sound: "off", chats: {}, muted: [] };
+    return {
+      v: 1,
+      pmTab: "chats",
+      sound: "off",
+      chats: {},
+      muted: [],
+      pinned: [],
+      notify: false,
+      notifyFriendsOnly: false,
+      titleCount: true,
+      localTime: false
+    };
   }
   var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
-  function normalizeMuted(list) {
+  function normalizeIdList(list, max) {
     const out = [];
     for (const v of Array.isArray(list) ? list : []) {
-      if (out.length >= MAX_MUTED) break;
+      if (out.length >= max) break;
       const id = toId(v);
       if (id && !out.includes(id)) out.push(id);
     }
     return out;
   }
+  var normalizeMuted = (list) => normalizeIdList(list, MAX_MUTED);
   function normalizeSettings(doc) {
     if (!isObj2(doc) || doc.v !== 1) throw new Error("Unsupported settings document");
     return {
@@ -391,7 +405,12 @@
       pmTab: PM_TABS.includes(doc.pmTab) ? doc.pmTab : "chats",
       sound: SOUNDS.includes(doc.sound) ? doc.sound : "off",
       chats: normalizeChats(doc.chats),
-      muted: normalizeMuted(doc.muted)
+      muted: normalizeMuted(doc.muted),
+      pinned: normalizeIdList(doc.pinned, MAX_PINNED),
+      notify: doc.notify === true,
+      notifyFriendsOnly: doc.notifyFriendsOnly === true,
+      titleCount: doc.titleCount !== false,
+      localTime: doc.localTime === true
     };
   }
   function setPmTab(s, tab) {
@@ -406,6 +425,20 @@
     if (!n) return;
     const rest = s.muted.filter((x) => x !== n);
     s.muted = normalizeMuted(on ? [n, ...rest] : rest);
+  }
+  function togglePinned(s, id) {
+    const n = toId(id);
+    if (!n) return true;
+    if (s.pinned.includes(n)) {
+      s.pinned = s.pinned.filter((x) => x !== n);
+      return true;
+    }
+    if (s.pinned.length >= MAX_PINNED) return false;
+    s.pinned = [n, ...s.pinned];
+    return true;
+  }
+  function setFlag(s, key, on) {
+    if (FLAGS.includes(key)) s[key] = !!on;
   }
   function updateChat(s, key, patch) {
     if (!isChatKey(key)) return;
@@ -677,6 +710,47 @@
     return createDocStore({ key: enemiesKey(playerId), empty: emptyEnemies, normalize: normalizeEnemies, ...opts });
   }
 
+  // src/notify.js
+  function createNotifier({ win = window, onOpen = () => {
+  } } = {}) {
+    const N = win.Notification;
+    const supported = typeof N === "function";
+    return {
+      supported,
+      permission: () => supported ? N.permission : "unsupported",
+      async request() {
+        if (!supported) return "unsupported";
+        if (N.permission !== "default") return N.permission;
+        try {
+          const answer = await N.requestPermission();
+          return answer || N.permission;
+        } catch {
+          return N.permission;
+        }
+      },
+      // One notification per player (the tag), so a newer message replaces the older one, and a second game
+      // tab's copy replaces the first. Returns the notification, or null when it can't be shown.
+      show({ id, title, body, icon: icon2 }) {
+        if (!supported || N.permission !== "granted") return null;
+        let n;
+        try {
+          n = new N(title, { body, icon: icon2, tag: `zcf-dm-${id}` });
+        } catch {
+          return null;
+        }
+        n.onclick = () => {
+          try {
+            win.focus();
+          } catch {
+          }
+          onOpen(id);
+          n.close();
+        };
+        return n;
+      }
+    };
+  }
+
   // src/sound.js
   var TONES = {
     chirp: [{ f: 1800, to: 2700, at: 0, dur: 0.07 }, { f: 2200, to: 3100, at: 0.09, dur: 0.07 }],
@@ -699,11 +773,21 @@
       });
       return ctx;
     }
-    function play(name) {
+    function play(name, { fromUser = false } = {}) {
       const tones = TONES[name];
       if (!tones) return false;
       const ac = context();
       if (!ac) return false;
+      if (ac.state === "running") {
+        schedule(ac, tones);
+        return true;
+      }
+      if (!fromUser || typeof ac.resume !== "function") return false;
+      ac.resume().then(() => schedule(ac, tones), () => {
+      });
+      return true;
+    }
+    function schedule(ac, tones) {
       const t0 = ac.currentTime;
       for (const tone of tones) {
         const osc = ac.createOscillator();
@@ -721,7 +805,6 @@
         osc.start(start);
         osc.stop(end + 0.02);
       }
-      return true;
     }
     return {
       play,
@@ -900,25 +983,29 @@
     }
     return parseSentAt(value);
   }
-  function utcDayKey(ts) {
+  function parts(ts, local) {
     const d = new Date(ts);
-    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    return local ? [d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()] : [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes()];
   }
-  function formatClock(ts) {
-    const d = new Date(ts);
-    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  function dayKey(ts, local = false) {
+    const [y, m, d] = parts(ts, local);
+    return `${y}-${pad(m + 1)}-${pad(d)}`;
   }
-  function formatMessageTime(ts, now = Date.now()) {
-    const clock = formatClock(ts);
-    const day = utcDayKey(ts);
-    if (day === utcDayKey(now)) return clock;
-    if (day === utcDayKey(now - DAY_MS)) return `Yesterday at ${clock}`;
-    const d = new Date(ts);
-    return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} at ${clock}`;
+  function formatClock(ts, local = false) {
+    const [, , , h2, mi] = parts(ts, local);
+    return `${pad(h2)}:${pad(mi)}`;
   }
-  function formatDayLabel(ts) {
-    const d = new Date(ts);
-    return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  function formatMessageTime(ts, now = Date.now(), local = false) {
+    const clock = formatClock(ts, local);
+    const day = dayKey(ts, local);
+    if (day === dayKey(now, local)) return clock;
+    if (day === dayKey(now - DAY_MS, local)) return `Yesterday at ${clock}`;
+    const [y, m, d] = parts(ts, local);
+    return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
+  }
+  function formatDayLabel(ts, local = false) {
+    const [y, m, d] = parts(ts, local);
+    return `${MONTHS[m]} ${d}, ${y}`;
   }
   function timeAgo(ts, now = Date.now()) {
     const s = Math.max(0, Math.floor((now - ts) / 1e3));
@@ -3235,7 +3322,7 @@ sandfish		/items/sandfish.webp`;
   }
   var SHORTCODE_RE = /:([a-z0-9_+-]+):/gi;
   function substituteShortcodes(text2) {
-    const parts = [];
+    const parts2 = [];
     let buf = "";
     let last = 0;
     SHORTCODE_RE.lastIndex = 0;
@@ -3244,9 +3331,9 @@ sandfish		/items/sandfish.webp`;
       buf += text2.slice(last, m.index);
       const rec = findEmoji(m[1]);
       if (rec && rec.src) {
-        if (buf) parts.push({ type: "text", text: buf });
+        if (buf) parts2.push({ type: "text", text: buf });
         buf = "";
-        parts.push({ type: "emoji", name: rec.name, src: rec.src });
+        parts2.push({ type: "emoji", name: rec.name, src: rec.src });
       } else if (rec && rec.emoji) {
         buf += rec.emoji;
       } else {
@@ -3255,24 +3342,24 @@ sandfish		/items/sandfish.webp`;
       last = m.index + m[0].length;
     }
     buf += text2.slice(last);
-    if (buf || parts.length === 0) parts.push({ type: "text", text: buf });
-    return parts;
+    if (buf || parts2.length === 0) parts2.push({ type: "text", text: buf });
+    return parts2;
   }
   function splitFlags(text2) {
     parse();
     if (!FLAG_RE) return [{ type: "text", text: text2 }];
-    const parts = [];
+    const parts2 = [];
     let last = 0;
     FLAG_RE.lastIndex = 0;
     let m;
     while (m = FLAG_RE.exec(text2)) {
-      if (m.index > last) parts.push({ type: "text", text: text2.slice(last, m.index) });
+      if (m.index > last) parts2.push({ type: "text", text: text2.slice(last, m.index) });
       const emoji = m[0];
-      parts.push({ type: "emoji", name: FLAG_NAMES.get(emoji), src: flagImageUrl(emoji), emoji });
+      parts2.push({ type: "emoji", name: FLAG_NAMES.get(emoji), src: flagImageUrl(emoji), emoji });
       last = m.index + m[0].length;
     }
-    if (last < text2.length || parts.length === 0) parts.push({ type: "text", text: text2.slice(last) });
-    return parts;
+    if (last < text2.length || parts2.length === 0) parts2.push({ type: "text", text: text2.slice(last) });
+    return parts2;
   }
   function emojiParts(text2) {
     const out = [];
@@ -3315,14 +3402,14 @@ sandfish		/items/sandfish.webp`;
       if (p.type === "text") expanded.push(...emojiParts(p.text));
       else expanded.push(p);
     }
-    const parts = [];
+    const parts2 = [];
     for (const p of expanded) {
       if (p.type === "text" && p.text === "") continue;
-      const top = parts[parts.length - 1];
+      const top = parts2[parts2.length - 1];
       if (p.type === "text" && top && top.type === "text") top.text += p.text;
-      else parts.push(p.type === "text" ? { type: "text", text: p.text } : p);
+      else parts2.push(p.type === "text" ? { type: "text", text: p.text } : p);
     }
-    return parts.length ? parts : [{ type: "text", text: "" }];
+    return parts2.length ? parts2 : [{ type: "text", text: "" }];
   }
   function previewText(text2) {
     const s = messageParts(text2).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.type === "emoji" ? p.emoji || `:${p.name}:` : p.text).join("");
@@ -3361,16 +3448,16 @@ sandfish		/items/sandfish.webp`;
   function normalizeThreads(data, now = Date.now()) {
     return asArray(data).map((raw) => normalizeThread(raw, now)).filter(Boolean);
   }
-  function buildLog(messages) {
+  function buildLog(messages, { local = false } = {}) {
     const byId = /* @__PURE__ */ new Map();
     for (const m of messages) byId.set(m.id, m);
     const sorted = [...byId.values()].sort((a, b) => a.id - b.id);
     const items = [];
     let prev = null;
     for (const m of sorted) {
-      const day = m.ts !== null ? utcDayKey(m.ts) : null;
-      const prevDay = prev && prev.ts !== null ? utcDayKey(prev.ts) : null;
-      if (day && day !== prevDay) items.push({ type: "divider", key: `d:${day}`, label: formatDayLabel(m.ts) });
+      const day = m.ts !== null ? dayKey(m.ts, local) : null;
+      const prevDay = prev && prev.ts !== null ? dayKey(prev.ts, local) : null;
+      if (day && day !== prevDay) items.push({ type: "divider", key: `d:${day}`, label: formatDayLabel(m.ts, local) });
       const grouped = !!prev && prev.senderId === m.senderId && day !== null && day === prevDay && Math.abs(m.ts - prev.ts) <= GROUP_WINDOW_MS;
       items.push({ type: "msg", key: `m:${m.id}`, msg: m, grouped });
       prev = m;
@@ -3755,7 +3842,7 @@ sandfish		/items/sandfish.webp`;
   }
 
   // src/poller.js
-  function makePoller({ run, interval, maxBackoff = 3e5, busyInterval = 6e4, onAuthLost, doc = document }) {
+  function makePoller({ run, interval, maxBackoff = 3e5, busyInterval = 6e4, onAuthLost, doc = document, hiddenInterval = null }) {
     let active = false;
     let timer = null;
     let running = false;
@@ -3763,6 +3850,11 @@ sandfish		/items/sandfish.webp`;
     let backoff = 0;
     const base = () => typeof interval === "function" ? interval() : interval;
     const visible = () => doc.visibilityState !== "hidden";
+    const hiddenMs = () => {
+      const v = typeof hiddenInterval === "function" ? hiddenInterval() : hiddenInterval;
+      return typeof v === "number" && v > 0 ? v : null;
+    };
+    const canRun = () => visible() || hiddenMs() !== null;
     function clear2() {
       if (timer) {
         clearTimeout(timer);
@@ -3771,11 +3863,13 @@ sandfish		/items/sandfish.webp`;
     }
     function schedule(ms) {
       clear2();
-      if (active && visible()) timer = setTimeout(tick, ms);
+      if (!active) return;
+      if (visible()) timer = setTimeout(tick, ms);
+      else if (hiddenMs() !== null) timer = setTimeout(tick, Math.max(ms, hiddenMs()));
     }
     async function tick() {
       clear2();
-      if (!active || !visible()) return;
+      if (!active || !canRun()) return;
       if (running) {
         rerun = true;
         return;
@@ -3824,6 +3918,7 @@ sandfish		/items/sandfish.webp`;
     function onVisibility() {
       if (!active) return;
       if (visible()) tick();
+      else if (hiddenMs() !== null) schedule(hiddenMs());
       else clear2();
     }
     doc.addEventListener("visibilitychange", onVisibility);
@@ -3907,11 +4002,11 @@ sandfish		/items/sandfish.webp`;
   var mergeEnemiesImport = (doc, enemies, now) => mergeInto(doc.enemies, enemies, now);
   function importMessage({ added, enemiesAdded = 0, notes = 0 }) {
     const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-    const parts = [count(added, "new friend", "new friends")];
-    if (enemiesAdded) parts.push(count(enemiesAdded, "new enemy", "new enemies"));
-    if (notes) parts.push(count(notes, "note", "notes"));
-    const last = parts.pop();
-    return `Imported ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
+    const parts2 = [count(added, "new friend", "new friends")];
+    if (enemiesAdded) parts2.push(count(enemiesAdded, "new enemy", "new enemies"));
+    if (notes) parts2.push(count(notes, "note", "notes"));
+    const last = parts2.pop();
+    return `Imported ${parts2.length ? `${parts2.join(", ")} and ${last}` : last}.`;
   }
 
   // src/ui/dom.js
@@ -4192,14 +4287,20 @@ sandfish		/items/sandfish.webp`;
   var byName = (a, b) => a.username.localeCompare(b.username, void 0, { sensitivity: "base" });
   var str = (v) => typeof v === "string" && v ? v : null;
   var truthy = (v) => v === true || Number(v) > 0;
-  function buildChatRows({ page1 = [], older = [], threads = {} }) {
+  function buildChatRows({ page1 = [], older = [], threads = {}, pinned = [], stub = null }) {
     const best = /* @__PURE__ */ new Map();
     for (const t of [...page1, ...older.flat()]) {
       if (!t) continue;
       const prev = best.get(t.userId);
       if (!prev || (t.lastReply || 0) > (prev.lastReply || 0)) best.set(t.userId, t);
     }
-    return [...best.values()].map((t) => ({ ...t, unread: threads[t.userId] && threads[t.userId].unread || 0 })).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0) || a.userId - b.userId);
+    for (const id of pinned) {
+      if (best.has(id)) continue;
+      const known = stub && stub(id) || {};
+      best.set(id, { userId: id, username: known.username || `#${id}`, avatar: known.avatar || null, preview: "", senderId: null, lastReply: null, newMail: 0, isSystem: false, stub: true });
+    }
+    const pins = new Set(pinned);
+    return [...best.values()].map((t) => ({ ...t, unread: threads[t.userId] && threads[t.userId].unread || 0, pinned: pins.has(t.userId) })).sort((a, b) => b.pinned - a.pinned || (b.lastReply || 0) - (a.lastReply || 0) || a.userId - b.userId);
   }
   function previewLine(t, myId) {
     if (!t.preview) return "";
@@ -4319,6 +4420,7 @@ sandfish		/items/sandfish.webp`;
     let faction = { status: "idle", data: null };
     let blocked = { status: "idle", pages: [], total: 0, loading: false, done: false };
     let blockedShowing = false;
+    let reloadBlocked = false;
     let unblockId = null;
     let unblockBusy = false;
     const tab = () => settings.get().pmTab;
@@ -4471,14 +4573,17 @@ sandfish		/items/sandfish.webp`;
       renderList();
       const r = await api.getFactionMembers();
       if (r.ok) faction = r.data && r.data.faction ? { status: "ok", data: r.data } : { status: "none", data: null };
-      else if (r.kind === "network" || r.kind === "rate") faction = faction.data ? faction : { status: "error", data: null };
-      else if (r.kind !== "auth") faction = { status: "none", data: null };
+      else if (r.kind === "other" || r.kind === "access") faction = { status: "none", data: null };
+      else faction = faction.data ? faction : { status: "error", data: null };
       renderList();
       return r;
     }
     const factionPoller = makePoller({ run: loadFaction, interval: FACTION_MS, doc });
     async function loadBlocked({ more = false } = {}) {
-      if (blocked.loading) return;
+      if (blocked.loading) {
+        if (!more) reloadBlocked = true;
+        return;
+      }
       const page = more ? blocked.pages.length + 1 : 1;
       blocked = { ...blocked, loading: true, status: more || blocked.status === "ok" ? blocked.status : "loading" };
       renderList();
@@ -4492,6 +4597,10 @@ sandfish		/items/sandfish.webp`;
         blocked = { ...blocked, loading: false, status: blocked.status === "ok" ? "ok" : "error" };
       }
       renderList();
+      if (reloadBlocked) {
+        reloadBlocked = false;
+        loadBlocked();
+      }
     }
     async function unblock(u) {
       unblockBusy = true;
@@ -4510,6 +4619,26 @@ sandfish		/items/sandfish.webp`;
     const item = (sig, build) => ({ sig, build });
     const note = (text2) => item(["note", text2], () => h("div", { class: "zcf-empty" }, text2));
     const knownName = (id, name) => name === `#${id}` ? void 0 : name;
+    function knownPlayer(id) {
+      const s = store.get();
+      const dm = s.dock.dms.find((d) => d.id === id);
+      const enemy = services.enemies ? services.enemies.get().enemies[id] : null;
+      return s.friends[id] || (dm && dm.username ? dm : null) || enemy || null;
+    }
+    function pinButton(t) {
+      return h("button", {
+        class: `zcf-pm-pin${t.pinned ? " zcf-pinned" : ""}`,
+        type: "button",
+        title: t.pinned ? "Unpin" : "Pin to the top",
+        "aria-label": t.pinned ? `Unpin ${t.username}` : `Pin ${t.username} to the top`,
+        "aria-pressed": String(!!t.pinned),
+        "data-zcf-focus": `pin:${t.userId}`,
+        onclick: (e) => {
+          e.stopPropagation();
+          actions.togglePin(t.userId);
+        }
+      }, icon("thumbtack"));
+    }
     const openChat = (id, username, av) => actions.openDm(id, { expand: true, username: knownName(id, username), avatar: av });
     function rowEl(focusKey2, onOpen, children) {
       return h("div", {
@@ -4530,23 +4659,23 @@ sandfish		/items/sandfish.webp`;
     const onDot = (p) => p ? !!p.online : void 0;
     function chatItems(s, now) {
       rememberPage1();
-      const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads });
+      const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads, pinned: settings.get().pinned, stub: knownPlayer });
       const items = rows.map((t) => {
         const p = presence.get(t.userId);
         const muted = isMuted2(t.userId);
         const when = t.lastReply ? longAgo(t.lastReply, now) : "";
         const line = previewLine(t, myId);
-        return item(["chat", t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy2(t.userId), muted], () => rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
+        return item(["chat", t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy2(t.userId), muted, !!t.pinned], () => rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
           avatar({ avatar: t.avatar, online: onDot(p), size: 30 }),
           h(
             "div",
             { class: "zcf-row-main" },
-            h("div", { class: "zcf-pm-line" }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h("span", { class: "zcf-pm-time" }, when)),
+            h("div", { class: "zcf-pm-line" }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h("span", { class: "zcf-pm-time" }, when), pinButton(t)),
             h("div", { class: `zcf-status zcf-pm-preview${t.unread > 0 ? " zcf-unread" : ""}` }, line || " ")
           )
         ]));
       });
-      if (!rows.length && olderState === "done") items.push(note("No conversations yet."));
+      if (!rows.length) return [note("No conversations yet.")];
       if (olderState !== "done") {
         const label = olderState === "loading" ? "Loading…" : olderState === "error" ? "Couldn't load. Retry" : "Load older chats";
         items.push(item(["older", olderState], () => h("button", {
@@ -4731,8 +4860,10 @@ sandfish		/items/sandfish.webp`;
       menuBtn.hidden = !open;
       toggle.hidden = !open;
       syncBadge();
-      if (open) renderList();
-      else {
+      if (open) {
+        if (holdRender) renderWanted = true;
+        else renderList();
+      } else {
         closeMenu();
         unblockId = null;
         if (wasOpen) clearSearch();
@@ -5027,6 +5158,8 @@ sandfish		/items/sandfish.webp`;
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const isEnemy2 = services.isEnemy || (() => false);
     const isMuted2 = services.isMuted || (() => false);
+    const localTime = () => !!(services.isLocalTime && services.isLocalTime());
+    let drawnLocal = null;
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -5181,7 +5314,7 @@ sandfish		/items/sandfish.webp`;
       if (item.type === "divider") return h("div", { class: "zcf-divider" }, item.label);
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
-      const time = m.ts ? formatMessageTime(m.ts) : "";
+      const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : "";
       if (item.grouped) return h("div", { class: cls, title: time }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
@@ -5210,7 +5343,8 @@ sandfish		/items/sandfish.webp`;
     function renderConversation() {
       renderNotice();
       loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-      const items = buildLog(conv.messages());
+      const items = buildLog(conv.messages(), { local: localTime() });
+      drawnLocal = localTime();
       const keys = items.map((i) => i.key);
       const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
       const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -5267,6 +5401,10 @@ sandfish		/items/sandfish.webp`;
         conv.ensureLoaded();
         atBottom = true;
         renderConversation();
+      } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
+        renderedKeys = [];
+        clear(log);
+        renderConversation();
       }
       if (!open) {
         gifPicker.close();
@@ -5311,6 +5449,29 @@ sandfish		/items/sandfish.webp`;
 
   // src/whats-new.js
   var WHATS_NEW = [
+    {
+      version: "0.6.0",
+      date: "2026-09-29",
+      features: [
+        {
+          title: "Never miss a message",
+          points: [
+            "Optional desktop notifications for new private messages (Chat settings), with a Friends only switch.",
+            "The browser tab's title shows your unread count, like (2) Zed City. You can turn it off in Chat settings."
+          ]
+        },
+        { title: "Pinned chats", points: ["Pin conversations to the top of the Chats tab with the pin on each row."] },
+        { title: "Phones", points: ["An open chat gets the full width, with every bubble on a row underneath."] },
+        { title: "Local time", points: ["Show message times in your own time zone instead of game time (Chat settings)."] },
+        {
+          title: "Fixes",
+          points: [
+            "Chat times now match the game, and chats whose last message is an invite show up again.",
+            "Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus."
+          ]
+        }
+      ]
+    },
     {
       version: "0.5.x",
       date: "2026-09-29",
@@ -5383,7 +5544,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.5.2" : "dev";
+  var VERSION = true ? "0.6.0" : "dev";
   var DEV_PROFILE_ID = 27581;
 
   // src/ui/settings-window.js
@@ -5404,12 +5565,33 @@ sandfish		/items/sandfish.webp`;
     const el = h("div", { class: "chat-container zcf zcf-settings", dataset: { zcfChat: "settings" } }, header, body);
     const select = h(
       "select",
-      { class: "zcf-set-select", "aria-label": "New private message sound" },
+      { class: "zcf-set-select", "aria-label": "New private message sound", "data-zcf-focus": "sound" },
       SOUNDS.map((k) => h("option", { value: k }, SOUND_LABELS[k]))
     );
-    const play = h("button", { class: "zcf-mini zcf-set-play", type: "button", title: "Play it", "aria-label": "Play the sound" }, "▶");
+    const play = h("button", { class: "zcf-mini zcf-set-play", type: "button", title: "Play it", "aria-label": "Play the sound", "data-zcf-focus": "play" }, "▶");
     select.addEventListener("change", () => actions.setSound(select.value));
-    play.addEventListener("click", () => sound.play(select.value));
+    play.addEventListener("click", () => sound.play(select.value, { fromUser: true }));
+    const checkbox = (label, focusKey, onChange) => {
+      const input = h("input", { type: "checkbox", class: "zcf-set-check", "data-zcf-focus": focusKey });
+      input.addEventListener("change", () => onChange(input.checked));
+      return { input, row: h("label", { class: "zcf-set-toggle" }, input, h("span", null, label)) };
+    };
+    const notifyBox = checkbox("Desktop notifications", "notify", (on) => actions.setNotify(on));
+    const friendsOnlyBox = checkbox("Friends only", "notify-friends", (on) => actions.setNotifyFriendsOnly(on));
+    const titleBox = checkbox("Unread count in the browser tab", "title-count", (on) => actions.setTitleCount(on));
+    const note = h("div", { class: "zcf-set-note" });
+    const timeSelect = h(
+      "select",
+      { class: "zcf-set-select", "aria-label": "Message times", "data-zcf-focus": "times" },
+      h("option", { value: "game" }, "Game time (ZCT)"),
+      h("option", { value: "local" }, "Your local time")
+    );
+    timeSelect.addEventListener("change", () => actions.setLocalTime(timeSelect.value === "local"));
+    function permissionNote() {
+      const n = services.notifier;
+      if (!n || !n.supported) return "Not supported in this browser.";
+      return n.permission() === "denied" ? "Notifications are blocked for zed.city in your browser's site settings." : "";
+    }
     function dmName(id) {
       const s = store.get();
       const d = s.dock.dms.find((x) => x.id === id);
@@ -5514,7 +5696,9 @@ sandfish		/items/sandfish.webp`;
           )),
           h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, "Reset all chats")
         ),
+        section("Notifications", notifyBox.row, h("div", { class: "zcf-set-sub" }, friendsOnlyBox.row), note, titleBox.row),
         section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
+        section("Display", h("label", { class: "zcf-set-sound" }, h("span", null, "Message times"), timeSelect)),
         section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
       ];
     }
@@ -5523,6 +5707,15 @@ sandfish		/items/sandfish.webp`;
       const s = settings.get();
       select.value = s.sound;
       play.disabled = s.sound === "off";
+      const blocked = permissionNote();
+      notifyBox.input.checked = s.notify;
+      notifyBox.input.disabled = !(services.notifier && services.notifier.supported);
+      friendsOnlyBox.input.checked = s.notifyFriendsOnly;
+      friendsOnlyBox.input.disabled = !s.notify;
+      titleBox.input.checked = s.titleCount;
+      timeSelect.value = s.localTime ? "local" : "game";
+      note.textContent = blocked;
+      note.hidden = !blocked;
       const rows = chatRows();
       const sig = JSON.stringify([rows, marking, showNews, showOlder, Object.keys(s.chats).length]);
       if (sig === lastSig) return;
@@ -5596,7 +5789,14 @@ sandfish		/items/sandfish.webp`;
       render,
       pm,
       settings: settingsWin,
-      dmWindow: (id) => dms.get(id) || null
+      dmWindow: (id) => dms.get(id) || null,
+      // Stops every window's timers and document listeners (the Faction poller among them).
+      destroy() {
+        for (const w of dms.values()) w.destroy();
+        dms.clear();
+        pm.destroy();
+        settingsWin.destroy();
+      }
     };
   }
 
@@ -5712,7 +5912,7 @@ sandfish		/items/sandfish.webp`;
     function tryInsert() {
       if (profileId === null) return true;
       if (wrap && wrap.isConnected) return true;
-      if (findButton("fa-cog", /^settings$/i)) return true;
+      if (findButton("fa-cog", /^settings$/i)) return "own";
       const mail = findButton("fa-envelope", /^mail$/i);
       const trade = findButton("fa-exchange", /^trade$/i);
       const block = findButton("fa-ban", /^(un)?block$/i);
@@ -5758,12 +5958,12 @@ sandfish		/items/sandfish.webp`;
       const m = PROFILE_PATH.exec(path);
       profileId = m ? Number(m[1]) : null;
       if (profileId === null) return;
-      tryInsert();
+      if (tryInsert() === "own") return;
       observer = new win.MutationObserver(() => {
         if (frame || wrap && wrap.isConnected) return;
         frame = win.requestAnimationFrame(() => {
           frame = 0;
-          safe("profile-button-insert", tryInsert)();
+          if (safe("profile-button-insert", tryInsert)() === "own") stopWatching();
         });
       });
       observer.observe(doc.body, { childList: true, subtree: true });
@@ -5792,11 +5992,13 @@ sandfish		/items/sandfish.webp`;
 
   // src/ui/enemy-marks.js
   var ROW = ".msg-cont";
+  var MAX_PENDING = 500;
   function createEnemyMarks({ doc = document, win = window, keeper = null, names }) {
     let dockEl = null;
     let observer = null;
     let frame = 0;
     let pending = [];
+    let rescanWanted = false;
     let handled = /* @__PURE__ */ new WeakSet();
     let unkeep = null;
     const isGameRow = (row) => !row.closest(".zcf-root");
@@ -5816,6 +6018,12 @@ sandfish		/items/sandfish.webp`;
     }
     function flushPending() {
       frame = 0;
+      if (rescanWanted) {
+        rescanWanted = false;
+        pending = [];
+        refresh();
+        return;
+      }
       const set = names();
       const nodes = pending;
       pending = [];
@@ -5834,7 +6042,11 @@ sandfish		/items/sandfish.webp`;
           if (n.nodeType === 1 && !n.classList.contains("zcf-enemy-mark")) pending.push(n);
         }
       }
-      if (pending.length && !frame) frame = win.requestAnimationFrame(safe("enemy-marks", flushPending));
+      if (pending.length > MAX_PENDING) {
+        pending = [];
+        rescanWanted = true;
+      }
+      if ((pending.length || rescanWanted) && !frame) frame = win.requestAnimationFrame(safe("enemy-marks", flushPending));
     }
     function refresh() {
       if (!dockEl) return;
@@ -6303,14 +6515,15 @@ sandfish		/items/sandfish.webp`;
       const p = r.profile;
       const level = p && p.level ? String(p.level) : "—";
       const meta = [`Lv ${level}`, p && p.faction ? p.faction.name : null].filter(Boolean).join(" · ");
+      const chip = link(`/profile/${r.id}`, "zcf-chip", [
+        avatar({ avatar: r.avatar, online: r.presence ? online : void 0, size: 24 }),
+        h("span", { class: "zcf-chip-name" }, highlightMatch(r.username, query))
+      ], { "data-zcf-focus": `name:${r.id}`, title: r.username });
       const nameCell = h(
         "td",
         { class: "zcf-col-name" },
-        isEnemy2(r.id) ? enemyMark() : null,
-        link(`/profile/${r.id}`, "zcf-chip", [
-          avatar({ avatar: r.avatar, online: r.presence ? online : void 0, size: 24 }),
-          h("span", { class: "zcf-chip-name" }, highlightMatch(r.username, query))
-        ], { "data-zcf-focus": `name:${r.id}`, title: r.username }),
+        // The skull and the chip share one flex row, so the skull sits centred against the chip.
+        isEnemy2(r.id) ? h("div", { class: "zcf-name-row" }, enemyMark(), chip) : chip,
         h("div", { class: "zcf-c-sub" }, meta),
         r.note ? h("div", { class: "zcf-c-sub zcf-c-subnote" }, r.note) : null
       );
@@ -6674,7 +6887,9 @@ sandfish		/items/sandfish.webp`;
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       e.stopPropagation();
+      const back = anchor;
       close();
+      if (back && back.isConnected) back.focus();
     };
     function position() {
       const r = anchor.getBoundingClientRect();
@@ -6691,8 +6906,12 @@ sandfish		/items/sandfish.webp`;
       clear(el);
       el.appendChild(h("div", { class: "zcf-cmenu-title" }, model.title));
       for (const row of model.rows) el.appendChild(h("div", { class: "zcf-cmenu-row" }, h("span", { class: "zcf-cmenu-label" }, row.label), row.controls));
-      const again = el.querySelectorAll("button");
-      if (focused >= 0 && again[Math.min(focused, again.length - 1)]) again[Math.min(focused, again.length - 1)].focus();
+      const again = [...el.querySelectorAll("button")];
+      if (focused < 0 || !again.length) return;
+      const at = Math.min(focused, again.length - 1);
+      const order = again.map((b, i) => [Math.abs(i - at), b]).sort((a, b) => a[0] - b[0]);
+      const target = order.find(([, b]) => !b.disabled);
+      if (target) target[1].focus();
     }
     function open(anchorEl, chatKey, model) {
       anchor = anchorEl;
@@ -6724,7 +6943,9 @@ sandfish		/items/sandfish.webp`;
       close,
       // Re-draws the open menu after its chat's settings changed.
       update(chatKey, model) {
-        if (armed && chatKey === key) render(model);
+        if (!armed || chatKey !== key) return;
+        render(model);
+        if (anchor && anchor.isConnected) position();
       },
       isOpen: () => armed,
       get key() {
@@ -6929,7 +7150,7 @@ sandfish		/items/sandfish.webp`;
       if (sized.length || isMoved(entry) || isLive) box.push("transition:none");
       if (box.length) rules.push(`${sel}{${box.join(";")}}`);
       if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(";")};flex:none}`);
-      if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab}`);
+      if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab;touch-action:none}`);
     }
     return rules.join("\n");
   }
@@ -7002,6 +7223,13 @@ sandfish		/items/sandfish.webp`;
       rec.controls.el.remove();
       syncGrips(rec.el, [], null);
     }
+    function syncControls(key) {
+      const c = chats.find((x) => x.key === key);
+      const rec = records.get(key);
+      if (!c || !rec) return;
+      const entry = entryOf(key);
+      rec.controls.sync(entry, entry && entry.w || c.el.getBoundingClientRect().width);
+    }
     function refresh() {
       chats = findChats(doc);
       dockEl = doc.querySelector(".chat-containers");
@@ -7061,7 +7289,8 @@ sandfish		/items/sandfish.webp`;
       win,
       onMove(key, rect) {
         live = { key, entry: rect };
-        refresh();
+        applyStyle();
+        syncControls(key);
       },
       onCommit(key, rect) {
         live = null;
@@ -7131,17 +7360,49 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
+  // src/ui/title-count.js
+  var PREFIX = /^\(\d+\) /;
+  function createTitleCount({ doc = document, win = window } = {}) {
+    let want = "";
+    let observer = null;
+    function apply() {
+      const next = want + doc.title.replace(PREFIX, "");
+      if (doc.title !== next) doc.title = next;
+    }
+    function watch() {
+      if (observer) return;
+      observer = new win.MutationObserver(() => apply());
+      observer.observe(doc.head || doc.documentElement, { childList: true, subtree: true, characterData: true });
+    }
+    return {
+      set(count, enabled) {
+        want = enabled && count > 0 ? `(${count}) ` : "";
+        apply();
+        if (want) watch();
+      },
+      destroy() {
+        if (observer) observer.disconnect();
+        observer = null;
+        want = "";
+        apply();
+      }
+    };
+  }
+
   // src/app.js
   var CHATTING_MS = 5 * 60 * 1e3;
-  var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4 };
+  var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4, hiddenNotify: 6e4 };
+  var MAX_NOTIFY = 3;
   var PRESENCE_PER_SWEEP = 20;
-  function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }) }) {
+  function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }), notifier: notifierOpt = null }) {
     const store = createStore({ playerId, storage, win, now });
     const settings = createSettingsStore({ playerId, storage, win, now });
     const enemies = createEnemiesStore({ playerId, storage, win, now });
     const router = createRouter({ win, doc });
     const toast = createToaster(doc);
     const players = createPlayers({ api, now });
+    const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
+    const notificationsOn = () => settings.get().notify && notifier.permission() === "granted";
     let stopped = false;
     let activeDmId = null;
     let chattingUntil = 0;
@@ -7192,12 +7453,21 @@ sandfish		/items/sandfish.webp`;
         if (c) c.fetchNew();
       },
       isMuted: (id) => isMuted(settings.get(), id),
-      // New mail from another player, at most once per poll; silent unless a sound is chosen in Chat settings.
-      onNewMail: () => {
+      // New mail from another player, at most once per poll: the sound chosen in Chat settings, and desktop
+      // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
+      onNewMail: (arrived) => {
         const name = settings.get().sound;
         if (name !== "off") sound.play(name);
+        notifyNewMail(arrived);
       }
     });
+    function notifyNewMail(arrived) {
+      const s = settings.get();
+      if (!notificationsOn() || typeof doc.hasFocus === "function" && doc.hasFocus()) return;
+      const friends = store.get().friends;
+      const list = arrived.filter((t) => !s.notifyFriendsOnly || friends[t.userId]).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0)).slice(0, MAX_NOTIFY);
+      for (const t of list) notifier.show({ id: t.userId, title: t.username, body: (t.preview || "").slice(0, 120), icon: avatarUrl(t.avatar) });
+    }
     function pickActive() {
       if (activeDmId && isExpanded(activeDmId)) return activeDmId;
       const open = store.get().dock.dms.filter((d) => d.open).sort((a, b) => b.lastUsed - a.lastUsed);
@@ -7208,6 +7478,8 @@ sandfish		/items/sandfish.webp`;
     const threadsPoller = makePoller({
       run: () => inbox.poll(),
       interval: () => isChatting() ? INTERVALS.threadsChatting : INTERVALS.threadsIdle,
+      // While the tab is hidden, a slow check keeps notifications coming; with them off it stops as before.
+      hiddenInterval: () => notificationsOn() ? INTERVALS.hiddenNotify : null,
       onAuthLost,
       doc
     });
@@ -7326,6 +7598,23 @@ sandfish		/items/sandfish.webp`;
       },
       resetChat: (key) => settings.update((s) => resetChat(s, key)),
       resetAllChats: () => settings.update((s) => resetAllChats(s)),
+      async setNotify(on) {
+        if (on) {
+          const answer = await notifier.request();
+          if (answer !== "granted") {
+            settings.update((s) => setFlag(s, "notify", false));
+            toast(answer === "unsupported" ? "This browser has no desktop notifications." : "Notifications are blocked for zed.city in your browser's site settings.", { error: true });
+            return;
+          }
+        }
+        settings.update((s) => setFlag(s, "notify", on));
+      },
+      setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, "notifyFriendsOnly", on)),
+      setTitleCount: (on) => settings.update((s) => setFlag(s, "titleCount", on)),
+      setLocalTime: (on) => settings.update((s) => setFlag(s, "localTime", on)),
+      togglePin(id) {
+        if (!settings.update((s) => togglePinned(s, id))) toast("You can pin up to 20 chats.");
+      },
       markAllRead: (onProgress) => markAllRead({
         ids: chatsUnreadIds(store.get(), inbox.threads(), settings.get().muted),
         api,
@@ -7359,6 +7648,8 @@ sandfish		/items/sandfish.webp`;
       enemies,
       isEnemy: (id) => isEnemy(enemies.get(), id),
       isMuted: (id) => isMuted(settings.get(), id),
+      isLocalTime: () => settings.get().localTime,
+      notifier,
       sound,
       playerId,
       myId: playerId,
@@ -7409,9 +7700,15 @@ sandfish		/items/sandfish.webp`;
     });
     const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
     const page = createFriendsPage(services, { doc, win, keeper });
+    const titleCount = createTitleCount({ doc, win });
+    const syncTitle = () => {
+      const s = settings.get();
+      titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
+    };
     const topbar = createTopbarButton({ doc, keeper, router });
     store.subscribe(() => {
       renderDock();
+      syncTitle();
       syncPollers();
       profileButton.refresh();
       page.scheduleRender();
@@ -7427,8 +7724,12 @@ sandfish		/items/sandfish.webp`;
     inbox.subscribe(() => {
       view.pm.scheduleList();
       view.pm.syncBadge();
+      syncTitle();
     });
-    settings.subscribe(() => renderDock());
+    settings.subscribe(() => {
+      renderDock();
+      syncTitle();
+    });
     enemies.subscribe(() => {
       renderDock();
       enemyButton.refresh();
@@ -7478,6 +7779,7 @@ sandfish		/items/sandfish.webp`;
     doc.addEventListener("pointerdown", unlockSound, { capture: true, once: true });
     if (dock.isSmall()) enforcePhoneRule();
     renderDock();
+    syncTitle();
     profileButton.onRoute(router.path);
     enemyButton.onRoute(router.path);
     page.onRoute(router.path);
@@ -7499,6 +7801,8 @@ sandfish		/items/sandfish.webp`;
         enemyButton.destroy();
         marks.destroy();
         custom.destroy();
+        titleCount.destroy();
+        view.destroy();
         doc.removeEventListener("pointerdown", unlockSound, true);
         page.destroy();
         topbar.destroy();
@@ -7564,6 +7868,12 @@ sandfish		/items/sandfish.webp`;
 .zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
 .zcf-set-about{font-size:12px;opacity:.6}
+.zcf-set-toggle{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer}
+.zcf-set-toggle input{margin:0;accent-color:#0a748f;cursor:pointer}
+.zcf-set-toggle input:disabled{cursor:default}
+.zcf-set-toggle input:disabled + span{opacity:.45}
+.zcf-set-sub{padding-left:22px}
+.zcf-set-note{font-size:11px;color:#f2c037;padding:2px 0 4px 22px}
 .zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
 .zcf-set-dev:hover{opacity:1;text-decoration:underline}
 .zcf-set-dev i{font-size:10px}
@@ -7710,7 +8020,8 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-page .zcf-page-h{color:#e0e0e0;text-decoration:none;opacity:.35;transition:opacity .15s}
 .zcf-page .zcf-page-h:hover{opacity:.7}
 .zcf-page .zcf-page-h.zcf-page-h-on{opacity:1}
-.zcf-page .zcf-col-name > .zcf-enemy-mark{margin-right:6px}
+.zcf-page .zcf-name-row{display:flex;align-items:center;gap:6px}
+.zcf-page .zcf-name-row > .zcf-enemy-mark{margin:0}
 .zcf-page-sub{font-size:12px;color:#9e9e9e;margin-top:2px}
 .zcf-page-back{display:inline-flex;align-items:center;gap:6px;color:#bdbdbd;font-size:12px;text-transform:uppercase;text-decoration:none;padding:4px 8px;border-radius:4px}
 .zcf-page-back:hover{background:#ffffff0d;color:#e0e0e0}
@@ -7783,6 +8094,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-page-empty{padding:28px 16px;text-align:center;color:#9e9e9e}
 @media (min-width:600px){
   body .chat-containers{right:0}
+  .chat-containers .chat-container.chat-minimized{touch-action:none}
   .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
   .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
   .chat-containers .zcf-dm.chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
@@ -7790,9 +8102,14 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 }
 @media (max-width:599.98px){
   .zcf-cc,.zcf-grip{display:none!important}
-  .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
+  .chat-containers:has(> .zcf-root > .zcf.zcf-open){flex-wrap:wrap-reverse;left:10px}
+  .chat-containers:has(> .zcf-root > .zcf.zcf-open) .zcf.zcf-open{flex:0 0 100%;width:100%;max-width:none}
+  @supports not selector(:has(a)){
+    .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
+  }
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
+  .zcf-pm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}
   .zcf-page-add-long{display:none}
   .zcf-page-add-short{display:inline}

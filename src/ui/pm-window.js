@@ -42,6 +42,7 @@ export function createPmWindow(services, { doc = document } = {}) {
   let faction = { status: 'idle', data: null }; // idle | loading | ok | none | error
   let blocked = { status: 'idle', pages: [], total: 0, loading: false, done: false };
   let blockedShowing = false;
+  let reloadBlocked = false; // a reload asked for while a page was still loading
   let unblockId = null; // the row asking "Unblock {name}?"
   let unblockBusy = false;
 
@@ -206,15 +207,20 @@ export function createPmWindow(services, { doc = document } = {}) {
     renderList();
     const r = await api.getFactionMembers();
     if (r.ok) faction = r.data && r.data.faction ? { status: 'ok', data: r.data } : { status: 'none', data: null };
-    else if (r.kind === 'network' || r.kind === 'rate') faction = faction.data ? faction : { status: 'error', data: null };
-    else if (r.kind !== 'auth') faction = { status: 'none', data: null }; // the game answers an error when you have no faction
+    // The game answers a plain error when you have no faction; anything else (offline, busy, rate limited,
+    // logged out) keeps what's shown, or offers a retry.
+    else if (r.kind === 'other' || r.kind === 'access') faction = { status: 'none', data: null };
+    else faction = faction.data ? faction : { status: 'error', data: null };
     renderList();
     return r;
   }
   const factionPoller = makePoller({ run: loadFaction, interval: FACTION_MS, doc });
 
   async function loadBlocked({ more = false } = {}) {
-    if (blocked.loading) return;
+    if (blocked.loading) {
+      if (!more) reloadBlocked = true;
+      return;
+    }
     const page = more ? blocked.pages.length + 1 : 1;
     blocked = { ...blocked, loading: true, status: more || blocked.status === 'ok' ? blocked.status : 'loading' };
     renderList();
@@ -228,6 +234,10 @@ export function createPmWindow(services, { doc = document } = {}) {
       blocked = { ...blocked, loading: false, status: blocked.status === 'ok' ? 'ok' : 'error' };
     }
     renderList();
+    if (reloadBlocked) {
+      reloadBlocked = false;
+      loadBlocked();
+    }
   }
 
   async function unblock(u) {
@@ -307,7 +317,7 @@ export function createPmWindow(services, { doc = document } = {}) {
             h('div', { class: `zcf-status zcf-pm-preview${t.unread > 0 ? ' zcf-unread' : ''}` }, line || ' ')),
         ]));
     });
-    if (!rows.length && olderState === 'done') items.push(note('No conversations yet.'));
+    if (!rows.length) return [note('No conversations yet.')]; // page 1 empty: there's nothing older either
     if (olderState !== 'done') {
       const label = olderState === 'loading' ? 'Loading…' : olderState === 'error' ? "Couldn't load. Retry" : 'Load older chats';
       items.push(item(['older', olderState], () => h('button', {
@@ -493,8 +503,11 @@ export function createPmWindow(services, { doc = document } = {}) {
     menuBtn.hidden = !open;
     toggle.hidden = !open;
     syncBadge();
-    if (open) renderList();
-    else {
+    if (open) {
+      // A redraw between pointerdown and click would replace the row under the pointer and lose the click.
+      if (holdRender) renderWanted = true;
+      else renderList();
+    } else {
       closeMenu();
       unblockId = null;
       if (wasOpen) clearSearch();

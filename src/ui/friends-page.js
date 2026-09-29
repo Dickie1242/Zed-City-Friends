@@ -364,12 +364,13 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     const level = p && p.level ? String(p.level) : '—';
     const meta = [`Lv ${level}`, p && p.faction ? p.faction.name : null].filter(Boolean).join(' · ');
 
+    const chip = link(`/profile/${r.id}`, 'zcf-chip', [
+      avatar({ avatar: r.avatar, online: r.presence ? online : undefined, size: 24 }),
+      h('span', { class: 'zcf-chip-name' }, highlightMatch(r.username, query)),
+    ], { 'data-zcf-focus': `name:${r.id}`, title: r.username });
     const nameCell = h('td', { class: 'zcf-col-name' },
-      isEnemy(r.id) ? enemyMark() : null,
-      link(`/profile/${r.id}`, 'zcf-chip', [
-        avatar({ avatar: r.avatar, online: r.presence ? online : undefined, size: 24 }),
-        h('span', { class: 'zcf-chip-name' }, highlightMatch(r.username, query)),
-      ], { 'data-zcf-focus': `name:${r.id}`, title: r.username }),
+      // The skull and the chip share one flex row, so the skull sits centred against the chip.
+      isEnemy(r.id) ? h('div', { class: 'zcf-name-row' }, enemyMark(), chip) : chip,
       h('div', { class: 'zcf-c-sub' }, meta),
       r.note ? h('div', { class: 'zcf-c-sub zcf-c-subnote' }, r.note) : null);
 

@@ -66,6 +66,12 @@ Record the answers in this file under "Findings", and fix the code only if an an
 44. **What's new** at the bottom of Chat settings expands and collapses; nothing anywhere draws attention to it.
 45. **Phones:** no padlocks or grips; saved sizes and spots are ignored; message size still applies; the cog stays in the corner or hides while a window is open.
 
+46. **Desktop notifications:** off by default. Turn them on in Chat settings: the browser asks for permission. With the game in another tab or minimized, a DM from a second account shows a notification with the name and message within about a minute; clicking it brings the game back with that DM open. Muted chats never notify; Friends only skips non-friends. Blocking notifications in the browser's site settings shows the note under the switch.
+47. **Tab title:** with unread messages the browser tab reads "(N) …"; it follows the green count and goes away at zero or when switched off; it survives page changes.
+48. **Pinned chats:** the pin on a Chats row pins it to the top (and unpins); it stays pinned after a reload and in another tab; a 21st pin shows "You can pin up to 20 chats."
+49. **Phones:** with a window open, it takes the full width on its own row and every bubble (the cog too) sits underneath.
+50. **Local time:** switching Message times to local changes the times and day dividers in open DMs.
+
 ## Findings
 
 _(fill in during the run)_

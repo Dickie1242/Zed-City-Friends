@@ -106,11 +106,11 @@ export function createProfileButton({
     toast(spec.added(username));
   }
 
-  // Returns true once there is nothing left to do on this page (inserted, or it's our own profile).
+  // Returns true once there is nothing left to do on this page (inserted), or 'own' on your own profile.
   function tryInsert() {
     if (profileId === null) return true;
     if (wrap && wrap.isConnected) return true;
-    if (findButton('fa-cog', /^settings$/i)) return true;
+    if (findButton('fa-cog', /^settings$/i)) return 'own';
     const mail = findButton('fa-envelope', /^mail$/i);
     const trade = findButton('fa-exchange', /^trade$/i);
     const block = findButton('fa-ban', /^(un)?block$/i);
@@ -160,13 +160,14 @@ export function createProfileButton({
     const m = PROFILE_PATH.exec(path);
     profileId = m ? Number(m[1]) : null;
     if (profileId === null) return;
-    tryInsert();
-    // The game re-renders the button row while a profile loads, so keep watching while we're on this page.
+    if (tryInsert() === 'own') return;
+    // The game re-renders the button row while a profile loads, so keep watching while we're on this page
+    // (but not on your own profile, where there's never a button to add).
     observer = new win.MutationObserver(() => {
       if (frame || (wrap && wrap.isConnected)) return;
       frame = win.requestAnimationFrame(() => {
         frame = 0;
-        safe('profile-button-insert', tryInsert)();
+        if (safe('profile-button-insert', tryInsert)() === 'own') stopWatching();
       });
     });
     observer.observe(doc.body, { childList: true, subtree: true });

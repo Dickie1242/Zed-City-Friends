@@ -51,4 +51,35 @@ describe('sound', () => {
   it('does nothing where WebAudio is missing', () => {
     expect(createSound({ win: {} }).play('bell')).toBe(false);
   });
+
+  it('never queues tones in a context the browser keeps suspended, but a click plays after resuming', async () => {
+    const made = [];
+    class Stuck {
+      constructor() {
+        this.state = 'suspended';
+        this.currentTime = 0;
+        this.destination = {};
+        this.oscillators = [];
+        this.resume = vi.fn(() => Promise.resolve()); // no user gesture yet: stays suspended
+        made.push(this);
+      }
+
+      createOscillator() {
+        const o = { frequency: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+        this.oscillators.push(o);
+        return o;
+      }
+
+      createGain() {
+        return { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn() };
+      }
+    }
+    const sound = createSound({ win: { AudioContext: Stuck } });
+    expect(sound.play('ping')).toBe(false);
+    expect(made[0].oscillators).toHaveLength(0);
+    expect(sound.play('ping', { fromUser: true })).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(made[0].oscillators).toHaveLength(TONES.ping.length);
+  });
 });

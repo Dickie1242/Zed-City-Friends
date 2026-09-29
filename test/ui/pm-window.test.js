@@ -386,4 +386,60 @@ describe('private messages window', () => {
     list(el).querySelectorAll('.zcf-row')[1].click();
     expect(services.actions.openDm).toHaveBeenCalledWith(9, { expand: true, username: 'Grim', avatar: null });
   });
+
+  it('reloads the blocked list after an unblock that finished while more players were loading', async () => {
+    let finishMore;
+    const api = fakeApi({
+      blockList: vi.fn()
+        .mockResolvedValueOnce({ ok: true, data: { list: [{ id: 1, username: 'A' }, { id: 2, username: 'B' }], total: 3 } })
+        .mockImplementationOnce(() => new Promise((r) => { finishMore = () => r({ ok: true, data: { list: [{ id: 3, username: 'C' }], total: 3 } }); }))
+        .mockResolvedValue({ ok: true, data: { list: [{ id: 2, username: 'B' }, { id: 3, username: 'C' }], total: 2 } }),
+      unblockUser: vi.fn(async () => ({ ok: true, data: { success: true } })),
+    });
+    const { el } = mount({ api }, { tab: 'blocked' });
+    await flush();
+    list(el).dispatchEvent(new Event('scroll')); // page 2 starts loading
+    button(list(el).querySelector('.zcf-row'), 'Unblock').click();
+    button(list(el), 'Unblock').click();
+    await flush();
+    finishMore();
+    await flush();
+    await flush();
+    expect(api.blockList.mock.calls.map((c) => c[0])).toEqual([1, 2, 1]);
+    expect(rowNames(el)).toEqual(['B', 'C']);
+  });
+
+  it('keeps faction members through a busy or rate-limited refresh, and offers a retry when logged out', async () => {
+    vi.useFakeTimers();
+    const members = { ok: true, data: { faction: { id: 1 }, members: [{ id: 30, username: 'Dex', online: 1 }] } };
+    const api = fakeApi({ getFactionMembers: vi.fn().mockResolvedValueOnce(members).mockResolvedValueOnce({ ok: false, kind: 'busy', busy: 'traveling' }) });
+    const { el } = mount({ api }, { tab: 'faction' });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(FACTION_MS);
+    expect(rowNames(el)).toEqual(['Dex']);
+    current.destroy();
+    document.body.innerHTML = '';
+    const api2 = fakeApi({ getFactionMembers: vi.fn(async () => ({ ok: false, kind: 'auth' })) });
+    const second = mount({ api: api2 }, { tab: 'faction' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(list(second.el).textContent).toContain("Couldn't load.");
+  });
+
+  it('holds a store-driven redraw until the click that started under the pointer lands', async () => {
+    const { services, el } = mount({ threads: [thread(1), thread(2)] });
+    const row = list(el).querySelector('.zcf-row');
+    row.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    services.store.update((s) => { s.threads = { 1: { unread: 3 } }; });
+    expect(list(el).querySelector('.zcf-row')).toBe(row);
+    document.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    await flush();
+    await flush();
+    expect(list(el).querySelector('.zcf-pill').textContent).toBe('3');
+  });
+
+  it('says there are no conversations yet when the inbox is empty', () => {
+    const { el } = mount();
+    expect(list(el).textContent).toContain('No conversations yet.');
+    expect(el.querySelector('.zcf-pm-more')).toBeNull();
+  });
 });

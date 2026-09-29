@@ -143,15 +143,21 @@ describe('styles against the game dock CSS', () => {
     for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#629464');
   });
 
-  it('hides the cog on phones while a window is open, so the open one keeps its room', () => {
+  it('gives an open window its own full-width row on phones, with every bubble (the cog too) underneath', () => {
     renderDock({ friendsOpen: true, settingsOpen: false, dms: [[5, false]] });
+    const dock = document.querySelector('.chat-containers');
+    const pm = document.querySelector('.zcf-pm');
     const cog = document.querySelector('.zcf-settings');
     for (const sheets of [OURS_LAST, OURS_FIRST]) {
-      expect(winner(cog, 'display', 400, sheets).value).toBe('none');
-      expect(winner(cog, 'display', 1280, sheets).value).not.toBe('none');
+      expect(winner(dock, 'flex-wrap', 400, sheets).value).toBe('wrap-reverse');
+      expect(winner(dock, 'left', 400, sheets).value).toBe('10px');
+      expect(winner(pm, 'flex', 400, sheets).value).toBe('0 0 100%');
+      expect(winner(pm, 'max-width', 400, sheets).value).toBe('none');
+      expect(winner(cog, 'display', 400, sheets).value).not.toBe('none');
+      expect(winner(dock, 'flex-wrap', 1280, sheets)).toBeNull();
     }
     renderDock({ friendsOpen: false, settingsOpen: false, dms: [[5, false]] });
-    expect(winner(document.querySelector('.zcf-settings'), 'display', 400, OURS_LAST).value).not.toBe('none');
+    expect(winner(document.querySelector('.chat-containers'), 'flex-wrap', 400, OURS_LAST)).toBeNull();
   });
 
   it('parses specificity the way browsers count it', () => {

@@ -65,4 +65,13 @@ describe('enemy marks in the game chats', () => {
     const ours = [...document.querySelectorAll('.chat-containers *')].filter((n) => !before.some(([b]) => b === n));
     expect(ours.every((n) => n.classList.contains('zcf-enemy-mark'))).toBe(true);
   });
+
+  it('still marks every row after a flood of new ones', async () => {
+    setup(['nyx']);
+    const panel = document.querySelector('.general-chat .message-panel');
+    for (let i = 0; i < 600; i += 1) panel.insertAdjacentHTML('beforeend', row('Nyx'));
+    await flush();
+    await flush();
+    expect(document.querySelectorAll('.general-chat .zcf-enemy-mark')).toHaveLength(601);
+  });
 });
