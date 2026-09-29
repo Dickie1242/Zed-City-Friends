@@ -9,6 +9,7 @@ function fakeAudio() {
       this.currentTime = 5;
       this.destination = {};
       this.oscillators = [];
+      this.gains = [];
       this.resume = vi.fn(() => {
         this.state = 'running';
         return Promise.resolve();
@@ -23,7 +24,9 @@ function fakeAudio() {
     }
 
     createGain() {
-      return { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn() };
+      const g = { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn() };
+      this.gains.push(g);
+      return g;
     }
   }
   return { win: { AudioContext: FakeContext }, made };
@@ -81,5 +84,16 @@ describe('sound', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(made[0].oscillators).toHaveLength(TONES.ping.length);
+  });
+
+  it('scales every tone by the volume, and stays silent at 0', () => {
+    const { win, made } = fakeAudio();
+    const sound = createSound({ win });
+    expect(sound.play('ping', { volume: 0 })).toBe(false);
+    expect(made).toHaveLength(0);
+    expect(sound.play('ping', { volume: 50 })).toBe(true);
+    expect(made[0].gains[0].gain.exponentialRampToValueAtTime.mock.calls[0][0]).toBeCloseTo(0.09);
+    sound.play('ping');
+    expect(made[0].gains[1].gain.exponentialRampToValueAtTime.mock.calls[0][0]).toBeCloseTo(0.18);
   });
 });

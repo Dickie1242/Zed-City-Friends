@@ -24,24 +24,27 @@ export function createSound({ win = window } = {}) {
     return ctx;
   }
 
-  // Plays a named sound; 'off' (or any unknown name) is silent. Returns whether anything was (or will be)
-  // scheduled. A suspended context is only waited for when the call comes from a click (`fromUser`):
-  // otherwise tones queued in it would all play at once on the player's first click.
-  function play(name, { fromUser = false } = {}) {
+  // Plays a named sound at `volume` (0-100, from Chat settings); 'off', any unknown name or volume 0 is
+  // silent. Returns whether anything was (or will be) scheduled. A suspended context is only waited for when
+  // the call comes from a click (`fromUser`): otherwise tones queued in it would all play at once on the
+  // player's first click.
+  function play(name, { fromUser = false, volume = 100 } = {}) {
     const tones = TONES[name];
     if (!tones) return false;
+    const level = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+    if (!level) return false;
     const ac = context();
     if (!ac) return false;
     if (ac.state === 'running') {
-      schedule(ac, tones);
+      schedule(ac, tones, level);
       return true;
     }
     if (!fromUser || typeof ac.resume !== 'function') return false;
-    ac.resume().then(() => schedule(ac, tones), () => {});
+    ac.resume().then(() => schedule(ac, tones, level), () => {});
     return true;
   }
 
-  function schedule(ac, tones) {
+  function schedule(ac, tones, level) {
     const t0 = ac.currentTime;
     for (const tone of tones) {
       const osc = ac.createOscillator();
@@ -52,7 +55,7 @@ export function createSound({ win = window } = {}) {
       osc.frequency.setValueAtTime(tone.f, start);
       if (tone.to) osc.frequency.exponentialRampToValueAtTime(tone.to, end);
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(tone.gain || 0.18, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, (tone.gain || 0.18) * level), start + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, end);
       osc.connect(gain);
       gain.connect(ac.destination);
