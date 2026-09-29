@@ -2,11 +2,11 @@
 
 A userscript that adds a **friends list** and **Torn-style DM chat windows** to [Zed City](https://www.zed.city)'s bottom-right chat dock, next to the Global and Faction chats.
 
-- **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players.
+- **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players. When it's minimized, a green number shows your unread chats.
 - **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
 - **GIFs and emoji.** Pick a GIF or an emoji right from the composer, rendered the same way the game's own chat does, including its custom Zed City emojis.
 - **Add Friend button** on player profiles, between Trade and Mail.
-- **Friends page.** A friends icon in the top bar (with a count of friends online) opens a full Friends page at `zed.city/friends`. It's a sortable table with level, online status, injured/traveling icons and faction, plus private notes that only you can see.
+- **Friends page.** A friends icon in the top bar opens a full Friends page at `zed.city/friends`. It's a sortable table with level, online status, injured/traveling icons and faction, plus private notes that only you can see.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 
@@ -30,8 +30,6 @@ Zed City doesn't push new mail to the browser, so the script checks on a timer:
 | Game tab in the background | checked the moment you return | 0 |
 
 While the Friends window or Friends page is open, it also refreshes online/last-active status for your friends list, capped at 20 `getProfile` calls a minute (stalest friends first) no matter how many friends you have.
-
-With no friends list open, it keeps the top-bar online count fresh by re-checking up to 5 friends a minute (each at most every 5 minutes). That brings idle traffic to about 9 requests a minute.
 
 ## Backup
 

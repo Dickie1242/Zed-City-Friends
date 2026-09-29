@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFriendsTable, nextSort, countOnline, DEFAULT_SORT } from '../src/friends-table.js';
+import { buildFriendsTable, nextSort, DEFAULT_SORT } from '../src/friends-table.js';
 
 const NOW = 1800000000000;
 const friends = {
@@ -62,10 +62,5 @@ describe('friends table', () => {
     expect(nextSort({ key: 'level', dir: 'desc' }, 'level')).toEqual({ key: 'level', dir: 'asc' });
     expect(nextSort({ key: 'level', dir: 'asc' }, 'name')).toEqual({ key: 'name', dir: 'asc' });
     expect(nextSort(DEFAULT_SORT, 'status')).toEqual({ key: 'status', dir: 'desc' });
-  });
-
-  it('counts online friends for the top-bar badge', () => {
-    expect(countOnline(friends, presence)).toBe(2);
-    expect(countOnline({}, presence)).toBe(0);
   });
 });

@@ -2,7 +2,7 @@
 import { h, clear, icon, avatar, highlightMatch, badge, setBadge, downloadText } from './dom.js';
 import { createAddFriendPopover } from './add-friend-popover.js';
 import { buildFriendSections } from '../friends-view.js';
-import { friendsUnreadTotal, isFriend } from '../state.js';
+import { chatsUnreadTotal, isFriend } from '../state.js';
 import { statusText } from '../time.js';
 import { safe } from '../util.js';
 import { importMessage } from '../backup.js';
@@ -19,6 +19,7 @@ export function createFriendsWindow(services, { doc = document } = {}) {
   const titleText = h('span', null, 'Friends & Chats');
   const count = h('span', { class: 'zcf-count' });
   const unreadBadge = badge();
+  unreadBadge.classList.replace('bg-red-5', 'bg-positive'); // green, so it reads as "new messages", not an alert
   const title = h('div', { class: 'chat-title' }, h('i', { class: 'fas fa-user-friends chat-icon', 'aria-hidden': 'true' }), titleText, count, unreadBadge);
   const menuBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'More', 'aria-label': 'More' }, icon('ellipsis-h'));
   const toggle = h('div', { class: 'chat-toggle', 'aria-hidden': 'true' }, icon('chevron-down'));
@@ -257,6 +258,12 @@ export function createFriendsWindow(services, { doc = document } = {}) {
     }
   }
 
+  // The minimized tab's green count: every unread chat the window lists (friends and Recent).
+  function syncBadge() {
+    const s = store.get();
+    setBadge(unreadBadge, chatsUnreadTotal(s, inbox.threads()), !s.dock.friendsOpen);
+  }
+
   function update() {
     const s = store.get();
     const open = !!s.dock.friendsOpen;
@@ -267,7 +274,7 @@ export function createFriendsWindow(services, { doc = document } = {}) {
     count.hidden = !open;
     menuBtn.hidden = !open;
     toggle.hidden = !open;
-    setBadge(unreadBadge, friendsUnreadTotal(s), !open);
+    syncBadge();
     if (open) {
       renderList();
       pop.refresh();
@@ -298,5 +305,5 @@ export function createFriendsWindow(services, { doc = document } = {}) {
     menu.hidden = true;
   }
 
-  return { el, update, scheduleList, destroy };
+  return { el, update, scheduleList, syncBadge, destroy };
 }

@@ -12,7 +12,7 @@ import {
   closeDm,
   setFriendsOpen,
   collapseAll,
-  friendsUnreadTotal,
+  chatsUnreadTotal,
   setFriendNote,
   MAX_DMS,
   MAX_NOTE,
@@ -125,11 +125,14 @@ describe('state', () => {
     expect(s.dock.dms.map((d) => d.id)).toEqual([2]);
   });
 
-  it('sums unread mail from friends only', () => {
+  it('sums unread messages in every chat the Friends & Chats window lists', () => {
     const s = emptyState();
     addFriend(s, { id: 1, username: 'a' }, 0);
     addFriend(s, { id: 2, username: 'b' }, 0);
-    s.threads = { 1: { unread: 2 }, 2: { unread: 0 }, 3: { unread: 5 } };
-    expect(friendsUnreadTotal(s)).toBe(2);
+    s.threads = { 1: { unread: 2 }, 2: { unread: 0 }, 3: { unread: 5 }, 4: { unread: 7 }, 8: { unread: 9 } };
+    const inbox = [{ userId: 3, isSystem: false }, { userId: 4, isSystem: true }, { userId: 1, isSystem: false }];
+    // Friends always count; others only while their thread is in the Recent list; system threads never.
+    expect(chatsUnreadTotal(s, inbox)).toBe(7);
+    expect(chatsUnreadTotal(s, [])).toBe(2);
   });
 });

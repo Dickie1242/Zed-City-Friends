@@ -139,9 +139,13 @@ export function collapseAll(state) {
   for (const d of state.dock.dms) d.open = false;
 }
 
-export function friendsUnreadTotal(state) {
+// Unread messages in every chat the Friends & Chats window lists: all friends, plus the other
+// (non-system) threads in its Recent list, i.e. on the first page of the inbox.
+export function chatsUnreadTotal(state, inboxThreads) {
+  const ids = new Set(Object.keys(state.friends).map(Number));
+  for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
   let n = 0;
-  for (const id of Object.keys(state.friends)) {
+  for (const id of ids) {
     const t = state.threads[id];
     if (t && t.unread > 0) n += t.unread;
   }

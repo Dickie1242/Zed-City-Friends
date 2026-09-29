@@ -122,7 +122,6 @@ export const CSS = `
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
 .q-btn.zcf-is-friend{color:#81c784!important}
-.zcf-topbar [hidden]{display:none!important}
 .zcf-page{max-width:1000px;margin:0 auto;color:#d9d9d9;font-size:13px}
 .zcf-page-title{display:flex;align-items:center;margin-bottom:16px}
 .zcf-page-side{flex:1;display:flex;align-items:center;min-width:0}

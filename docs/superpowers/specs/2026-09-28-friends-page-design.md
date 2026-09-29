@@ -9,7 +9,7 @@
 
 A full-page friends list, opened from a new **Friends** button in the game's top bar. It's modelled on Torn's Friends List and drawn in Zed City's own page style.
 
-- **Top-bar button:** a friends icon left of the mail envelope. A green badge shows how many friends are online.
+- **Top-bar button:** a friends icon left of the mail envelope. (0.4.1: no badge. The user preferred a plain icon; the unread count moved to the Friends & Chats tab.)
 - **Page at `/friends`:** a game-style table with the columns **Name, Level, Status, Faction and Note**, plus **Message, Edit note and Remove** on each row.
   - Status shows injured and traveling icons.
   - All / Online / Offline tabs, a search over names and notes, and sortable columns.
@@ -21,7 +21,7 @@ The chat dock's Friends window stays as the quick view. The page is the full vie
 Choices made with the user in brainstorming:
 - **Layout:** option A, the game table.
 - **Extra row info:** the injured/traveling icons and the Faction column.
-- **Badge:** the number of friends online.
+- **Badge:** the number of friends online. Dropped in 0.4.1 at the user's request: the Friends & Chats dock tab now shows a green count of unread chats (friends and Recent) instead.
 
 ### Non-goals
 
@@ -66,6 +66,8 @@ We find the group from the mail link: `a.q-btn[href="/mail"]` → wrapper `div` 
 **No batch lookup by ID list:** `getUsers` only searches and pages. `getChatInfo` returns a map keyed by user ID, but the client only ever calls it with one `user_id` (§10 item 3).
 
 ## 3. Top-bar button
+
+> **0.4.1:** the badge, its color rule and the background presence sweep (§5.3) were removed. The button is a plain `text-grey-7` icon titled "Friends" that opens the page.
 
 - **Placement:** a new `<div>` wrapper inserted before the mail button's wrapper, so the order is `[Friends][Mail][Notifications][Profile]`.
 - **Markup:** a clone of the mail `a.q-btn` (`cloneNode(true)`), the same approach as the profile button.
@@ -186,6 +188,8 @@ We find the group from the mail link: `a.q-btn[href="/mail"]` → wrapper `div` 
 - **Missing profile counts as stale:** an entry without `profile` is stale regardless of `fetchedAt`. A friend whose only data came from a DM header therefore still gets a `getProfile` on the next sweep.
 
 ### 5.3 Presence sweeps and cost
+
+> **0.4.1:** with the top-bar badge gone, the background mode was removed. Presence runs only while a friends list is open (list-open budget), and idle traffic is back to 4 requests a minute.
 
 Today the presence poller only runs while the dock Friends window is open. It now runs whenever the tab is visible and the player is logged in, with two budgets:
 

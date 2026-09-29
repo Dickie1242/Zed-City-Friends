@@ -184,7 +184,6 @@ describe('styles against the game dock CSS', () => {
     page.onRoute('/friends');
     const topbar = createTopbarButton({ router: services.router });
     topbar.start();
-    topbar.setCount(1);
     expect(document.querySelector('.zcf-page-table th').textContent).toBe('Name');
     expect(hasOurRule('.zcf-page-table th')).toBe(true);
     // The add-friend pop-out sits in a button-sized positioned box; a % max-width would squash it.

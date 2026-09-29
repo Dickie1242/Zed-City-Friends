@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.4.0
+// @version      0.4.1
 // @description  Friends list and Torn-style DM windows in Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
@@ -274,9 +274,11 @@
     state.dock.friendsOpen = false;
     for (const d of state.dock.dms) d.open = false;
   }
-  function friendsUnreadTotal(state) {
+  function chatsUnreadTotal(state, inboxThreads) {
+    const ids = new Set(Object.keys(state.friends).map(Number));
+    for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
     let n = 0;
-    for (const id of Object.keys(state.friends)) {
+    for (const id of ids) {
       const t = state.threads[id];
       if (t && t.unread > 0) n += t.unread;
     }
@@ -3885,6 +3887,7 @@ sandfish		/items/sandfish.webp`;
     const titleText = h("span", null, "Friends & Chats");
     const count = h("span", { class: "zcf-count" });
     const unreadBadge = badge();
+    unreadBadge.classList.replace("bg-red-5", "bg-positive");
     const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-user-friends chat-icon", "aria-hidden": "true" }), titleText, count, unreadBadge);
     const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More" }, icon("ellipsis-h"));
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
@@ -4137,6 +4140,10 @@ sandfish		/items/sandfish.webp`;
         if (match) match.focus();
       }
     }
+    function syncBadge() {
+      const s = store.get();
+      setBadge(unreadBadge, chatsUnreadTotal(s, inbox.threads()), !s.dock.friendsOpen);
+    }
     function update() {
       const s = store.get();
       const open = !!s.dock.friendsOpen;
@@ -4147,7 +4154,7 @@ sandfish		/items/sandfish.webp`;
       count.hidden = !open;
       menuBtn.hidden = !open;
       toggle.hidden = !open;
-      setBadge(unreadBadge, friendsUnreadTotal(s), !open);
+      syncBadge();
       if (open) {
         renderList();
         pop.refresh();
@@ -4173,7 +4180,7 @@ sandfish		/items/sandfish.webp`;
       pop.close();
       menu.hidden = true;
     }
-    return { el, update, scheduleList, destroy };
+    return { el, update, scheduleList, syncBadge, destroy };
   }
 
   // src/ui/gif-picker.js
@@ -4924,14 +4931,6 @@ sandfish		/items/sandfish.webp`;
     const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
     return { rows: sortRows(inTab.filter(matches), sort), counts };
   }
-  function countOnline(friends, presence) {
-    let n = 0;
-    for (const f of Object.values(friends)) {
-      const p = presence(f.id);
-      if (p && p.online) n += 1;
-    }
-    return n;
-  }
 
   // src/ui/friends-page.js
   var FRIENDS_PATH = "/friends";
@@ -5449,20 +5448,8 @@ sandfish		/items/sandfish.webp`;
   function createTopbarButton({ doc = document, keeper = null, router }) {
     let wrap = null;
     let button = null;
-    let badgeEl = null;
-    let count = 0;
     let unkeep = null;
     let warnTimer = null;
-    function render() {
-      if (!button) return;
-      badgeEl.textContent = String(count);
-      badgeEl.hidden = count < 1;
-      button.classList.toggle("text-grey-4", count >= 1);
-      button.classList.toggle("text-grey-7", count < 1);
-      const label = `Friends (${count} online)`;
-      button.setAttribute("title", label);
-      button.setAttribute("aria-label", label);
-    }
     function onClick(e) {
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
@@ -5477,11 +5464,10 @@ sandfish		/items/sandfish.webp`;
         for (const c of [...i.classList]) if (/^fa-/.test(c)) i.classList.remove(c);
         i.classList.add("fa-user-friends");
       }
-      badgeEl = h("div", {
-        class: "q-badge flex inline items-center no-wrap q-badge--single-line q-badge--floating q-badge--rounded bg-positive text-white zcf-topbar-badge",
-        hidden: true
-      });
-      (button.querySelector(".q-btn__content") || button).appendChild(badgeEl);
+      button.classList.remove("text-grey-4");
+      button.classList.add("text-grey-7");
+      button.setAttribute("title", "Friends");
+      button.setAttribute("aria-label", "Friends");
       button.addEventListener("click", safe("topbar-click", onClick));
       wrap = h("div", { class: "zcf-topbar" }, button);
     }
@@ -5492,7 +5478,6 @@ sandfish		/items/sandfish.webp`;
       if (!mailWrap || !mailWrap.parentElement) return;
       if (!wrap) build(mail);
       mailWrap.before(wrap);
-      render();
     }
     return {
       start() {
@@ -5502,11 +5487,6 @@ sandfish		/items/sandfish.webp`;
         warnTimer = setTimeout(() => {
           if (!wrap || !wrap.isConnected) warnOnce("topbar-mail-button-not-found");
         }, WARN_MS2);
-      },
-      setCount(n) {
-        if (n === count) return;
-        count = n;
-        render();
       },
       destroy() {
         clearTimeout(warnTimer);
@@ -5521,8 +5501,6 @@ sandfish		/items/sandfish.webp`;
   var CHATTING_MS = 5 * 60 * 1e3;
   var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4 };
   var PRESENCE_PER_SWEEP = 20;
-  var PRESENCE_BACKGROUND_PER_SWEEP = 5;
-  var PRESENCE_BACKGROUND_STALE_MS = 5 * 60 * 1e3;
   function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
     const store = createStore({ playerId, storage, win, now });
     const router = createRouter({ win, doc });
@@ -5614,34 +5592,25 @@ sandfish		/items/sandfish.webp`;
       doc
     });
     const listOpen = () => store.get().dock.friendsOpen || page.active;
-    let fullSweepPending = true;
     const presencePoller = makePoller({
       run: () => {
-        const full = fullSweepPending || listOpen();
-        fullSweepPending = false;
-        const maxAge = full ? void 0 : PRESENCE_BACKGROUND_STALE_MS;
         const age = (id) => presence.lastTried(id);
-        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id, maxAge));
-        presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, full ? PRESENCE_PER_SWEEP : PRESENCE_BACKGROUND_PER_SWEEP));
+        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
+        presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
         return { ok: true };
       },
       interval: INTERVALS.presence,
       doc
     });
     const pollers = [threadsPoller, activeDmPoller, infoPoller, presencePoller];
-    let wasListOpen = false;
     function syncPollers() {
       if (stopped) return;
       const s = store.get();
       const anyOpen = s.dock.dms.some((d) => d.open);
-      for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen]]) {
+      for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen], [presencePoller, listOpen()]]) {
         if (on) p.start();
         else p.stop();
       }
-      const open = listOpen();
-      if (!presencePoller.active) presencePoller.start();
-      else if (open && !wasListOpen) presencePoller.poke();
-      wasListOpen = open;
     }
     function stopAll() {
       stopped = true;
@@ -5722,13 +5691,11 @@ sandfish		/items/sandfish.webp`;
     const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
     const page = createFriendsPage(services, { doc, win, keeper });
     const topbar = createTopbarButton({ doc, keeper, router });
-    const updateOnlineCount = () => topbar.setCount(countOnline(store.get().friends, presence.get));
     store.subscribe(() => {
       view.render();
       syncPollers();
       profileButton.refresh();
       page.scheduleRender();
-      updateOnlineCount();
     });
     presence.subscribe(() => {
       view.friends.scheduleList();
@@ -5737,9 +5704,11 @@ sandfish		/items/sandfish.webp`;
         if (w) w.update();
       }
       page.scheduleRender();
-      updateOnlineCount();
     });
-    inbox.subscribe(() => view.friends.scheduleList());
+    inbox.subscribe(() => {
+      view.friends.scheduleList();
+      view.friends.syncBadge();
+    });
     router.onChange((path) => {
       profileButton.onRoute(path);
       page.onRoute(path);
@@ -5771,7 +5740,6 @@ sandfish		/items/sandfish.webp`;
     view.render();
     profileButton.onRoute(router.path);
     page.onRoute(router.path);
-    updateOnlineCount();
     threadsPoller.start();
     syncPollers();
     return {
@@ -5916,7 +5884,6 @@ sandfish		/items/sandfish.webp`;
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
 .q-btn.zcf-is-friend{color:#81c784!important}
-.zcf-topbar [hidden]{display:none!important}
 .zcf-page{max-width:1000px;margin:0 auto;color:#d9d9d9;font-size:13px}
 .zcf-page-title{display:flex;align-items:center;margin-bottom:16px}
 .zcf-page-side{flex:1;display:flex;align-items:center;min-width:0}

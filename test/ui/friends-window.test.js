@@ -20,8 +20,8 @@ describe('friends window', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('is a minimized game-style tab with an unread badge for friends only', () => {
-    const { services, el } = mount();
+  it('is a minimized game-style tab with a green count of unread chats, friends and Recent alike', () => {
+    const { services, el } = mount({ threads: [{ userId: 9, username: 'TradeGuy', preview: 'hi', lastReply: 1, isSystem: false }] });
     services.store.update((s) => {
       addFriend(s, { id: 5, username: 'Spike' }, 0);
       s.threads = { 5: { unread: 2 }, 9: { unread: 4 } };
@@ -29,8 +29,11 @@ describe('friends window', () => {
     expect(el.classList.contains('chat-container')).toBe(true);
     expect(el.classList.contains('chat-minimized')).toBe(true);
     expect(el.querySelector('.chat-icon').className).toContain('fa-user-friends');
-    expect(el.querySelector('.unread-badge').textContent).toBe('2');
-    expect(el.querySelector('.unread-badge').hidden).toBe(false);
+    const unread = el.querySelector('.unread-badge');
+    expect(unread.textContent).toBe('6');
+    expect(unread.hidden).toBe(false);
+    expect(unread.classList.contains('bg-positive')).toBe(true);
+    expect(unread.classList.contains('bg-red-5')).toBe(false);
     expect(el.querySelector('.zcf-body').hidden).toBe(true);
   });
 

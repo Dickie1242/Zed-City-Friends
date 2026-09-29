@@ -1,5 +1,5 @@
 // The Friends button in the game's top bar: a clone of the game's own mail button (so it matches
-// exactly), left of mail, with a green count of friends online (spec §3).
+// exactly), left of mail, opening the Friends page (spec §3).
 import { h } from './dom.js';
 import { safe, warnOnce } from '../util.js';
 import { FRIENDS_PATH } from './friends-page.js';
@@ -10,22 +10,8 @@ const WARN_MS = 10000;
 export function createTopbarButton({ doc = document, keeper = null, router }) {
   let wrap = null;
   let button = null;
-  let badgeEl = null;
-  let count = 0;
   let unkeep = null;
   let warnTimer = null;
-
-  function render() {
-    if (!button) return;
-    badgeEl.textContent = String(count);
-    badgeEl.hidden = count < 1;
-    // Same rule as the game's mail button: brighter when there's something to see.
-    button.classList.toggle('text-grey-4', count >= 1);
-    button.classList.toggle('text-grey-7', count < 1);
-    const label = `Friends (${count} online)`;
-    button.setAttribute('title', label);
-    button.setAttribute('aria-label', label);
-  }
 
   function onClick(e) {
     // Middle and modified clicks keep the browser default (open /friends in a new tab), like any link.
@@ -43,11 +29,11 @@ export function createTopbarButton({ doc = document, keeper = null, router }) {
       for (const c of [...i.classList]) if (/^fa-/.test(c)) i.classList.remove(c);
       i.classList.add('fa-user-friends');
     }
-    badgeEl = h('div', {
-      class: 'q-badge flex inline items-center no-wrap q-badge--single-line q-badge--floating q-badge--rounded bg-positive text-white zcf-topbar-badge',
-      hidden: true,
-    });
-    (button.querySelector('.q-btn__content') || button).appendChild(badgeEl);
+    // Always the idle grey: the clone may have copied mail's brighter "you have mail" color.
+    button.classList.remove('text-grey-4');
+    button.classList.add('text-grey-7');
+    button.setAttribute('title', 'Friends');
+    button.setAttribute('aria-label', 'Friends');
     button.addEventListener('click', safe('topbar-click', onClick));
     wrap = h('div', { class: 'zcf-topbar' }, button);
   }
@@ -59,7 +45,6 @@ export function createTopbarButton({ doc = document, keeper = null, router }) {
     if (!mailWrap || !mailWrap.parentElement) return;
     if (!wrap) build(mail);
     mailWrap.before(wrap);
-    render();
   }
 
   return {
@@ -70,11 +55,6 @@ export function createTopbarButton({ doc = document, keeper = null, router }) {
       warnTimer = setTimeout(() => {
         if (!wrap || !wrap.isConnected) warnOnce('topbar-mail-button-not-found');
       }, WARN_MS);
-    },
-    setCount(n) {
-      if (n === count) return;
-      count = n;
-      render();
     },
     destroy() {
       clearTimeout(warnTimer);

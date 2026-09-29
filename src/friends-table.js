@@ -61,12 +61,3 @@ export function buildFriendsTable({ friends, presence, threads = {}, tab = 'all'
   const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
   return { rows: sortRows(inTab.filter(matches), sort), counts };
 }
-
-export function countOnline(friends, presence) {
-  let n = 0;
-  for (const f of Object.values(friends)) {
-    const p = presence(f.id);
-    if (p && p.online) n += 1;
-  }
-  return n;
-}
