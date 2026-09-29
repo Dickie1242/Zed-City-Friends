@@ -10,6 +10,13 @@ describe('dock view', () => {
     expect(visibleDms(dms, true).map((d) => d.id)).toEqual([1, 3]);
   });
 
+  it('keeps an open DM visible on phones even after two newer pop-ups would otherwise evict it', () => {
+    // id 1 is open (the person is reading it) despite being the least recently used; ids 2 and 3
+    // pop up afterward and would fill both SMALL_MAX_DMS slots on their own.
+    const dms = [{ id: 1, lastUsed: 1, open: true }, { id: 2, lastUsed: 5 }, { id: 3, lastUsed: 4 }];
+    expect(visibleDms(dms, true).map((d) => d.id).sort()).toEqual([1, 2]);
+  });
+
   it('orders DM windows (store order) before the Friends tab and removes closed ones', () => {
     const services = makeServices();
     const root = document.createElement('div');

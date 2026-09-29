@@ -7,7 +7,12 @@ export const SMALL_MAX_DMS = 2;
 // On phones only the most recently used DM entries get a tab, so the dock still fits on screen.
 export function visibleDms(dms, small) {
   if (!small || dms.length <= SMALL_MAX_DMS) return dms;
-  const keep = new Set(dms.slice().sort((a, b) => b.lastUsed - a.lastUsed).slice(0, SMALL_MAX_DMS).map((d) => d.id));
+  // An open window always keeps its tab: hiding it would destroy it while it's still polled.
+  const keep = new Set(dms.filter((d) => d.open).map((d) => d.id));
+  for (const d of dms.slice().sort((a, b) => b.lastUsed - a.lastUsed)) {
+    if (keep.size >= SMALL_MAX_DMS) break;
+    keep.add(d.id);
+  }
   return dms.filter((d) => keep.has(d.id));
 }
 

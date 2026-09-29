@@ -151,6 +151,11 @@
     const n = Number(value);
     return Number.isInteger(n) && n > 0 ? n : null;
   }
+  function statsPlayer(data) {
+    const u = data && typeof data === "object" && data.user && typeof data.user === "object" ? data.user : data;
+    const id = toId(u && u.id);
+    return id ? { id, username: typeof u.username === "string" ? u.username : "" } : null;
+  }
 
   // src/state.js
   var MAX_DMS = 4;
@@ -1957,7 +1962,11 @@
   var SMALL_MAX_DMS = 2;
   function visibleDms(dms, small) {
     if (!small || dms.length <= SMALL_MAX_DMS) return dms;
-    const keep = new Set(dms.slice().sort((a, b) => b.lastUsed - a.lastUsed).slice(0, SMALL_MAX_DMS).map((d) => d.id));
+    const keep = new Set(dms.filter((d) => d.open).map((d) => d.id));
+    for (const d of dms.slice().sort((a, b) => b.lastUsed - a.lastUsed)) {
+      if (keep.size >= SMALL_MAX_DMS) break;
+      keep.add(d.id);
+    }
     return dms.filter((d) => keep.has(d.id));
   }
   function createDockView({ root, services }) {
@@ -2197,7 +2206,8 @@
 
   // src/app.js
   var CHATTING_MS = 5 * 60 * 1e3;
-  var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, dmInfo: 6e4, presence: 6e4 };
+  var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4 };
+  var PRESENCE_PER_SWEEP = 20;
   function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
     const store = createStore({ playerId, storage, win, now });
     const router = createRouter({ win, doc });
@@ -2276,6 +2286,7 @@
         return r;
       },
       interval: INTERVALS.activeDm,
+      busyInterval: INTERVALS.activeDmBusy,
       onAuthLost,
       doc
     });
@@ -2289,7 +2300,9 @@
     });
     const presencePoller = makePoller({
       run: () => {
-        presence.refresh(Object.keys(store.get().friends).map(Number));
+        const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
+        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
+        presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
         return { ok: true };
       },
       interval: INTERVALS.presence,
@@ -2312,7 +2325,8 @@
     async function resumeIfLoggedIn() {
       if (!stopped) return;
       const r = await api.getStats();
-      if (!r.ok || !r.data || Number(r.data.id) !== Number(playerId)) return;
+      const me = r.ok ? statsPlayer(r.data) : null;
+      if (!me || me.id !== Number(playerId)) return;
       stopped = false;
       threadsPoller.start();
       syncPollers();
@@ -2398,9 +2412,26 @@
       profileButton.onRoute(path);
       resumeIfLoggedIn();
     });
-    const smallQuery = typeof win.matchMedia === "function" ? win.matchMedia("(max-width: 599.98px)") : null;
-    if (smallQuery && smallQuery.addEventListener) smallQuery.addEventListener("change", () => view.render());
+    function enforcePhoneRule() {
+      const s = store.get();
+      const openDms = s.dock.dms.filter((d) => d.open).length;
+      const openCount = openDms + (s.dock.friendsOpen ? 1 : 0);
+      if (!openCount) return;
+      if (openCount > 1) {
+        const keepId = openDms ? pickActive() : null;
+        store.update((st) => {
+          for (const d of st.dock.dms) d.open = d.id === keepId;
+          if (keepId !== null) st.dock.friendsOpen = false;
+        });
+      }
+      dock.minimizeGameChats();
+    }
+    dock.onSmallChange((small) => {
+      if (small) enforcePhoneRule();
+      view.render();
+    });
     dock.start();
+    if (dock.isSmall()) enforcePhoneRule();
     view.render();
     profileButton.onRoute(router.path);
     chatNames.start();
@@ -2531,9 +2562,9 @@
   async function waitForPlayer(api, { retryMs = RETRY_MS, maxTries = Infinity } = {}) {
     for (let i = 0; i < maxTries; i += 1) {
       const r = await api.getStats();
-      if (r.ok && r.data && Number(r.data.id) > 0) {
-        return { id: Number(r.data.id), username: String(r.data.username || "") };
-      }
+      const me = r.ok ? statsPlayer(r.data) : null;
+      if (me) return me;
+      if (r.ok) warnOnce("stats-shape", r.data && typeof r.data === "object" ? Object.keys(r.data) : r.data);
       await new Promise((resolve) => setTimeout(resolve, retryMs));
     }
     return null;

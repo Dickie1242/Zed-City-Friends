@@ -23,9 +23,11 @@ import { createDockView } from './ui/dock-view.js';
 import { createToaster } from './ui/toast.js';
 import { createProfileButton } from './ui/profile-button.js';
 import { createChatNames } from './ui/chat-names.js';
+import { statsPlayer } from './util.js';
 
 export const CHATTING_MS = 5 * 60 * 1000;
-export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, dmInfo: 60000, presence: 60000 };
+export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, activeDmBusy: 10000, dmInfo: 60000, presence: 60000 };
+export const PRESENCE_PER_SWEEP = 20;
 
 export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
   const store = createStore({ playerId, storage, win, now });
@@ -115,6 +117,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       return r;
     },
     interval: INTERVALS.activeDm,
+    busyInterval: INTERVALS.activeDmBusy,
     onAuthLost,
     doc,
   });
@@ -128,7 +131,10 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   });
   const presencePoller = makePoller({
     run: () => {
-      presence.refresh(Object.keys(store.get().friends).map(Number));
+      // Stalest first, capped, so a long friends list can't turn into one getProfile per friend per minute.
+      const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
+      const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
+      presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
       return { ok: true };
     },
     interval: INTERVALS.presence,
@@ -155,7 +161,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   async function resumeIfLoggedIn() {
     if (!stopped) return;
     const r = await api.getStats();
-    if (!r.ok || !r.data || Number(r.data.id) !== Number(playerId)) return;
+    const me = r.ok ? statsPlayer(r.data) : null;
+    if (!me || me.id !== Number(playerId)) return;
     stopped = false;
     threadsPoller.start();
     syncPollers();
@@ -246,10 +253,29 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     profileButton.onRoute(path);
     resumeIfLoggedIn();
   });
-  const smallQuery = typeof win.matchMedia === 'function' ? win.matchMedia('(max-width: 599.98px)') : null;
-  if (smallQuery && smallQuery.addEventListener) smallQuery.addEventListener('change', () => view.render());
+  // Entering the phone layout (rotation, resize): keep only the most recently used of our windows open,
+  // and minimize the game's open chat, so the one-open-window rule holds (spec §4.5).
+  function enforcePhoneRule() {
+    const s = store.get();
+    const openDms = s.dock.dms.filter((d) => d.open).length;
+    const openCount = openDms + (s.dock.friendsOpen ? 1 : 0);
+    if (!openCount) return;
+    if (openCount > 1) {
+      const keepId = openDms ? pickActive() : null;
+      store.update((st) => {
+        for (const d of st.dock.dms) d.open = d.id === keepId;
+        if (keepId !== null) st.dock.friendsOpen = false;
+      });
+    }
+    dock.minimizeGameChats();
+  }
+  dock.onSmallChange((small) => {
+    if (small) enforcePhoneRule();
+    view.render();
+  });
 
   dock.start();
+  if (dock.isSmall()) enforcePhoneRule();
   view.render();
   profileButton.onRoute(router.path);
   chatNames.start();

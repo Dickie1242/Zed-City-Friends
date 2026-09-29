@@ -25,6 +25,8 @@ Zed City doesn't push new mail to the browser, so the script checks on a timer:
 | Idle | ~15s (the game's envelope badge: 60s) | 4 |
 | Game tab in the background | checked the moment you return | 0 |
 
+While the Friends window is open, it also refreshes online/last-active status for your friends list, capped at 20 `getProfile` calls a minute (stalest friends first) no matter how many friends you have.
+
 ## Backup
 
 In the Friends window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any.

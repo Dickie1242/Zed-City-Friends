@@ -52,3 +52,10 @@ export function toId(value) {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
+
+// getStats: spec §2 lists the player as `user.id` / `user.username`; accept that or a flat object.
+export function statsPlayer(data) {
+  const u = data && typeof data === 'object' && data.user && typeof data.user === 'object' ? data.user : data;
+  const id = toId(u && u.id);
+  return id ? { id, username: typeof u.username === 'string' ? u.username : '' } : null;
+}

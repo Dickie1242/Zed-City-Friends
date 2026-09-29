@@ -2,16 +2,17 @@
 import { createApi } from './api.js';
 import { createApp } from './app.js';
 import { injectStyles } from './ui/styles.js';
-import { warnOnce } from './util.js';
+import { statsPlayer, warnOnce } from './util.js';
 
 const RETRY_MS = 15000;
 
 export async function waitForPlayer(api, { retryMs = RETRY_MS, maxTries = Infinity } = {}) {
   for (let i = 0; i < maxTries; i += 1) {
     const r = await api.getStats();
-    if (r.ok && r.data && Number(r.data.id) > 0) {
-      return { id: Number(r.data.id), username: String(r.data.username || '') };
-    }
+    const me = r.ok ? statsPlayer(r.data) : null;
+    if (me) return me;
+    // Logged in but no id where we look: say so once, or a wrong guess at the shape fails silently.
+    if (r.ok) warnOnce('stats-shape', r.data && typeof r.data === 'object' ? Object.keys(r.data) : r.data);
     await new Promise((resolve) => setTimeout(resolve, retryMs));
   }
   return null;

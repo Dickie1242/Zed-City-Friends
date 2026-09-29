@@ -13,6 +13,10 @@ Record the answers in this file under "Findings", and fix the code only if an an
 5. **`sent_at` / `last_reply` format:** an ISO string, `YYYY-MM-DD HH:mm:ss`, or unix time? All three are parsed as UTC.
 6. **`getChatMessages?offset=1`:** does it mark the thread read? Open a DM from the dock, then check the game's envelope badge after its next 60s refresh.
 7. **Navigation:** in the Console, `document.querySelector('#q-app').__vue_app__.config.globalProperties.$router` should be defined. Clicking "Profile" in the Friends list should change page without a full reload.
+8. **`getStats`:** is the player flat (`{id, username}`) or nested under `user` (`{user: {id, username}}`)? Either works; the Console should show no `[ZCF] stats-shape` warning.
+9. **`active`** (in `getProfile` / `getChatInfo`): unix seconds, unix ms, an ISO string, or server-local time? The code has to guess right, or a friend's status shows something like "Active 20724d ago".
+10. **`is_system`:** is it `0`/`1`, a boolean, or something else? (Also confirms `new_mail`'s type, per #1.)
+11. While traveling, does `getChatInfo` fail the same way `getChatMessages`/`getNewMessages` do?
 
 ## B. Feature checks
 
@@ -29,6 +33,17 @@ Record the answers in this file under "Findings", and fix the code only if an an
 11. **Traveling or exploring:** an open DM shows "Mail is unavailable while you are traveling/exploring."
 12. **Switch to another browser tab for a minute:** the Network tab shows no `api.zed.city` requests from the script until you return.
 13. **Export**, then remove a friend, then **Import**: the friend is back. Importing a file from another account is rejected.
+14. A game system-thread (`is_system` truthy) never pops up as a DM tab and never appears in the Friends window's Recent list.
+15. Get into a fight (or start a trip), then let it end: the "Mail is unavailable while..." notice clears within about 10s of it ending, not up to a minute later.
+16. Navigate through a few different pages: our windows still match the game's chat look (same fonts/colors/spacing) — the game's own stylesheet order didn't push ours out of the cascade.
+17. With our windows present in the dock, the game's own Global/Faction chat still auto-scrolls on new messages, and the spacing between our last window and the first game chat looks right. (Global/Faction message rows use `.msg-cont` / `.sender-name`.)
+18. **Phone width, rotation:** with 2 of our windows open, rotate landscape → portrait (or resize past 600px): exactly one stays open.
+19. **Phone width, incoming DMs:** with a DM open, have two other friends message you: the open DM is not hidden by the pop-ups.
+20. **Phone width, page change:** with a DM and the game's General chat both open, navigate to another page: does the dock rebuild, and does it collapse the DM the way it should?
+21. **Presence volume:** with the Friends window open for about 2 minutes, the Network tab shows at most ~20 `getProfile` calls a minute, regardless of friend-list size.
+22. **Profile navigation:** go from another player's profile to your own, then between two different players' profiles: `ADD FRIEND` never appears on your own profile, and on a player's profile it always matches the player currently shown (never a stale button left over from the previous page).
+23. **Re-expanding a DM:** minimize then re-expand a DM that has unread messages — does the game's own unread/envelope count clear? (`getNewMessages` may not mark it read; if it doesn't, note that as a known gap.)
+24. **Routes without the dock:** browse to a few different pages/routes and note any where the dock (Friends tab, Global/Faction chat) is missing entirely.
 
 ## Findings
 

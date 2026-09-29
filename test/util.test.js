@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { warnOnce, resetWarnings, safe, debounce, asArray, toId } from '../src/util.js';
+import { warnOnce, resetWarnings, safe, debounce, asArray, toId, statsPlayer } from '../src/util.js';
 
 describe('util', () => {
   beforeEach(() => resetWarnings());
@@ -49,5 +49,14 @@ describe('util', () => {
     expect(toId(0)).toBeNull();
     expect(toId('abc')).toBeNull();
     expect(toId(1.5)).toBeNull();
+  });
+
+  it('statsPlayer accepts a flat object or one nested under `user`', () => {
+    expect(statsPlayer({ id: 42, username: 'X' })).toEqual({ id: 42, username: 'X' });
+    expect(statsPlayer({ user: { id: 42, username: 'X' } })).toEqual({ id: 42, username: 'X' });
+    expect(statsPlayer({ user: { id: 42 } })).toEqual({ id: 42, username: '' });
+    expect(statsPlayer({ user: {} })).toBeNull();
+    expect(statsPlayer({})).toBeNull();
+    expect(statsPlayer(null)).toBeNull();
   });
 });

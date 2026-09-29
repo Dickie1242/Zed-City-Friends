@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { waitForPlayer, boot } from '../src/main.js';
+import { resetWarnings } from '../src/util.js';
 import { fakeApi } from './helpers.js';
 
 describe('main', () => {
@@ -21,6 +22,24 @@ describe('main', () => {
   it('gives up after maxTries', async () => {
     const api = fakeApi({ getStats: vi.fn().mockResolvedValue({ ok: false, kind: 'auth' }) });
     expect(await waitForPlayer(api, { retryMs: 0, maxTries: 2 })).toBeNull();
+  });
+
+  it('boots from a flat getStats shape', async () => {
+    const api = fakeApi({ getStats: vi.fn().mockResolvedValue({ ok: true, data: { id: 42, username: 'X' } }) });
+    expect(await waitForPlayer(api, { retryMs: 0 })).toEqual({ id: 42, username: 'X' });
+  });
+
+  it('boots from a getStats shape with the player nested under `user`', async () => {
+    const api = fakeApi({ getStats: vi.fn().mockResolvedValue({ ok: true, data: { user: { id: 42, username: 'X' } } }) });
+    expect(await waitForPlayer(api, { retryMs: 0 })).toEqual({ id: 42, username: 'X' });
+  });
+
+  it('warns once when getStats is ok but neither shape has a player id', async () => {
+    resetWarnings();
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const api = fakeApi({ getStats: vi.fn().mockResolvedValue({ ok: true, data: { user: {} } }) });
+    expect(await waitForPlayer(api, { retryMs: 0, maxTries: 2 })).toBeNull();
+    expect(spy.mock.calls.some((c) => c[1] === 'stats-shape')).toBe(true);
   });
 
   it('starts only once per page and injects styles', async () => {
