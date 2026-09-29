@@ -37,7 +37,7 @@ It should look like it shipped with the game. It reuses the game's own CSS class
 - **`getChatMessages?user_id=&offset=P&limit=10`** → one page of messages. `P` is a **page number starting at 1**, not an item offset. Page 1 is the newest. Fields: `id`, `sender_id`, `message`, `sent_at` (UTC), `is_system`.
 - **`getNewMessages?user_id=&last_message_id=`** → messages newer than that ID.
 - **`POST sendMail {message, user_id}`** → `{message_id}`.
-- **`getProfile?user=ID`** → `{id, username, avatar, online (bool), active, faction, …}`.
+- **`getProfile?user=ID`** → `{id, username, avatar, online (bool), active, faction, …}`. `active` (here and in `getChatInfo`) is **seconds since the player was last active**, not a timestamp; the game's own TimeAgo component subtracts it from now (confirmed live, 2026-09-28).
 - **`findPlayer?q=`** → `[{id, username, avatar}]`. Accepts a name fragment or an ID.
 - **Mail access error:** the message string `"You cannot access messages with this user!"`.
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createPresence } from '../src/presence.js';
+import { createPresence, lastActive } from '../src/presence.js';
+import { statusText } from '../src/time.js';
 
 describe('presence', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -189,5 +190,31 @@ describe('presence', () => {
     p.refresh([1, 2, 3]);
     await vi.advanceTimersByTimeAsync(2000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 1, 2, 3]);
+  });
+});
+
+describe('lastActive', () => {
+  const T = Date.UTC(2026, 8, 28, 14, 0, 0);
+
+  it('reads the API value as seconds since last active, like the game does', () => {
+    expect(lastActive(3600, T)).toBe(T - 3600000);
+    expect(lastActive('120', T)).toBe(T - 120000);
+    expect(lastActive(0, T)).toBe(T);
+    expect(statusText({ online: false, active: lastActive(3 * 86400, T) }, T)).toBe('Active 3d ago');
+  });
+
+  it('still parses absolute times and ignores missing values', () => {
+    expect(lastActive('2026-09-28 10:00:00', T)).toBe(Date.UTC(2026, 8, 28, 10));
+    expect(lastActive(1790620900, T)).toBe(1790620900000);
+    expect(lastActive(null, T)).toBeNull();
+    expect(lastActive('', T)).toBeNull();
+    expect(lastActive(-5, T)).toBeNull();
+  });
+
+  it('stores seconds-ago presence relative to when the answer arrived', () => {
+    const p = createPresence({ fetchProfile: vi.fn(), now: () => T });
+    p.set(7, { online: false, active: 720 });
+    expect(p.get(7).active).toBe(T - 720000);
+    expect(statusText(p.get(7), T)).toBe('Active 12m ago');
   });
 });

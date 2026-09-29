@@ -538,6 +538,15 @@
   }
 
   // src/presence.js
+  function lastActive(value, now) {
+    if (value === null || value === void 0 || value === "") return null;
+    const n = Number(value);
+    if (Number.isFinite(n)) {
+      if (n < 0) return null;
+      if (n < 1e9) return now - n * 1e3;
+    }
+    return parseSentAt(value);
+  }
   function createPresence({
     fetchProfile,
     onProfile,
@@ -564,7 +573,7 @@
     }
     function store(id, info, at) {
       if (!info || typeof info !== "object") return;
-      cache.set(id, { online: !!info.online, active: parseSentAt(info.active), fetchedAt: at });
+      cache.set(id, { online: !!info.online, active: lastActive(info.active, now()), fetchedAt: at });
       emit(id);
     }
     function set(id, info) {

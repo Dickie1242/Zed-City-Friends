@@ -14,7 +14,7 @@ Record the answers in this file under "Findings", and fix the code only if an an
 6. **`getChatMessages?offset=1`:** does it mark the thread read? Open a DM from the dock, then check the game's envelope badge after its next 60s refresh.
 7. **Navigation:** in the Console, `document.querySelector('#q-app').__vue_app__.config.globalProperties.$router` should be defined. Clicking "Profile" in the Friends list should change page without a full reload.
 8. **`getStats`:** is the player flat (`{id, username}`) or nested under `user` (`{user: {id, username}}`)? Either works; the Console should show no `[ZCF] stats-shape` warning.
-9. **`active`** (in `getProfile` / `getChatInfo`): unix seconds, unix ms, an ISO string, or server-local time? The code has to guess right, or a friend's status shows something like "Active 20724d ago".
+9. **`active`** (in `getProfile` / `getChatInfo`): confirmed live to be seconds since last active. Offline friends should show a sensible "Active 5m ago" / "Active 3d ago", never thousands of days.
 10. **`is_system`:** is it `0`/`1`, a boolean, or something else? (Also confirms `new_mail`'s type, per #1.)
 11. While traveling, does `getChatInfo` fail the same way `getChatMessages`/`getNewMessages` do?
 

@@ -2,6 +2,18 @@
 import { parseSentAt } from './time.js';
 import { warnOnce } from './util.js';
 
+// The API's `active` is seconds since the player was last active (the game's own TimeAgo
+// component subtracts it from now). Anything that looks like an absolute time is parsed as one.
+export function lastActive(value, now) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (Number.isFinite(n)) {
+    if (n < 0) return null;
+    if (n < 1e9) return now - n * 1000;
+  }
+  return parseSentAt(value);
+}
+
 export function createPresence({
   fetchProfile,
   onProfile,
@@ -33,7 +45,7 @@ export function createPresence({
   // slow response doesn't push the id's next scheduled refresh out past staleMs.
   function store(id, info, at) {
     if (!info || typeof info !== 'object') return;
-    cache.set(id, { online: !!info.online, active: parseSentAt(info.active), fetchedAt: at });
+    cache.set(id, { online: !!info.online, active: lastActive(info.active, now()), fetchedAt: at });
     emit(id);
   }
 
