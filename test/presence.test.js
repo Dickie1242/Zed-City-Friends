@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createPresence, lastActive } from '../src/presence.js';
+import { createPresence, lastActive, profileDetails } from '../src/presence.js';
 import { statusText } from '../src/time.js';
 
 describe('presence', () => {
@@ -136,15 +136,51 @@ describe('presence', () => {
   });
 
   it('skips an id in the queue if set() already refreshed it before its turn', async () => {
+    let t = 0;
     const slow = (v) => new Promise((resolve) => setTimeout(() => resolve(v), 1000));
     const fetchProfile = vi.fn(() => slow({ ok: true, data: { online: true } }));
-    const p = createPresence({ fetchProfile, concurrency: 1 });
+    const p = createPresence({ fetchProfile, concurrency: 1, now: () => t });
+    p.refresh([3]);
+    await vi.advanceTimersByTimeAsync(2000); // 3 now has profile details
+    t += 60000; // ...and is stale again
+    fetchProfile.mockClear();
     p.refresh([1, 2, 3]);
     // 3 is still waiting behind 1 and 2 when a getChatInfo-style set() arrives for it.
     p.set(3, { online: true, active: null });
     await vi.advanceTimersByTimeAsync(5000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 2]);
     expect(p.get(3)).toMatchObject({ online: true });
+  });
+
+  it('keeps level, faction and injured/traveling from getProfile, and set() leaves them alone', async () => {
+    const data = { online: true, rank: 27, faction: { id: 9, name: 'Ashfall', role: 'Member' }, is_injured: 1, traveling: false };
+    const p = createPresence({ fetchProfile: () => Promise.resolve({ ok: true, data }) });
+    p.refresh([5]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(p.get(5).profile).toEqual({ level: 27, faction: { id: 9, name: 'Ashfall' }, injured: true, traveling: false });
+    p.set(5, { online: false, active: 30 });
+    expect(p.get(5)).toMatchObject({ online: false, profile: { level: 27 } });
+  });
+
+  it('treats an entry without profile details as stale, however fresh', () => {
+    const p = createPresence({ fetchProfile: vi.fn() });
+    p.set(5, { online: true });
+    expect(p.isStale(5)).toBe(true);
+  });
+
+  it('checks staleness against a caller-given age', async () => {
+    let t = 0;
+    const p = createPresence({ fetchProfile: () => Promise.resolve({ ok: true, data: { online: true } }), now: () => t });
+    p.refresh([5]);
+    await vi.advanceTimersByTimeAsync(0);
+    t = 2 * 60000;
+    expect(p.isStale(5)).toBe(true);
+    expect(p.isStale(5, 5 * 60000)).toBe(false);
+  });
+
+  it('reads profile details defensively', () => {
+    expect(profileDetails({})).toEqual({ level: null, faction: null, injured: false, traveling: false });
+    expect(profileDetails({ level: '12', faction: { id: 'x' }, traveling: { to: 'Outpost' } })).toEqual({ level: 12, faction: null, injured: false, traveling: true });
   });
 
   it('never has more than 2 requests in flight, even with slow responses', async () => {

@@ -1,6 +1,6 @@
 // In-memory online/last-active cache. Never persisted.
 import { parseSentAt } from './time.js';
-import { warnOnce } from './util.js';
+import { toId, warnOnce } from './util.js';
 
 // The API's `active` is seconds since the player was last active (the game's own TimeAgo
 // component subtracts it from now). Anything that looks like an absolute time is parsed as one.
@@ -12,6 +12,20 @@ export function lastActive(value, now) {
     if (n < 1e9) return now - n * 1000;
   }
   return parseSentAt(value);
+}
+
+// Level, faction and the injured / traveling flags from a getProfile answer. The profile calls
+// the level `rank`; `traveling` may be a boolean or an object, so any truthy value counts.
+export function profileDetails(data) {
+  const level = Number(data.rank ?? data.level);
+  const f = data.faction && typeof data.faction === 'object' ? data.faction : null;
+  const factionId = f ? toId(f.id) : null;
+  return {
+    level: Number.isFinite(level) && level > 0 ? level : null,
+    faction: factionId ? { id: factionId, name: typeof f.name === 'string' ? f.name : '' } : null,
+    injured: !!data.is_injured,
+    traveling: !!data.traveling,
+  };
 }
 
 export function createPresence({
@@ -42,10 +56,17 @@ export function createPresence({
 
   // info: anything with { online, active } (getProfile / getChatInfo entries). `at` is the
   // freshness timestamp to record; a refresh() fetch passes the time it queued the id, so a
-  // slow response doesn't push the id's next scheduled refresh out past staleMs.
-  function store(id, info, at) {
+  // slow response doesn't push the id's next scheduled refresh out past staleMs. `profile` comes
+  // only with getProfile answers; a getChatInfo set() keeps the profile details already known.
+  function store(id, info, at, profile) {
     if (!info || typeof info !== 'object') return;
-    cache.set(id, { online: !!info.online, active: lastActive(info.active, now()), fetchedAt: at });
+    const prev = cache.get(id);
+    cache.set(id, {
+      online: !!info.online,
+      active: lastActive(info.active, now()),
+      fetchedAt: at,
+      profile: profile || (prev && prev.profile) || null,
+    });
     emit(id);
   }
 
@@ -53,9 +74,11 @@ export function createPresence({
     store(id, info, now());
   }
 
-  function isStale(id) {
+  // An entry without profile details is stale however fresh it is, so the Friends page's level
+  // and faction fill in even for someone whose status so far only came from a DM header.
+  function isStale(id, maxAgeMs = staleMs) {
     const c = cache.get(id);
-    return !c || now() - c.fetchedAt >= staleMs;
+    return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
   }
 
   // Drops everything still waiting its turn and stops new fetches until pauseMs has passed.
@@ -80,7 +103,7 @@ export function createPresence({
         .then(() => fetchProfile(id))
         .then((r) => {
           if (r && r.ok && r.data) {
-            store(id, r.data, queuedAt);
+            store(id, r.data, queuedAt, profileDetails(r.data));
             if (onProfile) onProfile(id, r.data);
           } else if (r && !r.ok && (r.kind === 'rate' || r.kind === 'auth')) {
             pause();
