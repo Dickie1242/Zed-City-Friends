@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Zed City Friends & DMs
+// @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.2.0
+// @version      0.2.1
 // @description  Friends list and Torn-style DM windows in Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none

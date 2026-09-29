@@ -9,7 +9,7 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 export const OUTFILE = 'dist/zed-city-friends.user.js';
 
 export const HEADER = `// ==UserScript==
-// @name         Zed City Friends & DMs
+// @name         Zed City Friends
 // @namespace    zed-city-friends
 // @version      ${pkg.version}
 // @description  ${pkg.description}

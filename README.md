@@ -1,4 +1,4 @@
-# Zed City Friends & DMs
+# Zed City Friends
 
 A userscript that adds a **friends list** and **Torn-style DM chat windows** to [Zed City](https://www.zed.city)'s bottom-right chat dock, next to the Global and Faction chats.
 

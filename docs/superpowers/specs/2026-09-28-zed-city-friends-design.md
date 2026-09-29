@@ -1,4 +1,4 @@
-# Zed City Friends & DMs: Design
+# Zed City Friends: Design
 
 **Date:** 2026-09-28
 **Status:** Approved in brainstorming; awaiting spec review
