@@ -40,6 +40,7 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     setNotify: vi.fn((on) => settings.update((s) => setFlag(s, 'notify', on))),
     setNotifyFriendsOnly: vi.fn((on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on))),
     setTitleCount: vi.fn((on) => settings.update((s) => setFlag(s, 'titleCount', on))),
+    setHoverLocal: vi.fn((on) => settings.update((s) => setFlag(s, 'hoverLocal', on))),
     addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
     removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
     setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),

@@ -11,11 +11,11 @@ const over = (el) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: tru
 const tip = () => document.querySelector('.zcf-tip');
 const lines = () => [...tip().children].map((n) => n.textContent);
 
-function mount(html) {
+function mount(html, { showLocal = true } = {}) {
   vi.useFakeTimers();
   document.body.innerHTML = html;
   const gameClock = createGameClock({ doc: document, storage: memoryStorage({ 'zcf:v1:1:gameClock': 'local' }), key: 'zcf:v1:1:gameClock', now: () => NOW });
-  hover = createTimeHover({ doc: document, win: window, now: () => NOW, gameClock });
+  hover = createTimeHover({ doc: document, win: window, now: () => NOW, gameClock, showLocal: () => showLocal });
   return gameClock;
 }
 
@@ -39,6 +39,13 @@ describe('time hover', () => {
     expect(tip().hidden).toBe(false);
     over(document.body);
     expect(tip().hidden).toBe(true);
+  });
+
+  it('leaves your time out when that is switched off', () => {
+    mount(dm, { showLocal: false });
+    over(document.querySelector('.zcf-time'));
+    vi.advanceTimersByTime(500);
+    expect(lines()).toEqual(['Tue, Sep 29, 18:18 ZCT', '12 min ago']);
   });
 
   it("doesn't show for a pointer just passing over", () => {

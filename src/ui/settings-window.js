@@ -42,6 +42,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
   const notifyBox = checkbox('Desktop notifications', 'notify', (on) => actions.setNotify(on));
   const friendsOnlyBox = checkbox('Friends only', 'notify-friends', (on) => actions.setNotifyFriendsOnly(on));
   const titleBox = checkbox('Unread count in the browser tab', 'title-count', (on) => actions.setTitleCount(on));
+  const hoverLocalBox = checkbox('Show your time too when hovering a chat time', 'hover-local', (on) => actions.setHoverLocal(on));
   const note = h('div', { class: 'zcf-set-note' });
 
   // What the browser allows, in words, or '' when notifications can simply be switched on.
@@ -152,6 +153,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
       section('Notifications', notifyBox.row, h('div', { class: 'zcf-set-sub' }, friendsOnlyBox.row), note, titleBox.row),
       section('Sounds', h('label', { class: 'zcf-set-sound' }, h('span', null, 'New private message'), select, play)),
+      section('Time', hoverLocalBox.row),
       section('About', h('div', { class: 'zcf-set-about' }, `Zed City Friends v${VERSION}`), whatsNew(), devLink()),
     ];
   }
@@ -167,6 +169,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
     friendsOnlyBox.input.checked = s.notifyFriendsOnly;
     friendsOnlyBox.input.disabled = !s.notify;
     titleBox.input.checked = s.titleCount;
+    hoverLocalBox.input.checked = s.hoverLocal;
     note.textContent = blocked;
     note.hidden = !blocked;
     const rows = chatRows();

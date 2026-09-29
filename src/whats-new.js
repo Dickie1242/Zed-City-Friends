@@ -17,7 +17,7 @@ export const WHATS_NEW = [
       {
         title: 'Chats',
         points: [
-          "Every chat time shows Zed City time (ZCT), the game's own chats included. Rest the pointer on one (or tap it) for the full date and time in ZCT and in your own time zone, and how long ago it was.",
+          "Every chat time shows Zed City time (ZCT), the game's own chats included. Rest the pointer on one (or tap it) for the full date and time in ZCT and in your own time zone (a Chat settings switch), and how long ago it was.",
           'Opening a DM with unread messages puts a "New" line above the first one.',
           'Moved chats that overlap: the one you click comes to the front.',
         ],

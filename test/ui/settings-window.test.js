@@ -153,9 +153,15 @@ describe('chat settings window', () => {
     expect(el.querySelector('.zcf-set-note').textContent).toContain('Not supported');
   });
 
-  it('has no time setting: every chat time is Zed City time', () => {
-    const { el } = mount();
+  it('has no clock setting (every chat time is ZCT), only whether the hover adds your time', () => {
+    const { services, el } = mount();
     expect(el.querySelector('select[aria-label="Chat times"]')).toBeNull();
+    const box = el.querySelector('[data-zcf-focus="hover-local"]');
+    expect(box.checked).toBe(true);
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(services.actions.setHoverLocal).toHaveBeenCalledWith(false);
+    expect(el.querySelector('[data-zcf-focus="hover-local"]').checked).toBe(false);
   });
 
   it('keeps focus on the sound picker when the window redraws', () => {

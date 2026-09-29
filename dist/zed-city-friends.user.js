@@ -372,7 +372,7 @@
   var SOUNDS = ["off", "chirp", "ping", "bell"];
   var MAX_MUTED = 500;
   var MAX_PINNED = 20;
-  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount"];
+  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "hoverLocal"];
   function defaultSettings() {
     return {
       v: 1,
@@ -383,7 +383,9 @@
       pinned: [],
       notify: false,
       notifyFriendsOnly: false,
-      titleCount: true
+      titleCount: true,
+      hoverLocal: true
+      // the chat time hover shows your own time under ZCT
     };
   }
   var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
@@ -408,7 +410,8 @@
       pinned: normalizeIdList(doc.pinned, MAX_PINNED),
       notify: doc.notify === true,
       notifyFriendsOnly: doc.notifyFriendsOnly === true,
-      titleCount: doc.titleCount !== false
+      titleCount: doc.titleCount !== false,
+      hoverLocal: doc.hoverLocal !== false
     };
   }
   function setPmTab(s, tab) {
@@ -5592,7 +5595,7 @@ sandfish		/items/sandfish.webp`;
         {
           title: "Chats",
           points: [
-            "Every chat time shows Zed City time (ZCT), the game's own chats included. Rest the pointer on one (or tap it) for the full date and time in ZCT and in your own time zone, and how long ago it was.",
+            "Every chat time shows Zed City time (ZCT), the game's own chats included. Rest the pointer on one (or tap it) for the full date and time in ZCT and in your own time zone (a Chat settings switch), and how long ago it was.",
             'Opening a DM with unread messages puts a "New" line above the first one.',
             "Moved chats that overlap: the one you click comes to the front."
           ]
@@ -5707,6 +5710,7 @@ sandfish		/items/sandfish.webp`;
     const notifyBox = checkbox("Desktop notifications", "notify", (on) => actions.setNotify(on));
     const friendsOnlyBox = checkbox("Friends only", "notify-friends", (on) => actions.setNotifyFriendsOnly(on));
     const titleBox = checkbox("Unread count in the browser tab", "title-count", (on) => actions.setTitleCount(on));
+    const hoverLocalBox = checkbox("Show your time too when hovering a chat time", "hover-local", (on) => actions.setHoverLocal(on));
     const note = h("div", { class: "zcf-set-note" });
     function permissionNote() {
       const n = services.notifier;
@@ -5819,6 +5823,7 @@ sandfish		/items/sandfish.webp`;
         ),
         section("Notifications", notifyBox.row, h("div", { class: "zcf-set-sub" }, friendsOnlyBox.row), note, titleBox.row),
         section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
+        section("Time", hoverLocalBox.row),
         section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
       ];
     }
@@ -5833,6 +5838,7 @@ sandfish		/items/sandfish.webp`;
       friendsOnlyBox.input.checked = s.notifyFriendsOnly;
       friendsOnlyBox.input.disabled = !s.notify;
       titleBox.input.checked = s.titleCount;
+      hoverLocalBox.input.checked = s.hoverLocal;
       note.textContent = blocked;
       note.hidden = !blocked;
       const rows = chatRows();
@@ -7662,7 +7668,7 @@ sandfish		/items/sandfish.webp`;
   var TAP_MS = 3e3;
   var OURS = "[data-zcf-ts]";
   var GAME = `.chat-container:not(.zcf) ${TIME}`;
-  function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock }) {
+  function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock, showLocal = () => true }) {
     let tip = null;
     let shownFor = null;
     let waitingFor = null;
@@ -7674,7 +7680,7 @@ sandfish		/items/sandfish.webp`;
     }
     function linesFor(ts) {
       const lines = [formatStamp(ts, false)];
-      if (new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true));
+      if (showLocal() && new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true));
       lines.push(longAgo(ts, now()));
       return lines;
     }
@@ -7982,6 +7988,7 @@ sandfish		/items/sandfish.webp`;
       },
       setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, "notifyFriendsOnly", on)),
       setTitleCount: (on) => settings.update((s) => setFlag(s, "titleCount", on)),
+      setHoverLocal: (on) => settings.update((s) => setFlag(s, "hoverLocal", on)),
       togglePin(id) {
         if (!settings.update((s) => togglePinned(s, id))) toast("You can pin up to 20 chats.");
       },
@@ -8072,7 +8079,7 @@ sandfish		/items/sandfish.webp`;
     const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, "game") });
     const page = createFriendsPage(services, { doc, win, keeper });
     const titleCount = createTitleCount({ doc, win });
-    const timeHover = createTimeHover({ doc, win, now, gameClock });
+    const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal });
     const syncTitle = () => {
       const s = settings.get();
       titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);

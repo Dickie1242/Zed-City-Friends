@@ -316,6 +316,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     },
     setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on)),
     setTitleCount: (on) => settings.update((s) => setFlag(s, 'titleCount', on)),
+    setHoverLocal: (on) => settings.update((s) => setFlag(s, 'hoverLocal', on)),
     togglePin(id) {
       if (!settings.update((s) => togglePinned(s, id))) toast('You can pin up to 20 chats.');
     },
@@ -410,7 +411,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, 'game') });
   const page = createFriendsPage(services, { doc, win, keeper });
   const titleCount = createTitleCount({ doc, win });
-  const timeHover = createTimeHover({ doc, win, now, gameClock });
+  const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal });
   const syncTitle = () => {
     const s = settings.get();
     titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);

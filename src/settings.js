@@ -9,7 +9,7 @@ export const SOUNDS = ['off', 'chirp', 'ping', 'bell'];
 export const MAX_MUTED = 500;
 export const MAX_PINNED = 20;
 // On/off switches: notifications and Friends only (off by default), the tab-title count (on), local time (off).
-export const FLAGS = ['notify', 'notifyFriendsOnly', 'titleCount'];
+export const FLAGS = ['notify', 'notifyFriendsOnly', 'titleCount', 'hoverLocal'];
 
 export function defaultSettings() {
   return {
@@ -22,6 +22,7 @@ export function defaultSettings() {
     notify: false,
     notifyFriendsOnly: false,
     titleCount: true,
+    hoverLocal: true, // the chat time hover shows your own time under ZCT
   };
 }
 
@@ -53,6 +54,7 @@ export function normalizeSettings(doc) {
     notify: doc.notify === true,
     notifyFriendsOnly: doc.notifyFriendsOnly === true,
     titleCount: doc.titleCount !== false,
+    hoverLocal: doc.hoverLocal !== false,
   };
 }
 
