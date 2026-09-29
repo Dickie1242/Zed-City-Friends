@@ -149,8 +149,8 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-divider:before,.zcf-divider:after{content:"";flex:1;border-top:1px solid #ffffff14}
 .zcf-new-line{display:flex;align-items:center;gap:8px;margin:8px 15px 2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6fcf73}
 .zcf-new-line:before,.zcf-new-line:after{content:"";flex:1;border-top:1px solid #3d8b40aa}
-.zcf-set-hint{font-size:11px;opacity:.5;margin-top:4px}
-.zcf-tip{position:fixed;z-index:4001;pointer-events:none;padding:4px 8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 4px 12px #00000080;color:#e0e0e0;font-size:11px;line-height:1.3;white-space:nowrap}
+.zcf-tip{position:fixed;z-index:4001;pointer-events:none;padding:4px 8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 4px 12px #00000080;color:#e0e0e0;font-size:11px;line-height:1.45;white-space:nowrap}
+.zcf-tip-ago{opacity:.55}
 .zcf-tip[hidden]{display:none}
 .zcf-msg{padding:2px 15px;margin-top:8px}
 .zcf-msg.zcf-grouped,.zcf-pending-msg{margin-top:1px}

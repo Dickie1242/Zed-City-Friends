@@ -1,49 +1,62 @@
-// Hover (or tap) any chat time to see it in the other clock. Every time in the dock, in our DMs and in the
-// game's own chats, shows the clock picked in Chat settings (Zed City time by default, see game-clock.js);
-// the tooltip shows the other one.
-import { formatClock, formatStamp, formatWeekday, zoneName } from '../time.js';
+// A detailed timestamp over any chat time. Every time in the dock, in our DMs and in the game's own chats,
+// is Zed City time (ZCT, see game-clock.js), and the game prints only "18:27". Resting the pointer on one
+// for a moment (or tapping it) shows the day and time in ZCT, the same moment in your own time zone, and
+// how long ago it was.
+import { formatStamp, longAgo } from '../time.js';
 import { TIME } from './game-clock.js';
 
-const TAP_MS = 2500;
+const DELAY_MS = 500;
+const TAP_MS = 3000;
 const OURS = '[data-zcf-ts]';
 const GAME = `.chat-container:not(.zcf) ${TIME}`;
 
-// isLocal(): whether times show your own clock. gameClock: game-clock.js, for the game's chats.
-export function createTimeHover({ doc = document, win = window, now = () => Date.now(), isLocal = () => false, gameClock }) {
+// gameClock: game-clock.js, for the moments behind the game's chat times.
+export function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock }) {
   let tip = null;
   let shownFor = null;
+  let waitingFor = null;
+  let showTimer = 0;
   let hideTimer = 0;
 
-  // The other clock, with its day and zone: "Tue, Sep 29, 14:27 EDT" or "Tue, Sep 29, 18:27 ZCT".
-  function textFor(el) {
-    const other = !isLocal();
+  function momentOf(el) {
     const ts = el.matches(OURS) ? Number(el.getAttribute('data-zcf-ts')) : gameClock ? gameClock.momentOf(el) : null;
-    if (!Number.isFinite(ts) || ts <= 0) return '';
-    const otherText = formatStamp(ts, other);
-    // A grouped DM message has no time of its own on screen, so it gets both, the shown clock first (its
-    // day only when the two clocks are on different days).
-    if (!el.matches(OURS) || el.classList.contains('zcf-time')) return otherText;
-    const zone = other ? zoneName(ts) : 'ZCT';
-    const sameDay = formatWeekday(ts, other) === formatWeekday(ts, !other);
-    return `${formatStamp(ts, !other)} · ${sameDay ? `${formatClock(ts, other)} ${zone}` : otherText}`;
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+  }
+
+  // ["Tue, Sep 29, 18:27 ZCT", "Tue, Sep 29, 14:27 EDT", "12 min ago"]; no second line where your time is ZCT.
+  function linesFor(ts) {
+    const lines = [formatStamp(ts, false)];
+    if (new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true));
+    lines.push(longAgo(ts, now()));
+    return lines;
   }
 
   function hide() {
+    clearTimeout(showTimer);
     clearTimeout(hideTimer);
+    waitingFor = null;
     shownFor = null;
     if (tip) tip.hidden = true;
   }
 
   function show(el) {
-    const text = textFor(el);
-    if (!text) return hide();
+    clearTimeout(showTimer);
+    waitingFor = null;
+    const ts = el.isConnected ? momentOf(el) : null;
+    if (ts === null) return hide();
     if (!tip) {
       tip = doc.createElement('div');
       tip.className = 'zcf-tip';
       tip.setAttribute('role', 'tooltip');
     }
     if (!tip.isConnected) doc.body.appendChild(tip);
-    tip.textContent = text;
+    const lines = linesFor(ts);
+    tip.replaceChildren(...lines.map((text, i) => {
+      const line = doc.createElement('div');
+      if (i === lines.length - 1) line.className = 'zcf-tip-ago';
+      line.textContent = text;
+      return line;
+    }));
     tip.hidden = false;
     shownFor = el;
     const r = el.getBoundingClientRect();
@@ -56,13 +69,18 @@ export function createTimeHover({ doc = document, win = window, now = () => Date
 
   const timeAt = (target) => (target && target.closest ? target.closest(`${OURS}, ${GAME}`) : null);
 
+  // A moment's rest before it shows, so sweeping across a chat doesn't flash tooltips; moving from one
+  // time to the next while one is up switches straight away.
   function onOver(e) {
     const el = timeAt(e.target);
-    if (el === shownFor) return;
-    if (el) show(el);
-    else hide();
+    if (!el) return hide();
+    if (el === shownFor || el === waitingFor) return;
+    if (shownFor) return show(el);
+    clearTimeout(showTimer);
+    waitingFor = el;
+    showTimer = setTimeout(() => show(el), DELAY_MS);
   }
-  // Touch screens have no hover: a tap shows it for a moment.
+  // Touch screens have no hover: a tap shows it for a few seconds.
   function onTap(e) {
     if (e.pointerType === 'mouse') return;
     const el = timeAt(e.target);
