@@ -16,6 +16,10 @@ export const HEADER = `// ==UserScript==
 // @match        https://www.zed.city/*
 // @grant        none
 // @run-at       document-idle
+// @homepageURL  https://github.com/Dickie1242/Zed-City-Friends
+// @supportURL   https://github.com/Dickie1242/Zed-City-Friends/issues
+// @downloadURL  https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
+// @updateURL    https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
 // ==/UserScript==
 `;
 

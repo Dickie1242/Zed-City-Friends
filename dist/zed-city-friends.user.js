@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         Zed City Friends & DMs
 // @namespace    zed-city-friends
-// @version      0.1.0
+// @version      0.2.0
 // @description  Friends list and Torn-style DM windows in Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
 // @run-at       document-idle
+// @homepageURL  https://github.com/Dickie1242/Zed-City-Friends
+// @supportURL   https://github.com/Dickie1242/Zed-City-Friends/issues
+// @downloadURL  https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
+// @updateURL    https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
 // ==/UserScript==
 
 (() => {

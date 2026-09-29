@@ -11,7 +11,9 @@ DMs are sent through the game's own **Mail** system. The other player gets your 
 ## Install
 
 1. Install a userscript manager, such as [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/).
-2. Open `dist/zed-city-friends.user.js` and install it (or paste it into a new script).
+2. Open the install link and click **Install**:
+   https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
+   Your userscript manager checks this link for updates, so new versions arrive automatically.
 3. Reload www.zed.city.
 
 ## How often it checks for messages
