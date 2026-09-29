@@ -8,7 +8,7 @@
 
 **Status:**
 - **Part A** (Private Messages window) was designed with the user and approved.
-- **Part B** (chat settings cog) was designed by Claude after the user went to bed. The user asked for it ("add a cog bubble for chat settings like Torn; apply my Chat+ plugin logically") and said to proceed without them. Every Part B choice is listed in §B.7 so the user can review it in the morning.
+- **Part B** (per-chat customization and the settings cog): the user set its requirements (Chat+ drag-to-resize grips, movable bubbles, and a size, message size and location for each chat). Claude filled in the details after the user went to bed. The remaining judgment calls are listed in §B.7 for the morning review.
 
 ## 0. Background
 
@@ -121,103 +121,165 @@ The dock's "Friends & Chats" window becomes **Private Messages**, a Torn-style l
 
 ---
 
-# Part B: Chat settings cog (designed on the user's behalf, to review)
+# Part B: Per-chat customization (Chat+) and the settings cog
 
 ## B.1 Summary
 
-A **cog tab** sits in the bottom-right corner, right of Private Messages, and opens a **Chat settings** window in the row, like the other windows. Its contents follow Torn's settings panel, plus the Chat+ features that make sense in Zed.
+Every chat can be customized on its own, the way the user's Chat+ plugin works in Torn. That covers the game's **Global, Faction and Activity** chats as well as ours (**Private Messages**, each **DM**, and **Chat settings**). Each chat can be:
+- unlocked with a padlock, dragged anywhere and locked there, or sent back to the row;
+- resized with drag grips;
+- given its own **message size**.
 
-## B.2 The cog tab and window
+Size, message size and location are remembered **per chat**. A chat's bubble (its minimized tab) stays where the chat was moved, and bubbles can be dragged directly.
 
-- **Tab:** a 44×40 minimized tab with `fas fa-cog` in the game's grey `#a6a6a6`. It is rightmost in the row (corner) and has no badge.
-- **Window:** `CHAT SETTINGS` with the cog icon and a collapse chevron. It is as tall as the other windows and scrolls inside when needed.
-- **Open state** is `dock.settingsOpen`, which comes back after a reload like the other windows.
+A **cog tab** in the bottom-right corner opens a **Chat settings** window with the utilities, a list of every customized chat with Reset buttons, sounds and the version.
 
-## B.3 Sections
+**User requirements** (2026-09-29): "I want the chat+'s drag-to-resize grips and movable chat bubbles. I also want … unique settings per chat where each chat can have its own size and font size and location."
 
-1. **Utilities**
-   - **Mark all as read:** for each chat counted by `chatsUnreadTotal`, one at a time with at most 20 per press, call `getChatMessages(id, 1, 10)`. That's what marks a thread read on the server, the same as opening it. Then `markSeen` it locally.
-     - While it runs, the button reads "Marking… 3/7".
-     - When it finishes, show a toast "Marked N chats as read".
-     - It stops on an `auth` or `busy` result, with a toast explaining why.
-   - **Close all private chats:** removes every DM tab and window from the dock (`closeDm` for each). It does nothing to the mail itself.
-2. **Window size**, for Zed City Friends windows only (Private Messages, DMs and Chat settings):
-   - **Width:** 80%–150% in steps of 10, relative to the game's 350px chat width.
-   - **Height:** 80%–150% in steps of 10, relative to 450px.
-   - **Reset** returns both to 100%.
-   - Both are applied through CSS variables on our own elements, so there are no Vue-owned nodes to fight.
-   - The game's chats keep their own size: they're Vue-owned, and resizing them is out of scope.
-   - Phones ignore these values (the phone layout already sizes windows to the screen).
-3. **Message size** (Chat+):
-   - **Slider:** 80%–200% in steps of 10.
-   - **Scope:** the messages and typing box in every DM window.
-   - **Checkbox "Also Global, Faction and Activity chat"** (default **on**): applies the same size to the game's chats.
-   - **How:** one `<style id="zcf-user-settings">` that we rewrite. It sets CSS `zoom` on our `.zcf-scroll` / `.zcf-composer`, and on the game's `.chat-container:not(.zcf) .chat-content` when the checkbox is on. We never touch Vue-owned elements' attributes.
-   - **At 100%**, the style is empty, so the game is untouched (as in Chat+).
-4. **Sounds**
-   - **"New private message":** Off (default) / Chirp / Ping / Bell, with a ▶ test button.
-   - **Tones** are synthesized with WebAudio (short envelopes), so there are no files and no network requests.
-   - **When it plays:** when a thread poll finds new unread mail from another player, friend or not, at most once per poll. It never plays for your own sends or for system threads.
-   - Create the AudioContext lazily and `resume()` it on first use. Browsers allow that after any click on the page.
-5. **Move windows** (Chat+), desktop only:
-   - **Setting:** a checkbox "Show move controls on windows" (default **off**, to keep headers uncluttered).
-   - **When on:** every expanded Zed City Friends window (Private Messages, DMs, Chat settings) gets a **padlock** in its header, left of its other buttons.
-   - **Padlock:** click to **unlock**, then drag the window by its header anywhere on screen; click again to **lock** it there.
-   - **Return arrow:** a window that has been moved gets a **return arrow**, which sends it back into the dock row. The row closes the gap on its own, since it's a flex row.
-   - **Positions:** saved per window (`pm`, `settings`, `dm:{id}`) and restored after a reload.
-     - They're clamped fully on-screen after drags and browser resizes, and synced across open tabs.
-     - A moved window stays `position:fixed` at its spot while minimized too, like Chat+.
-   - **Scope:** only our windows. The game's chats are Vue-owned, and moving them risks Vue re-renders undoing it.
-   - **Porting:** port the geometry, drag-threshold and clamping logic from Chat+ (`src/features/movable/geometry.js`, `dragController.js`, `floating.js`). Its reflow is unnecessary here, because our windows sit in a flex row that closes gaps by itself.
-6. **About:** "Zed City Friends v{version}". `build.mjs` injects the `package.json` version as a constant through esbuild `define`.
+## B.2 Which chats, and how each is identified
 
-## B.4 Not included (Torn has these; they don't fit Zed)
+| Chat | Key | Found by |
+|---|---|---|
+| Global | `game:general` | `.chat-containers > .chat-container.general-chat` |
+| Faction | `game:faction` | `.chat-container.faction-chat` |
+| Activity | `game:activity` | `.chat-container.activity-chat` |
+| Private Messages | `pm` | our window, `data-zcf-chat="pm"` |
+| Chat settings | `settings` | our window, `data-zcf-chat="settings"` |
+| A DM | `dm:{userId}` | our window, `data-zcf-chat="dm:{id}"` |
 
-- **Hide chats with TornTools, Chat version, Rejoin rooms:** Torn-specific.
-- **Decline chats from people you don't know:** a script can't refuse mail on the server. It could hide pop-ups from non-friends, but pop-ups already only happen for friends.
-- **Message styling (Bubbles, Avatars):** a bigger visual change to the DM rendering. Revisit if the user asks.
-- **Per-window drag-resize grips** (Chat+): the global Width/Height sliders cover sizing more simply. Revisit if the user asks.
+A new DM starts with default settings. Settings for a closed DM are kept, so reopening it restores its size and place.
+
+**The game's chats are Vue-owned, and Vue binds both `class` and `style` on them** (see `LoggedIn-*.js`: `class: o([\`chat-container general-chat\`, {...}])`, `style: b(x.smallLayoutOrderStyle(...))`). So:
+- **Never** add classes, attributes or inline styles to a game `.chat-container` or its children's existing nodes.
+- Apply **all** per-chat size, zoom and position through our own stylesheet, `<style id="zcf-user-settings">`, which is rebuilt whenever settings change. It is keyed by `.general-chat` / `.faction-chat` / `.activity-chat` and by `[data-zcf-chat="…"]` for our windows.
+- Our selectors must outrank the game's; see the load-order rule at the top of `src/ui/styles.js`. Use `body .chat-containers …` prefixes.
+- Our **padlock, return arrow, grips and header controls** are *child nodes we insert* into each game chat's header and container.
+  - Vue leaves foreign children alone in normal patches. If a re-render drops them, the shared **mount keeper** (`src/ui/keeper.js`) puts them back.
+  - Their pointer and click handlers call `stopPropagation` so the game's header click (toggle) doesn't fire.
+- **Sizing** works because the game's chat body fills its container: `.chat-content{flex:auto;min-height:0}`, `.live-chat{height:100%}`, `.message-panel{flex:auto;min-height:0}`. Setting the container's `width`/`height` (and `max-height:none`) is enough, just as Chat+ credits "Better Chat 3.0" for in Torn.
+- **Floating** a chat is `position:fixed; left; top` on the container. `.chat-containers` has no transform, so fixed means relative to the viewport. Taking a chat out of the flex row closes the gap by itself.
+
+## B.3 Per-chat controls (ported from Chat+, desktop ≥600px only)
+
+**Padlock**
+- Every **expanded** chat gets a padlock in its header, just left of its own header buttons.
+- **Closed (default) = locked:** the chat stays where it is, docked in the row or where it was moved to.
+- **Click** to unlock, and click again to lock. The tooltip reads "Locked — click to unlock, right-click for options" or "Unlocked — drag to move, click to lock".
+- The lock state is remembered per chat.
+
+**Moving an unlocked chat**
+- Drag it by its header, from anywhere on the header bar including its title.
+- A 6px threshold means a still click is still a click: it toggles the chat as usual.
+- Moving it makes it **moved** (floating).
+- It is clamped fully on screen after each drag and whenever the browser resizes.
+
+**Return arrow**
+- Shown left of the padlock on a moved chat. It sends the chat back to the dock row.
+- It clears the position only; size and message size stay.
+
+**Resize grips** (only while unlocked)
+- **Docked chats:**
+  - a strip along the top edge (drag up to make it taller);
+  - a corner grip at the top-left (width and height together; the right edge stays put, and the row makes room).
+- **Moved chats** also get a bottom strip and a bottom-right corner.
+- **Limits:** width 270 to 900px, height 200px to (viewport height − 60px).
+- **Defaults:** our windows are 350 × 450 (DMs and Private Messages) and 350 × auto (Chat settings). Game chats get the game's own size (350px wide; max-height 500).
+- Locking hides the grips and keeps the size.
+
+**Chat menu** (right-click a padlock)
+- It opens a small menu below the padlock, or above it for a chat near the bottom. The menu has:
+  - **Message size:** − / NN% / +, from 80% to 200% in steps of 10.
+    - At 100% nothing is applied, so the game's own sizing stays untouched.
+    - It scales the messages and typing box of that chat only, using CSS `zoom` on that chat's `.chat-content` (game chats) or `.zcf-scroll` and `.zcf-composer` (ours).
+  - **Chat size:** Reset.
+  - **Position:** Return to row, shown only when moved.
+- Esc or an outside click closes it.
+
+**Header controls:** once a chat is at least **400px** wide, the Message size −/NN%/+ and a Reset button also appear inline in its header, left of the padlock. They disappear again below 400px.
+
+**Bubbles (minimized chats)**
+- A **moved** chat's bubble stays at the chat's saved spot, anchored at its top-left, instead of going back to the row.
+- Any bubble, docked or moved, can be **dragged directly**: press and move more than 6px to move it. That makes the chat "moved", and it opens at that spot, clamped.
+- A plain click still opens the chat. The click after a drag is suppressed with a capture-phase listener, so the game's toggle doesn't fire.
+
+**Phones (<600px):** no padlocks, grips or moving. Saved positions and sizes are ignored there, and message size still applies.
+
+## B.4 The cog tab and Chat settings window
+
+- **Cog tab:** a 44×40 bubble with `fas fa-cog` in `#a6a6a6`, in the corner, right of Private Messages. It has no badge.
+- **Window:** `CHAT SETTINGS` in the dock row, like the others. Its open state is `dock.settingsOpen`. It has these sections:
+  1. **Utilities**
+     - **Mark all as read:** for each chat counted by `chatsUnreadTotal`, one at a time with at most 20 per press, calls `getChatMessages(id, 1, 10)`. That's what marks it read on the server, the same as opening it. Then `markSeen` it.
+       - While running, the button reads "Marking… 3/7".
+       - When done, a toast says "Marked N chats as read".
+       - It stops, with a toast, on `auth` or `busy`.
+     - **Close all private chats:** removes every DM tab and window from the dock. Their per-chat settings are kept.
+  2. **Your chats:** one row per chat that exists now or has customizations.
+     - Each row shows the name (Global, Faction, Activity, Private Messages, Chat settings, or the DM partner's name), then "moved" or "docked", "W×H" or "default size", "text NN%", and a padlock state icon.
+     - Each row has **Reset** (clears size, message size, position and lock for that chat).
+     - Below the list is **Reset all chats**.
+  3. **Sounds**
+     - **"New private message":** Off (default) / Chirp / Ping / Bell, with a ▶ test button.
+     - The tones are synthesized with WebAudio, so there are no files and no network requests.
+     - It plays when a thread poll finds new unread mail from another player, at most once per poll. It never plays for your own sends or for system threads.
+     - The AudioContext is created lazily and resumed on first use.
+  4. **About:** "Zed City Friends v{version}". `build.mjs` injects the `package.json` version through esbuild `define`.
+- **Also a chat:** the Chat settings window is itself a chat (`settings`), so it can be moved, resized and zoomed too.
 
 ## B.5 Settings storage
 
-- **Where:** a separate document, `localStorage['zcf:v1:{playerId}:settings']`, read and written only by `store.js`. A new small `createSettingsStore` there has the same `get / update / subscribe` shape and a `storage`-event cross-tab reload.
-- **Why separate:** older script versions normalize the main document and would drop unknown fields when writing it back.
+- **Where:** a separate document, `localStorage['zcf:v1:{playerId}:settings']`, read and written only by `store.js`. A new `createSettingsStore` there has the same `get / update / subscribe` shape and a `storage`-event cross-tab reload.
+- **Why separate:** older script versions normalize the main document and would drop unknown fields.
 - **Shape:**
   ```json
-  { "v": 1, "pmTab": "chats", "width": 100, "height": 100, "textScale": 100, "textScaleGameChats": true,
-    "sound": "off", "moveControls": false, "positions": { "pm": { "x": 900, "y": 300 }, "dm:123": { "x": 40, "y": 120 } } }
+  { "v": 1, "pmTab": "chats", "sound": "off",
+    "chats": {
+      "game:general": { "locked": true, "x": 40, "y": 120, "w": 420, "h": 520, "text": 120 },
+      "pm": { "locked": false, "w": 380 },
+      "dm:123": { "text": 90 }
+    } }
   ```
-- **Validation:** clamp every number to its range, fall back to defaults for unknown or invalid values, and drop positions whose key isn't `pm`, `settings` or `dm:<positive int>`.
-- A corrupt document falls back to defaults. Unlike the main document, there's nothing here worth backing up.
+  - **In each chat entry, every field is optional**, and a missing field means the default.
+  - **Position:** `x`/`y` are present only when the chat is moved. They are the viewport coordinates of the top-left.
+  - **Validation:** numbers are clamped to their ranges (w 270–900, h 200–2000, text 80–200 in steps of 10, x/y ≥ 0). Keys must be `game:general|faction|activity`, `pm`, `settings` or `dm:<positive int>`, and anything else is dropped. An entry that ends up equal to the defaults is deleted.
+  - **Corrupt documents** fall back to defaults.
+- **Other tabs:** open tabs follow along live, as in Chat+.
 
 ## B.6 Architecture (Part B)
 
-| Module | Status | Contents |
-|---|---|---|
-| `src/settings.js` | new, pure | defaults, `normalizeSettings`, clamps, position keys |
-| `src/store.js` | changed | `createSettingsStore` |
-| `src/sound.js` | new | `createSound({ win })` → `play(name)`; WebAudio tones |
-| `src/ui/settings-window.js` | new | the window and its controls, wired to `services.settings` and `actions` |
-| `src/ui/window-mover.js` | new | padlock, return arrow, drag, clamping; applies positions |
-| `src/ui/user-style.js` | new | writes the `zcf-user-settings` style (sizes, zoom) |
-| `src/inbox.js` | changed | reports "new unread mail from someone else" to a callback so `app.js` can play the sound |
-| `src/app.js` | changed | wiring, `actions.markAllRead`, `actions.closeAllDms`, `actions.toggleSettings` |
+`src/chat-custom/` holds the pure parts, ported from Chat+ `src/features/*` (the user wrote Chat+ and it's MIT-licensed; port the logic, never its `@author` header).
 
-`window-mover.js` is used by the PM window, the DM windows and the settings window alike. Each passes its header element and position key.
+| Module | Contents |
+|---|---|
+| `geometry.js` | clamp a rect on screen; resize math for each grip (anchor edges); the drag threshold |
+| `chats.js` | chat keys, defaults, `normalizeSettings`, labels for the settings list |
+| `user-style.js` | builds the `#zcf-user-settings` CSS text from settings, the current viewport and phone/desktop (pure string builder, unit-tested) |
+
+`src/ui/chat-custom/` holds the DOM parts.
+
+| Module | Contents |
+|---|---|
+| `registry.js` | finds every chat element now (game containers by class, ours by `data-zcf-chat`) and its header; registers keeper mounts that (re-)insert controls |
+| `padlock.js` | the padlock, return arrow and header controls in each chat header, plus the right-click menu |
+| `drag.js` | pointer-driven move for headers and bubbles, with threshold, click suppression and clamping |
+| `resize.js` | grips and pointer-driven resize |
+| `index.js` | wires settings, registry, style and controls; listens for viewport resize (re-clamps) and settings changes (rebuilds the style) |
+
+Other modules:
+- `src/sound.js`: `createSound({ win })` → `play(name)`.
+- `src/ui/settings-window.js`: the cog window.
+- `src/store.js`: `createSettingsStore`.
+- `src/inbox.js`: an `onNewMail` callback for the sound.
+- `src/app.js`: wiring, plus `actions.markAllRead`, `actions.closeAllDms`, `actions.toggleSettings`.
+- **Our windows** (`pm-window.js`, `dm-window.js`, `settings-window.js`): add `data-zcf-chat` and nothing else. The controls come from `chat-custom`.
 
 ## B.7 Choices made without the user (for the morning review)
 
-1. **Settings list:**
-   - utilities (Mark all as read, Close all private chats)
-   - window width and height sliders (our windows only)
-   - message size with an "also game chats" checkbox, default on
-   - new-PM sound, default **off**
-   - move controls, default **off**
-   - the version line
-2. **Sounds are synthesized.** Torn uses recorded sounds such as Chirp 1; ours are simple generated tones.
-3. **Move controls are off by default**, and only our windows can move.
-4. **The game's own chats can't be resized** (only their text size changes).
-5. **Left out:** decline strangers, bubbles/avatars styling, and per-window resize grips.
+1. **The settings window contains:** utilities, the per-chat list with Reset / Reset all, the new-PM sound (default **off**), and the version.
+2. **Sounds** are simple synthesized tones, not recorded sounds like Torn's "Chirp 1".
+3. **Padlocks** show on every expanded chat on desktop (as in Chat+), including the game's chats.
+4. **Resizing one chat's height** changes only that chat. Other docked chats stay bottom-aligned in the row, as they do today.
+5. **Left out** (Torn-only, or not possible for a script): "Hide chats with TornTools", "Chat version", "Rejoin rooms", "Decline chats from people you don't know", and message styling (Bubbles, Avatars).
 
 ---
 
@@ -231,27 +293,32 @@ A **cog tab** sits in the bottom-right corner, right of Private Messages, and op
 
 **Unit tests** (Vitest + jsdom):
 - `pm-view.js`: merging page 1 with extra pages, dropping system threads, dedupe, newest first, the `You:` / `Name:` preview, and faction/blocked row sorting.
-- `settings.js`: defaults, clamps, position-key validation, corrupt input.
+- `chat-custom/chats.js`: defaults, clamps, key validation, removal of entries equal to the defaults, corrupt input.
+- `chat-custom/geometry.js`: on-screen clamping; each grip's resize math and fixed edges; limits; the drag threshold.
+- `chat-custom/user-style.js`:
+  - empty CSS for default settings
+  - size, `max-height:none`, zoom and `position:fixed` rules per chat key
+  - game selectors outrank the game's rules (reuse the cascade helper in `test/ui/styles.test.js`)
+  - nothing but zoom on phones
 - `createSettingsStore`: a separate key, and a `storage` event reloading it.
-- `pm-window.js`:
-  - tabs switch and are remembered
-  - the search replaces the list and Esc restores it
-  - clicking a row or result opens a DM
-  - the green badge
-  - older pages load on scroll
-  - Faction loads when its tab opens and shows "not in a faction"
-  - Blocked's inline confirm leads to `unblockUser` and a reload
+- `ui/chat-custom`, against the live-DOM fixtures in `test/fixtures/game-dom.js` (the dock with game chats) plus our windows:
+  - a padlock appears on every expanded chat, game ones included, and none on phones
+  - clicking it toggles lock and doesn't toggle the game chat
+  - a header drag past the threshold moves the chat and saves x/y, while a still click still toggles
+  - grips resize and respect limits and anchors
+  - the return arrow clears the position
+  - the right-click menu changes message size one chat at a time
+  - header controls appear at 400px or wider
+  - dragging a bubble moves it and suppresses the click
+  - controls are re-inserted after the game re-renders a header (keeper)
+  - no attribute/class/style is ever written to a game `.chat-container`; assert its `className` and `style` are unchanged
 - `settings-window.js`:
-  - each control updates the settings store
+  - the per-chat list and Reset / Reset all
   - Mark all as read runs one thread at a time, capped at 20, stops on `auth`, and marks threads seen
-  - Close all removes every DM entry
-- `window-mover.js`:
-  - padlock toggling, dragging with a threshold, clamping on resize, and the return arrow
-  - positions persist and restore
-  - disabled on phones
-- `user-style.js`: an empty style at 100%/100%/100%, and the zoom/size rules otherwise.
+  - Close all removes every DM entry and keeps its settings
+  - sound select and test
 - `sound.js`: calls `AudioContext` with a fake; "off" is silent.
-- `inbox.js`: the new-mail callback fires once per poll for other players' new unread mail, and not for system threads or your own sends.
+- `inbox.js`: `onNewMail` fires once per poll for other players' new unread mail, and not for system threads or your own sends.
 - `styles.test.js`: order independence still holds with the new windows, the cog tab and the flush-right rule.
 
 **Visual check:** render the real modules under the game's real CSS in headless Edge (`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`).
@@ -269,6 +336,8 @@ A **cog tab** sits in the bottom-right corner, right of Private Messages, and op
 3. The `getChats` page size, and that an empty page means the end.
 4. CSS `zoom` on the game's `.chat-content` doesn't break its auto-scroll or input.
 5. The flush-right row doesn't collide with anything the game draws in the corner.
+6. Our padlock and grips inside the game's chat headers survive the game's re-renders (opening and closing, switching rooms, new messages), or the keeper puts them back without flicker.
+7. A game chat set to `position:fixed` and a custom size still scrolls, loads history and sends normally; its GIF and emoji pickers still open in the right place.
 
 ## F. Overnight build instructions (for the next session)
 
