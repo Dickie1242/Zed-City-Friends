@@ -1,0 +1,40 @@
+// Bundles src/ into one userscript: dist/zed-city-friends.user.js
+import { build } from 'esbuild';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('.', import.meta.url));
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
+export const OUTFILE = 'dist/zed-city-friends.user.js';
+
+export const HEADER = `// ==UserScript==
+// @name         Zed City Friends & DMs
+// @namespace    zed-city-friends
+// @version      ${pkg.version}
+// @description  ${pkg.description}
+// @match        https://www.zed.city/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+`;
+
+export function bundle({ write = true } = {}) {
+  return build({
+    absWorkingDir: root,
+    entryPoints: ['src/index.js'],
+    bundle: true,
+    format: 'iife',
+    target: 'es2020',
+    charset: 'utf8',
+    legalComments: 'none',
+    banner: { js: HEADER },
+    outfile: OUTFILE,
+    write,
+  });
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await bundle();
+  console.log(`Built ${OUTFILE}`);
+}
