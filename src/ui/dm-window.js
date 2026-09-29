@@ -17,6 +17,9 @@ export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const isEnemy = services.isEnemy || (() => false);
   const isMuted = services.isMuted || (() => false);
+  // The 12-hour clock switch in Chat settings (0.7 spec Part 6).
+  const clock12 = () => !!(services.settings && services.settings.get().clock12);
+  let shownClock12 = clock12();
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -204,7 +207,7 @@ export function createDmWindow(services, userId) {
     if (item.type === 'new') return h('div', { class: 'zcf-new-line' }, 'New');
     const m = item.msg;
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
-    const time = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
+    const time = m.ts ? formatMessageTime(m.ts, Date.now(), false, clock12()) : '';
     // data-zcf-ts: hovering shows the full timestamp (ui/time-hover.js).
     if (item.grouped) return h('div', { class: cls, 'data-zcf-ts': m.ts || null }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
     const mine = m.senderId === myId;
@@ -290,6 +293,11 @@ export function createDmWindow(services, userId) {
     const s = store.get();
     const entry = s.dock.dms.find((d) => d.id === userId);
     if (!entry) return;
+    const h12 = clock12();
+    if (h12 !== shownClock12) {
+      shownClock12 = h12;
+      for (const t of log.querySelectorAll('.zcf-time[data-zcf-ts]')) t.textContent = formatMessageTime(Number(t.getAttribute('data-zcf-ts')), Date.now(), false, h12);
+    }
     const open = !!entry.open;
     el.classList.toggle('chat-minimized', !open);
     el.classList.toggle('zcf-open', open);

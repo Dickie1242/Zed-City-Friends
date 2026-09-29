@@ -142,13 +142,13 @@ export function createGameClock({ doc = document, storage, key, now = () => Date
     return m === null ? null : momentAt(m, printed());
   }
 
-  // Shows a game row's time in `want` ('local' | 'game').
-  function rewrite(row, want) {
+  // Shows a game row's time in `want` ('local' | 'game'), as the 12-hour clock with `h12`.
+  function rewrite(row, want, { h12 = false } = {}) {
     const el = row.matches && row.matches(TIME) ? row : row.querySelector(TIME);
     if (!el) return;
     const text = printedOf(el);
     const ts = momentOf(el);
-    const shown = ts === null || printed() === want ? text : formatClock(ts, want === 'local');
+    const shown = ts === null || (printed() === want && !h12) ? text : formatClock(ts, want === 'local', h12);
     printedText.set(el, { printed: text, shown });
     const node = el.firstChild;
     // Only a plain text span is ever touched.

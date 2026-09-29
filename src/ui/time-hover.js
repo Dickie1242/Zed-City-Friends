@@ -11,8 +11,8 @@ const OURS = '[data-zcf-ts]';
 const GAME = `.chat-container:not(.zcf) ${TIME}`;
 
 // gameClock: game-clock.js, for the moments behind the game's chat times. showLocal(): whether the tooltip
-// adds your own time (a Chat settings switch).
-export function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock, showLocal = () => true }) {
+// adds your own time (a Chat settings switch). clock12(): whether times use the 12-hour clock.
+export function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock, showLocal = () => true, clock12 = () => false }) {
   let tip = null;
   let shownFor = null;
   let waitingFor = null;
@@ -27,8 +27,8 @@ export function createTimeHover({ doc = document, win = window, now = () => Date
   // ["Tue, Sep 29, 18:27 ZCT", "Tue, Sep 29, 14:27 EDT", "12 min ago"]; no second line when it's switched off
   // or where your time is ZCT.
   function linesFor(ts) {
-    const lines = [formatStamp(ts, false)];
-    if (showLocal() && new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true));
+    const lines = [formatStamp(ts, false, clock12())];
+    if (showLocal() && new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true, clock12()));
     lines.push(longAgo(ts, now()));
     return lines;
   }

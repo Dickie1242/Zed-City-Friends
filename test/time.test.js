@@ -54,6 +54,14 @@ describe('time', () => {
     expect(statusText({ online: false, active: null }, now)).toBe('Offline');
     expect(statusText(null, now)).toBe('');
   });
+  it('writes a 12-hour clock when asked', () => {
+    expect(formatClock(Date.UTC(2026, 8, 29, 14, 27))).toBe('14:27');
+    expect(formatClock(Date.UTC(2026, 8, 29, 14, 27), false, true)).toBe('2:27 PM');
+    expect(formatClock(Date.UTC(2026, 8, 29, 0, 5), false, true)).toBe('12:05 AM');
+    expect(formatClock(Date.UTC(2026, 8, 29, 12, 0), false, true)).toBe('12:00 PM');
+    expect(formatStamp(Date.UTC(2026, 8, 29, 18, 27), false, true)).toBe('Tue, Sep 29, 6:27 PM ZCT');
+    expect(formatMessageTime(Date.UTC(2026, 8, 29, 18, 27), Date.UTC(2026, 8, 29, 20, 0), false, true)).toBe('6:27 PM');
+  });
 });
 
 import { longAgo, longStatusText } from '../src/time.js';

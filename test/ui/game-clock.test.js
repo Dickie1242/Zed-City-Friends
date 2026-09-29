@@ -80,4 +80,12 @@ describe('game clock', () => {
     rewriteAll(gc, 'game');
     expect(el.textContent).toBe('18:05');
   });
+  it('writes a 12-hour clock when asked, even where the game already prints the right clock, and goes back', () => {
+    const gc = setup(chat('17:59', '09:05'));
+    withStore(['2026-09-29 17:59:00']);
+    document.querySelectorAll('.msg-cont').forEach((r) => gc.rewrite(r, 'game', { h12: true }));
+    expect(times()).toEqual(['5:59 PM', '9:05 AM']);
+    rewriteAll(gc, 'game');
+    expect(times()).toEqual(['17:59', '09:05']);
+  });
 });

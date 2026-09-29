@@ -49,9 +49,11 @@ export function dayKey(ts, local = false) {
 
 export const utcDayKey = (ts) => dayKey(ts, false);
 
-export function formatClock(ts, local = false) {
+// "14:27", or with `h12` the 12-hour "2:27 PM" (0.7 spec Part 6).
+export function formatClock(ts, local = false, h12 = false) {
   const [, , , h, mi] = parts(ts, local);
-  return `${pad(h)}:${pad(mi)}`;
+  if (!h12) return `${pad(h)}:${pad(mi)}`;
+  return `${h % 12 || 12}:${pad(mi)} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 // A calendar day back: in local time a day can be 23 or 25 hours long around daylight-saving changes.
@@ -62,8 +64,8 @@ function yesterdayKey(now, local) {
   return dayKey(d.getTime(), true);
 }
 
-export function formatMessageTime(ts, now = Date.now(), local = false) {
-  const clock = formatClock(ts, local);
+export function formatMessageTime(ts, now = Date.now(), local = false, h12 = false) {
+  const clock = formatClock(ts, local, h12);
   const day = dayKey(ts, local);
   if (day === dayKey(now, local)) return clock;
   if (day === yesterdayKey(now, local)) return `Yesterday at ${clock}`;
@@ -93,9 +95,9 @@ export function formatWeekday(ts, local = false) {
   return `${WEEKDAYS[local ? d.getDay() : d.getUTCDay()]}, ${MONTHS[m].slice(0, 3)} ${day}`;
 }
 
-// "Tue, Sep 29, 18:27 ZCT" or, with `local`, "Tue, Sep 29, 14:27 EDT".
-export function formatStamp(ts, local = false) {
-  return `${formatWeekday(ts, local)}, ${formatClock(ts, local)} ${local ? zoneName(ts) : 'ZCT'}`;
+// "Tue, Sep 29, 18:27 ZCT" or, with `local`, "Tue, Sep 29, 14:27 EDT"; 12-hour with `h12`.
+export function formatStamp(ts, local = false, h12 = false) {
+  return `${formatWeekday(ts, local)}, ${formatClock(ts, local, h12)} ${local ? zoneName(ts) : 'ZCT'}`;
 }
 
 export function formatDayLabel(ts, local = false) {

@@ -11,11 +11,11 @@ const over = (el) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: tru
 const tip = () => document.querySelector('.zcf-tip');
 const lines = () => [...tip().children].map((n) => n.textContent);
 
-function mount(html, { showLocal = true } = {}) {
+function mount(html, { showLocal = true, clock12 = false } = {}) {
   vi.useFakeTimers();
   document.body.innerHTML = html;
   const gameClock = createGameClock({ doc: document, storage: memoryStorage({ 'zcf:v1:1:gameClock': 'local' }), key: 'zcf:v1:1:gameClock', now: () => NOW });
-  hover = createTimeHover({ doc: document, win: window, now: () => NOW, gameClock, showLocal: () => showLocal });
+  hover = createTimeHover({ doc: document, win: window, now: () => NOW, gameClock, showLocal: () => showLocal, clock12: () => clock12 });
   return gameClock;
 }
 
@@ -73,5 +73,11 @@ describe('time hover', () => {
     over(el);
     vi.advanceTimersByTime(500);
     expect(lines()).toEqual(['Tue, Sep 29, 17:59 ZCT', 'Tue, Sep 29, 13:59 EDT', '31 min ago']);
+  });
+  it('uses the 12-hour clock when it is on', () => {
+    mount(dm, { clock12: true });
+    over(document.querySelector('.zcf-time'));
+    vi.advanceTimersByTime(500);
+    expect(lines()).toEqual(['Tue, Sep 29, 6:18 PM ZCT', 'Tue, Sep 29, 2:18 PM EDT', '12 min ago']);
   });
 });

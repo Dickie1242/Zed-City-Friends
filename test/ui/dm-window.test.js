@@ -416,4 +416,15 @@ describe('dm window', () => {
     expect(grouped.getAttribute('data-zcf-ts')).toBe(String(ts + 60000));
     expect(grouped.hasAttribute('title')).toBe(false);
   });
+  it('switches its times to the 12-hour clock with the Chat settings box', async () => {
+    const { el, win, services } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:03:00')] }),
+    });
+    await flush();
+    const time = () => el.querySelector('.zcf-time').textContent;
+    expect(time()).toContain('14:03');
+    services.settings.update((s) => { s.clock12 = true; });
+    win.update();
+    expect(time()).toContain('2:03 PM');
+  });
 });
