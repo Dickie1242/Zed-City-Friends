@@ -244,7 +244,7 @@ New fields in `defaultSettings()` / `normalizeSettings()` (still `v: 1`, and eve
 # Part 9: Tests and checks
 
 - **Pure:**
-  - `settings.test.js`: new fields, normalization, `setTextAll` clears overrides, `restoreDefaults` keeps muted/pinned/pmTab/settingsTab, `mergeBackupSettings`.
+  - `settings.test.js`: new fields, normalization, `setTextAll` clears overrides, `restoreDefaults` keeps muted/pinned/pmTab/settingsTab, `applyBackupSettings`.
   - `chats.test.js`: `textOf` with `textAll`, the plain-words description, `updateChat` dropping a `text` equal to `textAll`.
   - New `mentions.test.js`: whole-word, case, `@`, punctuation, Unicode names, regex characters in words, ranges.
   - `time.test.js`: 12-hour formatting incl. midnight and noon.
