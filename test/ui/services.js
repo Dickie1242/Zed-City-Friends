@@ -8,7 +8,7 @@ import { fakeApi, memoryStorage } from '../helpers.js';
 
 export const ME = 1;
 
-export function makeServices({ api = fakeApi(), threads = [], presence = {}, searchResults = [] } = {}) {
+export function makeServices({ api = fakeApi(), threads = [], presence = {}, searchResults = [], fetchImpl } = {}) {
   const store = createStore({ playerId: ME, storage: memoryStorage() });
   const conversations = createConversations({ api, myId: ME });
   const actions = {
@@ -38,6 +38,7 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     store,
     actions,
     conversations,
+    fetchImpl,
     presence: { get: (id) => presence[id] || null, subscribe: () => () => {} },
     inbox: { threads: () => threads, subscribe: () => () => {} },
     players: {

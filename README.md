@@ -4,7 +4,7 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 
 - **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players.
 - **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
-- **Add Friend button** on player profiles (between Trade and Mail), plus a **"+ friend"** action next to names in Global and Faction chat.
+- **Add Friend button** on player profiles, between Trade and Mail.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 
@@ -52,7 +52,7 @@ npm run build     # writes dist/zed-city-friends.user.js
 | `src/presence.js`, `src/players.js` | Online status cache, player search/lookup |
 | `src/router.js` | Page-change events and navigation via the game's router |
 | `src/app.js` | Wiring and polling policy |
-| `src/ui/*` | Dock mounting, Friends window, DM windows, profile button, chat-name action |
+| `src/ui/*` | Dock mounting, Friends window, DM windows, profile button |
 
 Design spec: `docs/superpowers/specs/2026-09-28-zed-city-friends-design.md`
 

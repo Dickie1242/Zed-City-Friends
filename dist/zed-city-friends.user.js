@@ -1518,7 +1518,7 @@
     let confirmId = null;
     let frame = 0;
     let lastSig = null;
-    const titleText = h("span", null, "Friends");
+    const titleText = h("span", null, "Friends & Chats");
     const count = h("span", { class: "zcf-count" });
     const unreadBadge = badge();
     const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-user-friends chat-icon", "aria-hidden": "true" }), titleText, count, unreadBadge);
@@ -1761,7 +1761,7 @@
       clear(list);
       const none = q ? "No matches" : "None";
       if (!sec.total && !q) {
-        list.appendChild(h("div", { class: "zcf-empty" }, 'No friends yet. Use the person-plus button above, "Add Friend" on a profile, or "+ friend" next to a name in chat.'));
+        list.appendChild(h("div", { class: "zcf-empty" }, 'No friends yet. Use the person-plus button above, or "Add Friend" on a profile.'));
       } else {
         section("Online", sec.online, (r) => friendRow(r, s, now), none);
         section("Offline", sec.offline, (r) => friendRow(r, s, now), none);
@@ -1812,6 +1812,155 @@
     return { el, update, scheduleList, destroy };
   }
 
+  // src/ui/gif-picker.js
+  var KLIPY_KEY = "XnaONUEjqFvkZSqJx0ouuO17Og1kVP1VCiNXYMeQixllGKwC5xzjdshlvoMwGfYa";
+  var CLIENT_KEY = "zed-ui";
+  var SEARCH_DEBOUNCE_MS = 250;
+  var CATEGORIES = [
+    { label: "Trending", term: "" },
+    { label: "Reactions", term: "reaction meme" },
+    { label: "Happy", term: "happy excited" },
+    { label: "Love", term: "love heart kiss" },
+    { label: "Sad", term: "sad crying" },
+    { label: "Angry", term: "angry mad" },
+    { label: "Animals", term: "cute animals" },
+    { label: "Gaming", term: "gaming reaction" },
+    { label: "Memes", term: "meme funny" }
+  ];
+  function proxied(url) {
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      return null;
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (u.hostname !== "klipy.com" && !u.hostname.endsWith(".klipy.com")) return null;
+    return `https://cdn.zed.city/?url=${encodeURIComponent(u.href)}`;
+  }
+  function normalizeResult(r) {
+    const formats = r && typeof r === "object" ? r.media_formats : null;
+    if (!formats || typeof formats !== "object") return null;
+    const previewRaw = formats.tinygif || formats.nanogif || formats.gif;
+    const fullRaw = formats.gif || formats.mediumgif || formats.tinygif;
+    if (!previewRaw || !previewRaw.url || !fullRaw || !fullRaw.url) return null;
+    const preview = proxied(previewRaw.url);
+    const full = proxied(fullRaw.url);
+    if (!preview || !full) return null;
+    const title = typeof r.content_description === "string" && r.content_description || typeof r.title === "string" && r.title || "";
+    return { preview, full, title };
+  }
+  function createGifPicker({ doc = document, fetchImpl = (...a) => fetch(...a), onPick } = {}) {
+    let seq = 0;
+    let controller = null;
+    let opened = false;
+    let lastTerm = "";
+    const status = h("div", { class: "zcf-gif-status" });
+    const grid = h("div", { class: "zcf-gif-grid" });
+    const searchInput = h("input", { class: "zcf-gif-search", type: "text", placeholder: "Search GIFs…", "aria-label": "Search GIFs" });
+    const chipsRow = h("div", { class: "zcf-gif-chips" });
+    const el = h("div", { class: "zcf-gifpanel", hidden: true }, searchInput, chipsRow, status, grid);
+    function clearGrid() {
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+    }
+    function runQuery(term) {
+      lastTerm = term;
+      const mySeq = ++seq;
+      if (controller) controller.abort();
+      controller = new AbortController();
+      status.textContent = "Loading…";
+      clearGrid();
+      const params = new URLSearchParams();
+      params.set("key", KLIPY_KEY);
+      params.set("client_key", CLIENT_KEY);
+      params.set("limit", "24");
+      params.set("media_filter", "gif,tinygif");
+      params.set("contentfilter", "medium");
+      if (term) params.set("q", term);
+      const endpoint = term ? "search" : "featured";
+      const url = `https://api.klipy.com/v2/${endpoint}?${params.toString()}`;
+      let request;
+      try {
+        request = fetchImpl(url, { credentials: "omit", signal: controller.signal });
+      } catch (e) {
+        request = Promise.reject(e);
+      }
+      Promise.resolve(request).then((res) => res.json()).then((data) => {
+        if (mySeq !== seq) return;
+        const rows = data && Array.isArray(data.results) ? data.results : [];
+        const results = rows.map(normalizeResult).filter(Boolean);
+        if (!results.length) {
+          status.textContent = "No GIFs found.";
+          return;
+        }
+        status.textContent = "";
+        for (const r of results) {
+          const label = r.title || "GIF";
+          const img = h("img", {
+            class: "zcf-gif-thumb",
+            src: r.preview,
+            alt: label,
+            title: label,
+            loading: "lazy",
+            referrerpolicy: "no-referrer"
+          });
+          img.addEventListener("click", safe("gif-picker-pick", () => {
+            onPick({ title: r.title, url: r.full });
+            close();
+          }));
+          grid.appendChild(img);
+        }
+      }).catch((e) => {
+        if (mySeq !== seq) return;
+        if (e && e.name === "AbortError") return;
+        status.textContent = "Unable to load GIFs right now.";
+      });
+    }
+    const debouncedSearch = debounce(() => {
+      for (const btn of chipButtons) btn.classList.remove("zcf-active");
+      runQuery(searchInput.value.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    const chipButtons = CATEGORIES.map((cat, i) => {
+      const btn = h("button", { class: `zcf-mini zcf-gif-chip${i === 0 ? " zcf-active" : ""}`, type: "button" }, cat.label);
+      btn.addEventListener("click", safe("gif-picker-chip", () => {
+        debouncedSearch.cancel();
+        for (const b of chipButtons) b.classList.remove("zcf-active");
+        btn.classList.add("zcf-active");
+        searchInput.value = "";
+        runQuery(cat.term);
+      }));
+      chipsRow.appendChild(btn);
+      return btn;
+    });
+    searchInput.addEventListener("input", safe("gif-picker-search", () => debouncedSearch()));
+    const onDocKeydown = safe("gif-picker-keydown", (e) => {
+      if (opened && e.key === "Escape") close();
+    });
+    doc.addEventListener("keydown", onDocKeydown);
+    function open() {
+      if (opened) return;
+      opened = true;
+      el.hidden = false;
+      runQuery(lastTerm);
+    }
+    function close() {
+      if (!opened) return;
+      opened = false;
+      el.hidden = true;
+      debouncedSearch.cancel();
+      if (controller) controller.abort();
+    }
+    function toggle() {
+      if (opened) close();
+      else open();
+    }
+    function destroy() {
+      close();
+      doc.removeEventListener("keydown", onDocKeydown);
+    }
+    return { el, open, close, toggle, destroy };
+  }
+
   // src/ui/dm-window.js
   var BUSY_TEXT = {
     fight: "Mail is unavailable while you are in a fight.",
@@ -1820,7 +1969,7 @@
     offline: "Mail is unavailable while the game is offline."
   };
   function createDmWindow(services, userId) {
-    const { store, actions, conversations, presence, router, myId, myName } = services;
+    const { store, actions, conversations, presence, router, myId, myName, fetchImpl } = services;
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -1841,19 +1990,43 @@
     const scroller = h("div", { class: "zcf-scroll" }, loader, log, pendingEl);
     const newChip = h("button", { class: "zcf-newchip", type: "button", hidden: true }, "New messages ↓");
     const input = h("textarea", { class: "zcf-input zcf-compose", rows: 1, placeholder: "Message…", "aria-label": "Message" });
+    const gifBtn = h("button", { class: "zcf-gifbtn", type: "button", title: "Send a GIF", "aria-label": "Send a GIF", "aria-expanded": "false" }, "GIF");
     const sendBtn = h("button", { class: "zcf-send", type: "button" }, "Send");
-    const body = h("div", { class: "chat-content zcf-body zcf-dm-body" }, notice, scroller, newChip, h("div", { class: "zcf-composer" }, input, sendBtn));
+    const gifPicker = createGifPicker({
+      doc: document,
+      fetchImpl,
+      onPick: ({ title: title2, url }) => {
+        gifBtn.setAttribute("aria-expanded", "false");
+        if (conv.state.blocked) return;
+        atBottom = true;
+        conv.send(`![${title2 || "GIF"}](${url})`);
+      }
+    });
+    const composer = h("div", { class: "zcf-composer" }, input, gifBtn, sendBtn);
+    const body = h("div", { class: "chat-content zcf-body zcf-dm-body" }, notice, scroller, newChip, gifPicker.el, composer);
     const el = h("div", { class: "chat-container zcf zcf-dm", dataset: { zcfDm: String(userId) } }, header, body);
+    const syncGifBtn = () => gifBtn.setAttribute("aria-expanded", String(!gifPicker.el.hidden));
+    const gifObserver = new MutationObserver(syncGifBtn);
+    gifObserver.observe(gifPicker.el, { attributes: true, attributeFilter: ["hidden"] });
     const stop = (fn) => (e) => {
       e.stopPropagation();
       fn(e);
     };
-    nameEl.addEventListener("click", stop(() => router.navigate(`/profile/${userId}`)));
+    nameEl.addEventListener("click", (e) => {
+      const entry = store.get().dock.dms.find((d) => d.id === userId);
+      if (entry && !entry.open) return;
+      e.stopPropagation();
+      router.navigate(`/profile/${userId}`);
+    });
     inboxBtn.addEventListener("click", stop(() => router.navigate(`/mail/${userId}`)));
     minBtn.addEventListener("click", stop(() => actions.minimizeDm(userId)));
     closeBtn.addEventListener("click", stop(() => actions.closeDm(userId)));
     newChip.addEventListener("click", () => scrollToBottom());
     sendBtn.addEventListener("click", () => submit());
+    gifBtn.addEventListener("click", () => {
+      gifPicker.toggle();
+      syncGifBtn();
+    });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -1931,6 +2104,7 @@
       notice.hidden = !text;
       input.disabled = conv.state.blocked;
       sendBtn.disabled = conv.state.blocked || !!conv.state.busy;
+      gifBtn.disabled = conv.state.blocked || !!conv.state.busy;
     }
     function renderConversation() {
       renderNotice();
@@ -1984,6 +2158,10 @@
         atBottom = true;
         renderConversation();
       }
+      if (!open) {
+        gifPicker.close();
+        syncGifBtn();
+      }
       wasOpen = open;
     }
     return {
@@ -1992,6 +2170,8 @@
       destroy() {
         unsubscribe();
         conversations.release(userId);
+        gifObserver.disconnect();
+        gifPicker.destroy();
       }
     };
   }
@@ -2179,67 +2359,6 @@
       profileId = null;
     }
     return { onRoute, refresh, tryInsert, destroy };
-  }
-
-  // src/ui/chat-names.js
-  function createChatNames({ doc = document, store, myName, players, actions, toast }) {
-    let currentName = null;
-    let busy = false;
-    let friendNames = /* @__PURE__ */ new Set();
-    const btn = h("button", { class: "zcf-addname", type: "button", title: "Add friend" }, icon("user-plus"), " friend");
-    function refresh() {
-      friendNames = new Set(Object.values(store.get().friends).map((f) => String(f.username).toLowerCase()));
-      if (currentName && friendNames.has(currentName.toLowerCase())) btn.remove();
-    }
-    btn.addEventListener("mousedown", (e) => e.stopPropagation());
-    btn.addEventListener("click", safe("chat-add-click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const name = currentName;
-      if (!name || busy) return;
-      busy = true;
-      try {
-        const p = await players.resolveExact(name);
-        if (!p) {
-          toast(`Couldn't find ${name}`, { error: true });
-          return;
-        }
-        actions.addFriend(p);
-        toast(`${p.username} added to friends`);
-        btn.remove();
-      } finally {
-        busy = false;
-      }
-    }));
-    const onOver = safe("chat-names-over", (e) => {
-      const t = e.target;
-      if (!t || typeof t.closest !== "function" || btn.contains(t)) return;
-      const row = t.closest(".msg-cont");
-      if (!row) return;
-      const container = row.closest(".chat-container");
-      if (!container || container.classList.contains("zcf")) return;
-      const nameEl = row.querySelector(".sender-name");
-      if (!nameEl) return;
-      const name = nameEl.textContent.trim();
-      if (!name || name.toLowerCase() === String(myName).toLowerCase() || friendNames.has(name.toLowerCase())) {
-        btn.remove();
-        return;
-      }
-      currentName = name;
-      if (nameEl.nextSibling !== btn) nameEl.after(btn);
-    });
-    return {
-      button: btn,
-      refresh,
-      start() {
-        refresh();
-        doc.addEventListener("mouseover", onOver);
-      },
-      stop() {
-        doc.removeEventListener("mouseover", onOver);
-        btn.remove();
-      }
-    };
   }
 
   // src/app.js
@@ -2431,12 +2550,10 @@
     };
     const view = createDockView({ root: dock.root, services });
     const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
-    const chatNames = createChatNames({ doc, store, myName: playerName, players, actions, toast });
     store.subscribe(() => {
       view.render();
       syncPollers();
       profileButton.refresh();
-      chatNames.refresh();
     });
     presence.subscribe(() => {
       view.friends.scheduleList();
@@ -2472,7 +2589,6 @@
     if (dock.isSmall()) enforcePhoneRule();
     view.render();
     profileButton.onRoute(router.path);
-    chatNames.start();
     threadsPoller.start();
     syncPollers();
     return {
@@ -2486,7 +2602,6 @@
         for (const p of pollers) p.destroy();
         dock.destroy();
         profileButton.destroy();
-        chatNames.stop();
         store.destroy();
       }
     };
@@ -2496,6 +2611,7 @@
   var CSS = `
 .zcf-root{display:contents}
 .zcf [hidden]{display:none!important}
+.zcf .chat-header{background:#090a0b}
 .zcf.chat-container .chat-header{gap:6px}
 .zcf.chat-container .chat-title{min-width:0}
 .zcf-friends .chat-title .chat-icon{color:#3d8b40}
@@ -2507,6 +2623,8 @@
 .zcf.chat-minimized .zcf-badge{position:absolute;top:-6px;right:2px;min-height:12px;padding:0 3px;font-size:8px;line-height:12px}
 .zcf.chat-minimized .chat-title{justify-content:center;position:relative}
 .zcf-body{display:flex;flex-direction:column;height:420px;position:relative;font-size:13px}
+.zcf-dm .chat-content{display:flex;flex-direction:column}
+.zcf-dm:not(.chat-minimized){height:450px}
 .zcf-toolbar{display:flex;gap:6px;align-items:center;background:#ffffff05;border-bottom:1px solid #ffffff1a;min-height:42px;padding:7px 8px}
 .zcf-search{flex:1;display:flex;align-items:center;gap:6px;background:#14171a;border:1px solid #ffffff14;border-radius:3px;padding:0 7px}
 .zcf-search i{opacity:.45;font-size:11px}
@@ -2555,8 +2673,8 @@
 .zcf-dm.chat-minimized:hover .zcf-close{display:flex}
 .zcf-dm.chat-minimized .chat-header{position:relative}
 .zcf-dm.chat-minimized .zcf-dm-name{display:none}
-.zcf-notice{background:#f2c0371a;color:#f2c037;font-size:11.5px;padding:6px 12px;border-bottom:1px solid #f2c03733}
-.zcf-scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 8px}
+.zcf-notice{background:#f2c0371a;color:#f2c037;font-size:11.5px;padding:6px 12px;border-bottom:1px solid #f2c03733;flex:none}
+.zcf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 8px}
 .zcf-loader{text-align:center;font-size:11px;opacity:.5;padding:6px}
 .zcf-divider{display:flex;align-items:center;gap:8px;margin:10px 15px 2px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#ffffff59}
 .zcf-divider:before,.zcf-divider:after{content:"";flex:1;border-top:1px solid #ffffff14}
@@ -2575,15 +2693,25 @@
 .zcf-error{color:#e57373;font-size:12px}
 .zcf-link{background:none;border:0;padding:0;color:#e57373;text-decoration:underline;cursor:pointer;font:inherit}
 .zcf-newchip{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);background:#0a748f;color:#fff;border:0;border-radius:12px;font-size:11px;padding:3px 10px;cursor:pointer;box-shadow:0 4px 10px #0006}
-.zcf-composer{display:flex;gap:6px;align-items:flex-end;border-top:1px solid #ffffff14;padding:8px}
+.zcf-composer{display:flex;gap:6px;align-items:flex-end;border-top:1px solid #ffffff14;padding:8px;flex:none}
 .zcf-compose{background:#14171a;border:1px solid #ffffff14;border-radius:3px;padding:6px 8px;resize:none;max-height:90px;line-height:1.4}
 .zcf-send{background:#0a748f;color:#fff;border:0;border-radius:3px;font-size:10.5px;text-transform:uppercase;padding:7px 10px;cursor:pointer}
 .zcf-send:disabled{opacity:.4;cursor:default}
+.zcf-gifbtn{background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font-size:10.5px;font-weight:700;text-transform:uppercase;padding:7px 10px;cursor:pointer}
+.zcf-gifbtn:hover{background:#ffffff1f;color:#fff}
+.zcf-gifbtn:disabled{opacity:.4;cursor:default}
+.zcf-gifbtn[aria-expanded="true"]{background:#3d8b40;color:#fff}
+.zcf-gifpanel{flex:none;max-height:220px;overflow-y:auto;background:#16181c;border:1px solid #000;border-radius:4px;margin:0 8px;padding:8px}
+.zcf-gif-search{display:block;box-sizing:border-box;width:100%;background:#0e1013;border:1px solid #0a748f;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:6px 8px;margin-bottom:6px}
+.zcf-gif-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.zcf-gif-chip.zcf-active{background:#3d8b40;color:#fff}
+.zcf-gif-status{font-size:11px;opacity:.5;text-align:center;padding:4px 0}
+.zcf-gif-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.zcf-gif-thumb{display:block;width:100%;height:70px;object-fit:cover;border-radius:3px;background:#202327;cursor:pointer}
+.zcf-gif-thumb:hover{outline:2px solid #0a748f}
 .zcf-toasts{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);z-index:4000;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
-.zcf-addname{background:none;border:1px solid #3d8b4088;border-radius:3px;color:#6fcf73;font-size:10px;line-height:15px;padding:0 4px;margin-left:6px;cursor:pointer;vertical-align:1px}
-.zcf-addname:hover{background:#3d8b40;color:#fff}
 .q-btn.zcf-is-friend{color:#81c784!important}
 @media (min-width:600px){
   .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
@@ -2594,6 +2722,7 @@
 @media (max-width:599.98px){
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-body{height:min(420px,60vh)}
+  .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
 }
 `;
   function injectStyles(doc = document) {

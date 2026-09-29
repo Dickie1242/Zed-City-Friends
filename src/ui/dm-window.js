@@ -1,5 +1,6 @@
 // One DM window/tab in the dock, styled like the game's chat (name · time · text, grouped).
 import { h, clear, icon, avatar, badge, setBadge } from './dom.js';
+import { createGifPicker } from './gif-picker.js';
 import { buildLog, messageParts } from '../mail.js';
 import { formatMessageTime, statusText } from '../time.js';
 
@@ -11,7 +12,7 @@ const BUSY_TEXT = {
 };
 
 export function createDmWindow(services, userId) {
-  const { store, actions, conversations, presence, router, myId, myName } = services;
+  const { store, actions, conversations, presence, router, myId, myName, fetchImpl } = services;
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -34,20 +35,50 @@ export function createDmWindow(services, userId) {
   const scroller = h('div', { class: 'zcf-scroll' }, loader, log, pendingEl);
   const newChip = h('button', { class: 'zcf-newchip', type: 'button', hidden: true }, 'New messages ↓');
   const input = h('textarea', { class: 'zcf-input zcf-compose', rows: 1, placeholder: 'Message…', 'aria-label': 'Message' });
+  const gifBtn = h('button', { class: 'zcf-gifbtn', type: 'button', title: 'Send a GIF', 'aria-label': 'Send a GIF', 'aria-expanded': 'false' }, 'GIF');
   const sendBtn = h('button', { class: 'zcf-send', type: 'button' }, 'Send');
-  const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, h('div', { class: 'zcf-composer' }, input, sendBtn));
+  const gifPicker = createGifPicker({
+    doc: document,
+    fetchImpl,
+    onPick: ({ title, url }) => {
+      gifBtn.setAttribute('aria-expanded', 'false');
+      if (conv.state.blocked) return;
+      atBottom = true;
+      conv.send(`![${title || 'GIF'}](${url})`);
+    },
+  });
+  const composer = h('div', { class: 'zcf-composer' }, input, gifBtn, sendBtn);
+  const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, gifPicker.el, composer);
   const el = h('div', { class: 'chat-container zcf zcf-dm', dataset: { zcfDm: String(userId) } }, header, body);
+
+  // Safety net for close paths we don't call directly (Esc); the click/pick handlers below set
+  // aria-expanded synchronously so tests don't need to wait on this.
+  const syncGifBtn = () => gifBtn.setAttribute('aria-expanded', String(!gifPicker.el.hidden));
+  const gifObserver = new MutationObserver(syncGifBtn);
+  gifObserver.observe(gifPicker.el, { attributes: true, attributeFilter: ['hidden'] });
 
   const stop = (fn) => (e) => {
     e.stopPropagation();
     fn(e);
   };
-  nameEl.addEventListener('click', stop(() => router.navigate(`/profile/${userId}`)));
+  // Minimized: the name is just part of the tab, so let the click bubble to the header's
+  // toggle (same as clicking anywhere else on a minimized tab). Open: it's a profile link,
+  // and must not also toggle the header underneath it.
+  nameEl.addEventListener('click', (e) => {
+    const entry = store.get().dock.dms.find((d) => d.id === userId);
+    if (entry && !entry.open) return;
+    e.stopPropagation();
+    router.navigate(`/profile/${userId}`);
+  });
   inboxBtn.addEventListener('click', stop(() => router.navigate(`/mail/${userId}`)));
   minBtn.addEventListener('click', stop(() => actions.minimizeDm(userId)));
   closeBtn.addEventListener('click', stop(() => actions.closeDm(userId)));
   newChip.addEventListener('click', () => scrollToBottom());
   sendBtn.addEventListener('click', () => submit());
+  gifBtn.addEventListener('click', () => {
+    gifPicker.toggle();
+    syncGifBtn();
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -140,6 +171,7 @@ export function createDmWindow(services, userId) {
     notice.hidden = !text;
     input.disabled = conv.state.blocked;
     sendBtn.disabled = conv.state.blocked || !!conv.state.busy;
+    gifBtn.disabled = conv.state.blocked || !!conv.state.busy;
   }
 
   // Appends when the new log only extends the old one; otherwise redraws (older page loaded, trimmed).
@@ -196,6 +228,10 @@ export function createDmWindow(services, userId) {
       atBottom = true;
       renderConversation();
     }
+    if (!open) {
+      gifPicker.close();
+      syncGifBtn();
+    }
     wasOpen = open;
   }
 
@@ -205,6 +241,8 @@ export function createDmWindow(services, userId) {
     destroy() {
       unsubscribe();
       conversations.release(userId);
+      gifObserver.disconnect();
+      gifPicker.destroy();
     },
   };
 }

@@ -46,6 +46,8 @@ describe('friends window', () => {
     el.querySelector('.chat-header').click();
     expect(services.actions.toggleFriends).toHaveBeenCalled();
     expect(el.classList.contains('zcf-open')).toBe(true);
+    // The window also lists mail threads with non-friends (the Recent section), not just friends.
+    expect(el.querySelector('.chat-title').textContent).toContain('Friends & Chats');
     expect(el.querySelector('.zcf-count').textContent).toBe('1 / 2 online');
     expect([...el.querySelectorAll('.zcf-sec')].map((s) => s.textContent)).toEqual(['Online — 1', 'Offline — 1', 'Recent — not friends — 1']);
     expect(names(el)).toEqual(['Spike', 'Rusty', 'TradeGuy']);

@@ -7,9 +7,9 @@ import { CSS } from '../../src/ui/styles.js';
 
 const THEM = 5;
 
-function mount(apiOverrides = {}, { open = true } = {}) {
+function mount(apiOverrides = {}, { open = true, fetchImpl } = {}) {
   const api = fakeApi(apiOverrides);
-  const services = makeServices({ api });
+  const services = makeServices({ api, fetchImpl });
   services.store.update((s) => {
     addFriend(s, { id: THEM, username: 'Spike' }, 0);
     openDm(s, THEM, { expand: open, now: 1 });
@@ -70,6 +70,35 @@ describe('dm window', () => {
     // The desktop rule must out-specificity the game's 2-class `.chat-container.chat-minimized` selectors.
     expect(CSS).toContain('@media (min-width:600px){');
     expect(CSS).toContain('.chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}');
+  });
+
+  it('clicking the name while minimized expands the window instead of opening the profile', async () => {
+    const { el, services } = mount({}, { open: false });
+    await flush();
+    el.querySelector('.zcf-dm-name').click();
+    expect(services.store.get().dock.dms[0].open).toBe(true);
+    expect(services.router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('clicking the name while open still navigates to the profile', async () => {
+    const { el, services } = mount();
+    await flush();
+    el.querySelector('.zcf-dm-name').click();
+    expect(services.router.navigate).toHaveBeenCalledWith(`/profile/${THEM}`);
+    expect(services.store.get().dock.dms[0].open).toBe(true);
+  });
+
+  it('gives every window header a solid background, at a specificity the game hover/minimized rules still beat', () => {
+    expect(CSS).toContain('.zcf .chat-header{background:#090a0b}');
+  });
+
+  it('lays the DM body out as a flex column with a definite height, so the composer is never clipped', () => {
+    expect(CSS).toContain('.zcf-dm .chat-content{display:flex;flex-direction:column}');
+    expect(CSS).toContain('.zcf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 8px}');
+    expect(CSS).toContain('.zcf-notice{background:#f2c0371a;color:#f2c037;font-size:11.5px;padding:6px 12px;border-bottom:1px solid #f2c03733;flex:none}');
+    expect(CSS).toContain('.zcf-composer{display:flex;gap:6px;align-items:flex-end;border-top:1px solid #ffffff14;padding:8px;flex:none}');
+    expect(CSS).toContain('.zcf-dm:not(.chat-minimized){height:450px}');
+    expect(CSS).toContain('.zcf-dm:not(.chat-minimized){height:min(450px,60vh)}');
   });
 
   it('sends on Enter, shows the message right away, and keeps Shift+Enter for new lines', async () => {
@@ -176,6 +205,56 @@ describe('dm window', () => {
     await flush();
     expect(el.querySelector('.zcf-failed img.zcf-gif')).not.toBeNull();
     expect(api.sendMail).toHaveBeenCalled();
+  });
+
+  it('opens the GIF picker from the composer and sends a picked GIF like a normal message', async () => {
+    const rawGifUrl = 'https://static.klipy.com/ii/x/a.gif';
+    const proxied = 'https://cdn.zed.city/?url=' + encodeURIComponent(rawGifUrl);
+    const fetchImpl = vi.fn().mockResolvedValue({
+      json: async () => ({
+        results: [{
+          content_description: 'Bibi Impressed',
+          media_formats: {
+            tinygif: { url: 'https://static.klipy.com/ii/x/a-tiny.gif' },
+            gif: { url: rawGifUrl },
+          },
+        }],
+      }),
+    });
+    const { el, api } = mount({}, { fetchImpl });
+    await flush();
+    const gifBtn = el.querySelector('.zcf-gifbtn');
+    expect(gifBtn).not.toBeNull();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(true);
+    gifBtn.click();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(false);
+    expect(gifBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('https://api.klipy.com/v2/featured?'), expect.any(Object));
+    await flush();
+    const thumb = el.querySelector('.zcf-gif-thumb');
+    expect(thumb).not.toBeNull();
+    thumb.click();
+    expect(api.sendMail).toHaveBeenCalledWith(THEM, `![Bibi Impressed](${proxied})`);
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(true);
+    expect(gifBtn.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('disables the GIF button whenever sending is disabled', async () => {
+    const { el } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: false, kind: 'access' }) });
+    await flush();
+    expect(el.querySelector('.zcf-gifbtn').disabled).toBe(true);
+  });
+
+  it('closes the GIF picker when the window minimizes', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ json: async () => ({ results: [] }) });
+    const { el, services } = mount({}, { fetchImpl });
+    await flush();
+    el.querySelector('.zcf-gifbtn').click();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(false);
+    el.querySelector('[title="Minimize"]').click();
+    expect(el.querySelector('.zcf-gifpanel').hidden).toBe(true);
+    expect(el.querySelector('.zcf-gifbtn').getAttribute('aria-expanded')).toBe('false');
+    expect(services.store.get().dock.dms[0].open).toBe(false);
   });
 
   it('header buttons minimize, close and open the inbox', async () => {

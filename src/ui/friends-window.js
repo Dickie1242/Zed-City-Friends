@@ -15,7 +15,7 @@ export function createFriendsWindow(services, { doc = document } = {}) {
   let frame = 0;
   let lastSig = null; // signature of what renderList last drew, so a no-op change can skip the rebuild
 
-  const titleText = h('span', null, 'Friends');
+  const titleText = h('span', null, 'Friends & Chats');
   const count = h('span', { class: 'zcf-count' });
   const unreadBadge = badge();
   const title = h('div', { class: 'chat-title' }, h('i', { class: 'fas fa-user-friends chat-icon', 'aria-hidden': 'true' }), titleText, count, unreadBadge);
@@ -242,7 +242,7 @@ export function createFriendsWindow(services, { doc = document } = {}) {
     clear(list);
     const none = q ? 'No matches' : 'None';
     if (!sec.total && !q) {
-      list.appendChild(h('div', { class: 'zcf-empty' }, 'No friends yet. Use the person-plus button above, "Add Friend" on a profile, or "+ friend" next to a name in chat.'));
+      list.appendChild(h('div', { class: 'zcf-empty' }, 'No friends yet. Use the person-plus button above, or "Add Friend" on a profile.'));
     } else {
       section('Online', sec.online, (r) => friendRow(r, s, now), none);
       section('Offline', sec.offline, (r) => friendRow(r, s, now), none);

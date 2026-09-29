@@ -1,4 +1,4 @@
-// Wires the modules together: store, pollers, dock UI, profile button and chat-name action.
+// Wires the modules together: store, pollers, dock UI and profile button.
 import { createStore } from './store.js';
 import { createRouter } from './router.js';
 import { createPlayers } from './players.js';
@@ -22,7 +22,6 @@ import { createDock } from './ui/dock.js';
 import { createDockView } from './ui/dock-view.js';
 import { createToaster } from './ui/toast.js';
 import { createProfileButton } from './ui/profile-button.js';
-import { createChatNames } from './ui/chat-names.js';
 import { statsPlayer } from './util.js';
 
 export const CHATTING_MS = 5 * 60 * 1000;
@@ -233,13 +232,11 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   const view = createDockView({ root: dock.root, services });
   const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
-  const chatNames = createChatNames({ doc, store, myName: playerName, players, actions, toast });
 
   store.subscribe(() => {
     view.render();
     syncPollers();
     profileButton.refresh();
-    chatNames.refresh();
   });
   presence.subscribe(() => {
     view.friends.scheduleList();
@@ -278,7 +275,6 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   if (dock.isSmall()) enforcePhoneRule();
   view.render();
   profileButton.onRoute(router.path);
-  chatNames.start();
   threadsPoller.start();
   syncPollers();
 
@@ -293,7 +289,6 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       for (const p of pollers) p.destroy();
       dock.destroy();
       profileButton.destroy();
-      chatNames.stop();
       store.destroy();
     },
   };

@@ -10,13 +10,13 @@ Zed City (www.zed.city) has global, faction and activity chat in a bottom-right 
 
 1. A **Friends** tab in the game's chat dock. It holds your friends list, with online status, filtering, an add-friend search, and a "Recent" section for mail threads with people who aren't friends.
 2. **Torn-style DM windows**, one dock window per conversation. They run entirely on the game's existing Mail system, so the other person gets the messages in their normal inbox whether or not they have the script.
-3. **Add Friend** entry points: a button on profile pages and a hover action on chat names.
+3. **Add Friend** entry points: a button on profile pages.
 
 It should look like it shipped with the game. It reuses the game's own CSS classes, and it should be easy for the Zed City devs to adopt natively.
 
 ### Non-goals
 
-- No external server, no second socket connection, no data leaving `www.zed.city` / `api.zed.city`.
+- No external server, no second socket connection, no data leaving `www.zed.city` / `api.zed.city`. GIF search uses the same Klipy API as the game's own chat picker, with GIFs shown through the game's `cdn.zed.city` proxy.
 - No mutual friendships or friend requests. The list is one-way, like a bookmark, the same as Torn's friends list.
 - No sound or desktop notifications in v1.
 - No importing referrals or faction members in v1.
@@ -48,8 +48,6 @@ It should look like it shipped with the game. It reuses the game's own CSS class
 - Each child is a `div.chat-container.{general|faction|activity}-chat`. Minimized chats have `.chat-minimized` (44×40 tab). Children are `.chat-header > .chat-title > i.chat-icon`, with `.unread-badge` when minimized, plus `.chat-content`.
 - The dock CSS is **global, not scoped**. Any element with these classes gets the game's look.
 - **Small layout (under 600px):** the game adds `.single-chat-mode` to the dock when one of *its* chats is open. It also gives the open chat `order:1` and the rest `order:0`.
-
-**Chat messages:** `.message-panel .msg-cont` contains `.sender-name` (clickable, no link and no user ID in the DOM), `.msg-time` and `.msg`.
 
 **Mail rendering rules to copy:**
 - Messages from the same sender are grouped if they're within 15 minutes of each other (`groupWindowMs = 900000`) and on the same UTC day.
@@ -94,8 +92,8 @@ src/
   ui/friends-window.js Friends tab/window: filter, sections, ⋯ menu
   ui/add-friend-popover.js  the person-plus pop-out search
   ui/dm-window.js      one DM window/tab per conversation
+  ui/gif-picker.js     Klipy GIF search/picker used by the DM composer
   ui/profile-button.js Add Friend / Friends button on /profile/{id}
-  ui/chat-names.js     "+ friend" hover action in Global/Faction chat
 test/                  Vitest + jsdom
 build.mjs              esbuild → dist/zed-city-friends.user.js
 ```
@@ -186,11 +184,7 @@ build.mjs              esbuild → dist/zed-city-friends.user.js
 
 ### 4.7 Chat-name action
 
-- **One delegated `mouseover` listener** on `document`. There are no per-message observers. When the pointer enters a `.msg-cont` inside a non-`zcf` `.chat-container`, a single shared `+ friend` element is moved in right after that message's `.sender-name`.
-- **Hidden** for your own messages and for names that are already friends (matched case-insensitively on the list's usernames).
-- On touch devices, the first tap on a message gives it hover, which reveals the action.
-- **Clicking `+ friend`** calls `findPlayer?q={name}` and adds only if there's an exact case-insensitive match. Otherwise it shows "Couldn't find {name}" in a toast.
-- **Toasts** are our own minimal toast in the game's colors. We don't reach into Quasar's `Notify`.
+Removed after live testing: players found it unnecessary; adding friends is via profiles and the Friends window.
 
 ## 5. Storage
 
@@ -261,7 +255,7 @@ For comparison, the game's own `/mail/{id}` view makes 60 requests a minute.
 ## 7. Error handling and resilience
 
 - **Every entry point is wrapped:** observer callbacks, event handlers, and poller ticks run inside `try/catch`. Errors log once per message key with the prefix `[ZCF]`, and nothing is thrown into the game's code.
-- **Missing DOM:** if a selector we rely on (`.chat-containers`, the profile Mail button, `.msg-cont .sender-name`) isn't found where we expect it, that feature quietly does nothing and a single warning is logged. The rest keeps working.
+- **Missing DOM:** if a selector we rely on (`.chat-containers`, the profile Mail button) isn't found where we expect it, that feature quietly does nothing and a single warning is logged. The rest keeps working.
 - **Blocked or unmessageable user:** the DM shows "You can't message this player." and the input is disabled.
 - **Player not found:** the add-friend pop-out shows "No players found." inline, in place of the results. A profile or ID lookup that finds nobody shows a toast instead. The list is unchanged.
 - **Removing a friend** doesn't close an existing DM entry with them. The conversation just stops popping up for new mail.
@@ -274,7 +268,6 @@ For comparison, the game's own `/mail/{id}` view makes 60 requests a minute.
   - one body-level `childList` observer whose callback does only O(1) checks, batched per animation frame
   - one dock-scoped `class` attribute observer, only on mobile
   - a short-lived profile observer
-- **No per-message work in the game's chat.** The chat-name action uses a single delegated listener.
 - **Minimal redraws.** DM windows add new messages instead of redrawing the whole list, and the Friends window redraws only when its part of the state changes.
 - **Request volume** follows §6: nothing while the tab is hidden, and never more than the game's own inbox view.
 

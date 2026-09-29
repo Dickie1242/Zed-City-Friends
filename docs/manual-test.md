@@ -23,27 +23,26 @@ Record the answers in this file under "Findings", and fix the code only if an an
 1. The dock shows the Friends tab (green two-person icon) to the left of Faction/Global. Minimizing and expanding looks like the game's chats.
 2. **Profile page of another player:** `ADD FRIEND` sits between `TRADE` and `MAIL`, with the same outline style. Click it → it becomes a green `FRIENDS`. Click → `Remove?` → click again → removed.
 3. **Own profile:** no button. A blocked player (Trade/Mail hidden): the button sits after Block.
-4. **Global chat:** hovering a message shows `+ friend` after the name. It's hidden for your own messages and for existing friends. Click it → toast "X added to friends".
-5. **Friends window:** the filter narrows the list with highlights. The person-plus pop-out finds players by name and by ID. **Add** changes to **✓ Friend**. Esc closes it.
-6. **With a second account:** send a DM to the first account. Within ~15s, a minimized avatar tab with a badge appears on the first account. The game's inbox still shows the thread as unread until the DM is expanded.
-7. Expand the DM: the history loads, and scrolling up loads older messages. Replies from the second account show within ~2s. Enter sends; Shift+Enter adds a new line.
-8. Go offline (DevTools → Network → Offline) and send a message: it shows "Failed to send · Retry". Go back online → Retry works.
-9. **Reload the page:** the friends list and open or minimized DM tabs come back.
-10. **Responsive mode (375px wide):** only one window is open at a time. Opening a DM minimizes Global chat, and opening Global minimizes the DM.
-11. **Traveling or exploring:** an open DM shows "Mail is unavailable while you are traveling/exploring."
-12. **Switch to another browser tab for a minute:** the Network tab shows no `api.zed.city` requests from the script until you return.
-13. **Export**, then remove a friend, then **Import**: the friend is back. Importing a file from another account is rejected.
-14. A game system-thread (`is_system` truthy) never pops up as a DM tab and never appears in the Friends window's Recent list.
-15. Get into a fight (or start a trip), then let it end: the "Mail is unavailable while..." notice clears within about 10s of it ending, not up to a minute later.
-16. Navigate through a few different pages: our windows still match the game's chat look (same fonts/colors/spacing) — the game's own stylesheet order didn't push ours out of the cascade.
-17. With our windows present in the dock, the game's own Global/Faction chat still auto-scrolls on new messages, and the spacing between our last window and the first game chat looks right. (Global/Faction message rows use `.msg-cont` / `.sender-name`.)
-18. **Phone width, rotation:** with 2 of our windows open, rotate landscape → portrait (or resize past 600px): exactly one stays open.
-19. **Phone width, incoming DMs:** with a DM open, have two other friends message you: the open DM is not hidden by the pop-ups.
-20. **Phone width, page change:** with a DM and the game's General chat both open, navigate to another page: does the dock rebuild, and does it collapse the DM the way it should?
-21. **Presence volume:** with the Friends window open for about 2 minutes, the Network tab shows at most ~20 `getProfile` calls a minute, regardless of friend-list size.
-22. **Profile navigation:** go from another player's profile to your own, then between two different players' profiles: `ADD FRIEND` never appears on your own profile, and on a player's profile it always matches the player currently shown (never a stale button left over from the previous page).
-23. **Re-expanding a DM:** minimize then re-expand a DM that has unread messages — does the game's own unread/envelope count clear? (`getNewMessages` may not mark it read; if it doesn't, note that as a known gap.)
-24. **Routes without the dock:** browse to a few different pages/routes and note any where the dock (Friends tab, Global/Faction chat) is missing entirely.
+4. **Friends window:** the filter narrows the list with highlights. The person-plus pop-out finds players by name and by ID. **Add** changes to **✓ Friend**. Esc closes it.
+5. **With a second account:** send a DM to the first account. Within ~15s, a minimized avatar tab with a badge appears on the first account. The game's inbox still shows the thread as unread until the DM is expanded.
+6. Expand the DM: the history loads, and scrolling up loads older messages. Replies from the second account show within ~2s. Enter sends; Shift+Enter adds a new line.
+7. Go offline (DevTools → Network → Offline) and send a message: it shows "Failed to send · Retry". Go back online → Retry works.
+8. **Reload the page:** the friends list and open or minimized DM tabs come back.
+9. **Responsive mode (375px wide):** only one window is open at a time. Opening a DM minimizes Global chat, and opening Global minimizes the DM.
+10. **Traveling or exploring:** an open DM shows "Mail is unavailable while you are traveling/exploring."
+11. **Switch to another browser tab for a minute:** the Network tab shows no `api.zed.city` requests from the script until you return.
+12. **Export**, then remove a friend, then **Import**: the friend is back. Importing a file from another account is rejected.
+13. A game system-thread (`is_system` truthy) never pops up as a DM tab and never appears in the Friends window's Recent list.
+14. Get into a fight (or start a trip), then let it end: the "Mail is unavailable while..." notice clears within about 10s of it ending, not up to a minute later.
+15. Navigate through a few different pages: our windows still match the game's chat look (same fonts/colors/spacing) — the game's own stylesheet order didn't push ours out of the cascade.
+16. With our windows present in the dock, the game's own Global/Faction chat still auto-scrolls on new messages, and the spacing between our last window and the first game chat looks right. (Global/Faction message rows use `.msg-cont`.)
+17. **Phone width, rotation:** with 2 of our windows open, rotate landscape → portrait (or resize past 600px): exactly one stays open.
+18. **Phone width, incoming DMs:** with a DM open, have two other friends message you: the open DM is not hidden by the pop-ups.
+19. **Phone width, page change:** with a DM and the game's General chat both open, navigate to another page: does the dock rebuild, and does it collapse the DM the way it should?
+20. **Presence volume:** with the Friends window open for about 2 minutes, the Network tab shows at most ~20 `getProfile` calls a minute, regardless of friend-list size.
+21. **Profile navigation:** go from another player's profile to your own, then between two different players' profiles: `ADD FRIEND` never appears on your own profile, and on a player's profile it always matches the player currently shown (never a stale button left over from the previous page).
+22. **Re-expanding a DM:** minimize then re-expand a DM that has unread messages — does the game's own unread/envelope count clear? (`getNewMessages` may not mark it read; if it doesn't, note that as a known gap.)
+23. **Routes without the dock:** browse to a few different pages/routes and note any where the dock (Friends tab, Global/Faction chat) is missing entirely.
 
 ## Findings
 
