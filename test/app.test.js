@@ -399,6 +399,26 @@ describe('app', () => {
       expect(notifier.show.mock.calls.map((c) => c[0].id)).toEqual([6, 5]);
     });
 
+    it('stays quiet in a background tab while another game tab has focus', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      const notifier = fakeNotifier();
+      const rows = [[], [rawThread(6, { newMail: 1, lastReply: 10 })], [rawThread(7, { newMail: 1, lastReply: 5 })]];
+      const api = fakeApi({ getChats: vi.fn(async () => ({ ok: true, data: rows.shift() || [] })) });
+      const storage = memoryStorage(settingsDoc({ notify: true, sound: 'chirp' }));
+      const sound = { play: vi.fn(), unlock: vi.fn() };
+      app = createApp({ api, playerId: ME, playerName: 'Me', storage, notifier, sound });
+      await vi.advanceTimersByTimeAsync(0);
+      storage.setItem(`zcf:v1:${ME}:focus`, JSON.stringify({ tab: 'other', at: Date.now() }));
+      await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+      expect(notifier.show).not.toHaveBeenCalled();
+      expect(sound.play).not.toHaveBeenCalled();
+      storage.removeItem(`zcf:v1:${ME}:focus`); // that tab lost focus
+      await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+      expect(notifier.show).toHaveBeenCalledTimes(1);
+      expect(sound.play).toHaveBeenCalledTimes(1);
+    });
+
     it('stays quiet while the game has focus', async () => {
       vi.useFakeTimers();
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);

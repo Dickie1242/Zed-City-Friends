@@ -234,8 +234,15 @@ export function createDmWindow(services, userId) {
   function renderConversation() {
     renderNotice();
     loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-    const items = buildLog(conv.messages(), { local: localTime() });
-    drawnLocal = localTime();
+    const local = localTime();
+    if (drawnLocal !== null && drawnLocal !== local) {
+      // Game time ↔ local time: every time and day divider changes, so draw the log afresh. Checked here,
+      // not only on a settings change, so a window that was minimized at the time catches up on reopen.
+      renderedKeys = [];
+      clear(log);
+    }
+    drawnLocal = local;
+    const items = buildLog(conv.messages(), { local });
     const keys = items.map((i) => i.key);
     const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
     const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -294,9 +301,6 @@ export function createDmWindow(services, userId) {
       atBottom = true;
       renderConversation();
     } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
-      // Game time ↔ local time: every time and day divider changes, so draw the log afresh.
-      renderedKeys = [];
-      clear(log);
       renderConversation();
     }
     if (!open) {

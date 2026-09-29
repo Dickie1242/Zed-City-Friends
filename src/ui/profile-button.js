@@ -43,6 +43,7 @@ export function createProfileButton({
   players,
   toast,
   after = null,
+  myId = null, // your own profile never gets a button
 }) {
   let profileId = null;
   let wrap = null;
@@ -106,11 +107,12 @@ export function createProfileButton({
     toast(spec.added(username));
   }
 
-  // Returns true once there is nothing left to do on this page (inserted), or 'own' on your own profile.
+  // Returns true once there is nothing left to do on this page (inserted, or your own profile).
   function tryInsert() {
-    if (profileId === null) return true;
+    if (profileId === null || profileId === myId) return true;
     if (wrap && wrap.isConnected) return true;
-    if (findButton('fa-cog', /^settings$/i)) return 'own';
+    // Your Settings button on someone else's profile: the game hasn't redrawn your own page away yet.
+    if (findButton('fa-cog', /^settings$/i)) return false;
     const mail = findButton('fa-envelope', /^mail$/i);
     const trade = findButton('fa-exchange', /^trade$/i);
     const block = findButton('fa-ban', /^(un)?block$/i);
@@ -159,15 +161,15 @@ export function createProfileButton({
     button = null;
     const m = PROFILE_PATH.exec(path);
     profileId = m ? Number(m[1]) : null;
-    if (profileId === null) return;
-    if (tryInsert() === 'own') return;
-    // The game re-renders the button row while a profile loads, so keep watching while we're on this page
-    // (but not on your own profile, where there's never a button to add).
+    // Decided by id, not by the page: when you leave your own profile, it's still on screen for a moment.
+    if (profileId === null || profileId === myId) return;
+    tryInsert();
+    // The game re-renders the button row while a profile loads, so keep watching while we're on this page.
     observer = new win.MutationObserver(() => {
       if (frame || (wrap && wrap.isConnected)) return;
       frame = win.requestAnimationFrame(() => {
         frame = 0;
-        if (safe('profile-button-insert', tryInsert)() === 'own') stopWatching();
+        safe('profile-button-insert', tryInsert)();
       });
     });
     observer.observe(doc.body, { childList: true, subtree: true });

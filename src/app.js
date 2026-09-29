@@ -2,6 +2,7 @@
 import { createStore, createSettingsStore, createEnemiesStore } from './store.js';
 import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats, togglePinned, setFlag } from './settings.js';
 import { createNotifier } from './notify.js';
+import { createTabFocus } from './tab-focus.js';
 import { createSound } from './sound.js';
 import { markAllRead } from './mark-read.js';
 import { createRouter } from './router.js';
@@ -57,6 +58,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   // Created here, not as a default parameter, so its click can reach `actions` below.
   const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
   const notificationsOn = () => settings.get().notify && notifier.permission() === 'granted';
+  const tabFocus = createTabFocus({ storage, key: `zcf:v1:${playerId}:focus`, doc, win, now });
   let stopped = false;
   let activeDmId = null;
   let chattingUntil = 0;
@@ -123,6 +125,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     // New mail from another player, at most once per poll: the sound chosen in Chat settings, and desktop
     // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
     onNewMail: (arrived) => {
+      if (tabFocus.elsewhere()) return; // another game tab has focus and hears this mail itself
       const name = settings.get().sound;
       if (name !== 'off') sound.play(name);
       notifyNewMail(arrived);
@@ -131,7 +134,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   function notifyNewMail(arrived) {
     const s = settings.get();
-    if (!notificationsOn() || (typeof doc.hasFocus === 'function' && doc.hasFocus())) return;
+    if (!notificationsOn() || tabFocus.focused()) return;
     const friends = store.get().friends;
     const list = arrived
       .filter((t) => !s.notifyFriendsOnly || friends[t.userId])
@@ -149,7 +152,10 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   const onAuthLost = () => stopAll();
   const threadsPoller = makePoller({
-    run: () => inbox.poll(),
+    run: () => {
+      tabFocus.beat();
+      return inbox.poll();
+    },
     interval: () => (isChatting() ? INTERVALS.threadsChatting : INTERVALS.threadsIdle),
     // While the tab is hidden, a slow check keeps notifications coming; with them off it stops as before.
     hiddenInterval: () => (notificationsOn() ? INTERVALS.hiddenNotify : null),
@@ -373,7 +379,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     view.render();
     custom.refresh();
   };
-  const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+  const profileButton = createProfileButton({ doc, win, store, actions, players, toast, myId: playerId });
   const enemyButton = createProfileButton({
     doc,
     win,
@@ -384,6 +390,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     players,
     toast,
     after: () => profileButton.wrap,
+    myId: playerId,
   });
   const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
   const page = createFriendsPage(services, { doc, win, keeper });
@@ -496,6 +503,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       marks.destroy();
       custom.destroy();
       titleCount.destroy();
+      tabFocus.destroy();
       view.destroy();
       doc.removeEventListener('pointerdown', unlockSound, true);
       page.destroy();

@@ -15,13 +15,7 @@ export const WHATS_NEW = [
       { title: 'Pinned chats', points: ['Pin conversations to the top of the Chats tab with the pin on each row.'] },
       { title: 'Phones', points: ['An open chat gets the full width, with every bubble on a row underneath.'] },
       { title: 'Local time', points: ['Show message times in your own time zone instead of game time (Chat settings).'] },
-      {
-        title: 'Fixes',
-        points: [
-          'Chat times now match the game, and chats whose last message is an invite show up again.',
-          'Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus.',
-        ],
-      },
+      { title: 'Fixes', points: ['Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus.'] },
     ],
   },
   {

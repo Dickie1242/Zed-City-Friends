@@ -153,6 +153,8 @@ describe('styles against the game dock CSS', () => {
       expect(winner(dock, 'left', 400, sheets).value).toBe('10px');
       expect(winner(pm, 'flex', 400, sheets).value).toBe('0 0 100%');
       expect(winner(pm, 'max-width', 400, sheets).value).toBe('none');
+      // wrap-reverse stacks lines upwards, so the open window must come last or the cog gets a row above it.
+      expect(Number(winner(pm, 'order', 400, sheets).value)).toBeGreaterThan(Number(winner(cog, 'order', 400, sheets).value));
       expect(winner(cog, 'display', 400, sheets).value).not.toBe('none');
       expect(winner(dock, 'flex-wrap', 1280, sheets)).toBeNull();
     }

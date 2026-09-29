@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createProfileButton, ENEMY_BUTTON } from '../../src/ui/profile-button.js';
 import { PROFILE_OTHER_HTML, PROFILE_BLOCKED_HTML, PROFILE_OWN_HTML } from '../fixtures/game-dom.js';
-import { makeServices } from './services.js';
+import { makeServices, ME } from './services.js';
 import { flush } from '../helpers.js';
 
 let mounted = [];
@@ -10,7 +10,7 @@ function setup(html, profile = { username: 'TePuu', avatar: 'a.png' }) {
   document.body.innerHTML = html;
   const services = makeServices();
   services.players.get = vi.fn().mockResolvedValue({ ok: true, data: profile });
-  const pb = createProfileButton({ ...services });
+  const pb = createProfileButton({ ...services, myId: ME });
   services.store.subscribe(() => pb.refresh());
   mounted.push(pb);
   return { services, pb };
@@ -104,7 +104,7 @@ function setupBoth(html, profile = { username: 'TePuu', avatar: 'a.png' }) {
   document.body.innerHTML = html;
   const services = makeServices();
   services.players.get = vi.fn().mockResolvedValue({ ok: true, data: profile });
-  const friend = createProfileButton({ ...services });
+  const friend = createProfileButton({ ...services, myId: ME });
   const enemy = createProfileButton({
     spec: ENEMY_BUTTON,
     isOn: (id) => services.isEnemy(id),
@@ -113,6 +113,7 @@ function setupBoth(html, profile = { username: 'TePuu', avatar: 'a.png' }) {
     players: services.players,
     toast: services.toast,
     after: () => friend.wrap,
+    myId: ME,
   });
   services.store.subscribe(() => friend.refresh());
   services.enemies.subscribe(() => enemy.refresh());
@@ -183,5 +184,18 @@ describe('enemy profile button', () => {
       await flush();
     }
     expect(spy.mock.calls.filter((c) => String(c[0]).includes('q-btn--outline'))).toHaveLength(0);
+  });
+
+  it("adds both buttons when you go from your own profile to someone else's (your page is still up at first)", async () => {
+    const b = setupBoth(`<div id="page">${PROFILE_OWN_HTML}</div>`);
+    route(b, `/profile/${ME}`);
+    route(b, '/profile/42');
+    await flush();
+    expect(document.querySelector('.zcf-profile-btn')).toBeNull();
+    document.getElementById('page').innerHTML = PROFILE_OTHER_HTML;
+    await flush();
+    await flush();
+    await flush();
+    expect(labels()).toEqual(['Block', 'Trade', 'Add Friend', 'Add Enemy', 'Mail']);
   });
 });

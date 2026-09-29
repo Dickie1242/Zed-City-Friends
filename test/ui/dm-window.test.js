@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createDmWindow } from '../../src/ui/dm-window.js';
-import { openDm, addFriend } from '../../src/state.js';
+import { openDm, addFriend, setDmOpen } from '../../src/state.js';
 import { makeServices, ME } from './services.js';
 import { fakeApi, rawMsg, flush } from '../helpers.js';
 import { CSS } from '../../src/ui/styles.js';
@@ -381,6 +381,21 @@ describe('dm window', () => {
     expect(el.querySelector('.zcf-time').textContent).toContain('14:02');
     services.settings.update((s) => { s.localTime = true; });
     win.update();
+    expect(el.querySelector('.zcf-time').textContent).toContain(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+  });
+
+  it('catches up on the time mode when a window minimized during the switch reopens', async () => {
+    const { el, services, win } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00')] }) });
+    await flush();
+    const d = new Date(Date.UTC(2026, 8, 28, 14, 2));
+    const pad = (n) => String(n).padStart(2, '0');
+    services.store.update((s) => setDmOpen(s, THEM, false));
+    win.update();
+    services.settings.update((s) => { s.localTime = true; });
+    win.update();
+    services.store.update((s) => setDmOpen(s, THEM, true));
+    win.update();
+    await flush();
     expect(el.querySelector('.zcf-time').textContent).toContain(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
   });
 });

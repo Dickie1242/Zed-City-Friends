@@ -751,6 +751,53 @@
     };
   }
 
+  // src/tab-focus.js
+  var FRESH_MS = 3e4;
+  function createTabFocus({ storage, key, doc, win, now = () => Date.now(), id = Math.random().toString(36).slice(2) }) {
+    const focused = () => typeof doc.hasFocus === "function" && doc.hasFocus();
+    function read() {
+      try {
+        const v = JSON.parse(storage.getItem(key));
+        return v && typeof v === "object" && typeof v.tab === "string" && typeof v.at === "number" ? v : null;
+      } catch {
+        return null;
+      }
+    }
+    function beat() {
+      if (!focused()) return;
+      try {
+        storage.setItem(key, JSON.stringify({ tab: id, at: now() }));
+      } catch {
+      }
+    }
+    function release() {
+      const v = read();
+      if (!v || v.tab !== id) return;
+      try {
+        storage.removeItem(key);
+      } catch {
+      }
+    }
+    win.addEventListener("focus", beat);
+    win.addEventListener("blur", release);
+    beat();
+    return {
+      beat,
+      focused,
+      // Another open game tab had focus within the last FRESH_MS.
+      elsewhere() {
+        if (focused()) return false;
+        const v = read();
+        return !!(v && v.tab !== id && now() - v.at < FRESH_MS);
+      },
+      destroy() {
+        win.removeEventListener("focus", beat);
+        win.removeEventListener("blur", release);
+        release();
+      }
+    };
+  }
+
   // src/sound.js
   var TONES = {
     chirp: [{ f: 1800, to: 2700, at: 0, dur: 0.07 }, { f: 2200, to: 3100, at: 0.09, dur: 0.07 }],
@@ -5343,8 +5390,13 @@ sandfish		/items/sandfish.webp`;
     function renderConversation() {
       renderNotice();
       loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-      const items = buildLog(conv.messages(), { local: localTime() });
-      drawnLocal = localTime();
+      const local = localTime();
+      if (drawnLocal !== null && drawnLocal !== local) {
+        renderedKeys = [];
+        clear(log);
+      }
+      drawnLocal = local;
+      const items = buildLog(conv.messages(), { local });
       const keys = items.map((i) => i.key);
       const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
       const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -5402,8 +5454,6 @@ sandfish		/items/sandfish.webp`;
         atBottom = true;
         renderConversation();
       } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
-        renderedKeys = [];
-        clear(log);
         renderConversation();
       }
       if (!open) {
@@ -5463,13 +5513,7 @@ sandfish		/items/sandfish.webp`;
         { title: "Pinned chats", points: ["Pin conversations to the top of the Chats tab with the pin on each row."] },
         { title: "Phones", points: ["An open chat gets the full width, with every bubble on a row underneath."] },
         { title: "Local time", points: ["Show message times in your own time zone instead of game time (Chat settings)."] },
-        {
-          title: "Fixes",
-          points: [
-            "Chat times now match the game, and chats whose last message is an invite show up again.",
-            "Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus."
-          ]
-        }
+        { title: "Fixes", points: ["Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus."] }
       ]
     },
     {
@@ -5850,7 +5894,9 @@ sandfish		/items/sandfish.webp`;
     remove = (id) => actions.removeFriend(id),
     players,
     toast,
-    after = null
+    after = null,
+    myId = null
+    // your own profile never gets a button
   }) {
     let profileId = null;
     let wrap = null;
@@ -5910,9 +5956,9 @@ sandfish		/items/sandfish.webp`;
       toast(spec.added(username));
     }
     function tryInsert() {
-      if (profileId === null) return true;
+      if (profileId === null || profileId === myId) return true;
       if (wrap && wrap.isConnected) return true;
-      if (findButton("fa-cog", /^settings$/i)) return "own";
+      if (findButton("fa-cog", /^settings$/i)) return false;
       const mail = findButton("fa-envelope", /^mail$/i);
       const trade = findButton("fa-exchange", /^trade$/i);
       const block = findButton("fa-ban", /^(un)?block$/i);
@@ -5957,13 +6003,13 @@ sandfish		/items/sandfish.webp`;
       button = null;
       const m = PROFILE_PATH.exec(path);
       profileId = m ? Number(m[1]) : null;
-      if (profileId === null) return;
-      if (tryInsert() === "own") return;
+      if (profileId === null || profileId === myId) return;
+      tryInsert();
       observer = new win.MutationObserver(() => {
         if (frame || wrap && wrap.isConnected) return;
         frame = win.requestAnimationFrame(() => {
           frame = 0;
-          if (safe("profile-button-insert", tryInsert)() === "own") stopWatching();
+          safe("profile-button-insert", tryInsert)();
         });
       });
       observer.observe(doc.body, { childList: true, subtree: true });
@@ -7403,6 +7449,7 @@ sandfish		/items/sandfish.webp`;
     const players = createPlayers({ api, now });
     const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
     const notificationsOn = () => settings.get().notify && notifier.permission() === "granted";
+    const tabFocus = createTabFocus({ storage, key: `zcf:v1:${playerId}:focus`, doc, win, now });
     let stopped = false;
     let activeDmId = null;
     let chattingUntil = 0;
@@ -7456,6 +7503,7 @@ sandfish		/items/sandfish.webp`;
       // New mail from another player, at most once per poll: the sound chosen in Chat settings, and desktop
       // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
       onNewMail: (arrived) => {
+        if (tabFocus.elsewhere()) return;
         const name = settings.get().sound;
         if (name !== "off") sound.play(name);
         notifyNewMail(arrived);
@@ -7463,7 +7511,7 @@ sandfish		/items/sandfish.webp`;
     });
     function notifyNewMail(arrived) {
       const s = settings.get();
-      if (!notificationsOn() || typeof doc.hasFocus === "function" && doc.hasFocus()) return;
+      if (!notificationsOn() || tabFocus.focused()) return;
       const friends = store.get().friends;
       const list = arrived.filter((t) => !s.notifyFriendsOnly || friends[t.userId]).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0)).slice(0, MAX_NOTIFY);
       for (const t of list) notifier.show({ id: t.userId, title: t.username, body: (t.preview || "").slice(0, 120), icon: avatarUrl(t.avatar) });
@@ -7476,7 +7524,10 @@ sandfish		/items/sandfish.webp`;
     }
     const onAuthLost = () => stopAll();
     const threadsPoller = makePoller({
-      run: () => inbox.poll(),
+      run: () => {
+        tabFocus.beat();
+        return inbox.poll();
+      },
       interval: () => isChatting() ? INTERVALS.threadsChatting : INTERVALS.threadsIdle,
       // While the tab is hidden, a slow check keeps notifications coming; with them off it stops as before.
       hiddenInterval: () => notificationsOn() ? INTERVALS.hiddenNotify : null,
@@ -7686,7 +7737,7 @@ sandfish		/items/sandfish.webp`;
       view.render();
       custom.refresh();
     };
-    const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+    const profileButton = createProfileButton({ doc, win, store, actions, players, toast, myId: playerId });
     const enemyButton = createProfileButton({
       doc,
       win,
@@ -7696,7 +7747,8 @@ sandfish		/items/sandfish.webp`;
       remove: (id) => actions.removeEnemy(id),
       players,
       toast,
-      after: () => profileButton.wrap
+      after: () => profileButton.wrap,
+      myId: playerId
     });
     const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
     const page = createFriendsPage(services, { doc, win, keeper });
@@ -7802,6 +7854,7 @@ sandfish		/items/sandfish.webp`;
         marks.destroy();
         custom.destroy();
         titleCount.destroy();
+        tabFocus.destroy();
         view.destroy();
         doc.removeEventListener("pointerdown", unlockSound, true);
         page.destroy();
@@ -8109,7 +8162,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
   .zcf-cc,.zcf-grip{display:none!important}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .chat-containers:has(> .zcf-root > .zcf.zcf-open){flex-wrap:wrap-reverse;left:10px}
-  .chat-containers:has(> .zcf-root > .zcf.zcf-open) .zcf.zcf-open{flex:0 0 100%;width:100%;max-width:none}
+  .chat-containers:has(> .zcf-root > .zcf.zcf-open) .zcf.zcf-open{order:5;flex:0 0 100%;width:100%;max-width:none}
   @supports not selector(:has(a)){
     .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
   }

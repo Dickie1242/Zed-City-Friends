@@ -294,7 +294,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
   .zcf-cc,.zcf-grip{display:none!important}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .chat-containers:has(> .zcf-root > .zcf.zcf-open){flex-wrap:wrap-reverse;left:10px}
-  .chat-containers:has(> .zcf-root > .zcf.zcf-open) .zcf.zcf-open{flex:0 0 100%;width:100%;max-width:none}
+  .chat-containers:has(> .zcf-root > .zcf.zcf-open) .zcf.zcf-open{order:5;flex:0 0 100%;width:100%;max-width:none}
   @supports not selector(:has(a)){
     .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
   }
