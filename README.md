@@ -1,0 +1,69 @@
+# Zed City Friends & DMs
+
+A userscript that adds a **friends list** and **Torn-style DM chat windows** to [Zed City](https://www.zed.city)'s bottom-right chat dock, next to the Global and Faction chats.
+
+- **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players.
+- **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
+- **Add Friend button** on player profiles (between Trade and Mail), plus a **"+ friend"** action next to names in Global and Faction chat.
+
+DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
+
+## Install
+
+1. Install a userscript manager, such as [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/).
+2. Open `dist/zed-city-friends.user.js` and install it (or paste it into a new script).
+3. Reload www.zed.city.
+
+## How often it checks for messages
+
+Zed City doesn't push new mail to the browser, so the script checks on a timer:
+
+| What you're doing | New messages appear within | Requests / minute |
+|---|---|---|
+| In a DM conversation | ~2s in that window, ~5s elsewhere | ~43 (the game's own inbox page: 60) |
+| Chatted in the last 5 minutes | ~5s | 12 |
+| Idle | ~15s (the game's envelope badge: 60s) | 4 |
+| Game tab in the background | checked the moment you return | 0 |
+
+## Backup
+
+In the Friends window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any.
+
+## Development
+
+```bash
+npm install
+npm test          # Vitest + jsdom unit tests
+npm run build     # writes dist/zed-city-friends.user.js
+```
+
+`src/` is plain ES modules with no framework. `build.mjs` bundles it with esbuild into one readable userscript.
+
+| Path | Responsibility |
+|---|---|
+| `src/api.js` | The only code that talks to `api.zed.city` (CSRF, error kinds; never redirects) |
+| `src/store.js`, `src/state.js` | The only code that touches storage, plus pure state mutators |
+| `src/mail.js`, `src/time.js` | Message/thread normalization, grouping, UTC time formatting |
+| `src/conversation.js` | One DM thread: paging, new messages, optimistic sends |
+| `src/inbox.js` | Thread-list polling, unread badges, friend pop-ups |
+| `src/poller.js` | Visibility-aware timers with backoff |
+| `src/presence.js`, `src/players.js` | Online status cache, player search/lookup |
+| `src/router.js` | Page-change events and navigation via the game's router |
+| `src/app.js` | Wiring and polling policy |
+| `src/ui/*` | Dock mounting, Friends window, DM windows, profile button, chat-name action |
+
+Design spec: `docs/superpowers/specs/2026-09-28-zed-city-friends-design.md`
+
+## For the Zed City devs
+
+Everything here maps onto the game's own code:
+
+- Each window (`ui/friends-window.js`, `ui/dm-window.js`) is a Vue SFC waiting to happen. The markup already uses the dock's `.chat-container` / `.chat-header` / `.chat-content` classes.
+- `store.js` / `state.js` become a Pinia store. The dock logic in `ui/dock.js` goes away once the windows render inside the layout component.
+- Only the existing endpoints are used: `getChats`, `getChatInfo`, `getChatMessages`, `getNewMessages`, `sendMail`, `getProfile`, `findPlayer`.
+
+Server-side changes that would remove the client-side workarounds:
+
+1. **Push new mail over the existing socket.io connection** (for example a `new-mail` event), instead of the client polling `getChats` and `getNewMessages`.
+2. **A `friends` table** with requests and approval, synced across devices, instead of per-browser storage.
+3. **A batched presence endpoint** (online / last active for a list of ids), instead of one `getProfile` per friend.
