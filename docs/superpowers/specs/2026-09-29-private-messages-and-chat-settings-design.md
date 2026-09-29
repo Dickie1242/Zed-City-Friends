@@ -1,13 +1,14 @@
-# Zed City Friends: Private Messages Window and Chat Settings Design
+# Zed City Friends: Private Messages, Chat Settings and Enemies Design
 
 **Date:** 2026-09-29
-**Ships as:** 0.5.0 (one release covering both parts)
+**Ships as:** 0.5.0 (one release covering all three parts)
 **Builds on:**
 - [2026-09-28-zed-city-friends-design.md](2026-09-28-zed-city-friends-design.md): the dock, DMs, mail API, storage and polling.
 - [2026-09-28-friends-page-design.md](2026-09-28-friends-page-design.md): the Friends page, notes, presence details and the mount keeper.
 
 **Status:**
 - **Part A** (Private Messages window) was designed with the user and approved.
+- **Part C** (Enemies list) was designed with the user and approved.
 - **Part B** (per-chat customization and the settings cog): the user set its requirements (Chat+ drag-to-resize grips, movable bubbles, and a size, message size and location for each chat). Claude filled in the details after the user went to bed. The remaining judgment calls are listed in §B.7 for the morning review.
 
 ## 0. Background
@@ -283,15 +284,132 @@ Other modules:
 
 ---
 
-## C. Error handling (both parts)
+# Part C: Enemies list (approved)
+
+## C.1 Summary
+
+**The request** came from the user's players: an enemies list you can view on the Friends page, and a way to add enemies from player profiles.
+
+**The user's answers** (2026-09-29):
+- **Two independent lists:** a player can be both a friend and an enemy.
+- **Extras:** a red skull marks enemies in chats, and each enemy gets a private note (a reason).
+- **Page layout:** the page title becomes two big tabs, **FRIENDS | ENEMIES**.
+
+The user didn't want online alerts for enemies, because they would need background checks.
+
+## C.2 Data and storage
+
+- **Where:** a separate document, `localStorage['zcf:v1:{playerId}:enemies']` = `{ "v": 1, "enemies": { "123": { "id", "username", "avatar", "addedAt", "note?" } } }`, read and written only by `store.js`.
+  - It is separate for the same reason as the settings document (§B.5): older script versions normalize the main document and would drop an unknown `enemies` field.
+  - Use the same small document-store helper as `createSettingsStore` (get / update / subscribe / `storage`-event reload), so both share one implementation.
+- **Mutators** (pure, next to the friend ones in `state.js` or in a new `enemies.js`):
+  - `addEnemy`
+  - `removeEnemy`
+  - `setEnemyNote`, which reuses `normalizeNote` / `MAX_NOTE`
+  - `updateEnemyInfo`, which keeps usernames and avatars fresh from presence, like `updateFriendInfo`
+- **Export / Import** (the Private Messages window's `⋯` menu):
+  - The export file gains an optional `enemies: [{id, username, note?}]` array next to `friends`.
+  - Import merges it with the same rules as friends: add new ones, fill in a note only where there is none, never remove.
+  - The toast mentions enemies: "Imported 2 new friends, 1 new enemy and 3 notes."
+  - Older script versions ignore the extra array.
+
+## C.3 The page: FRIENDS | ENEMIES
+
+- **Routes:** the page handles `/friends` and **`/enemies`**; extend `isFriendsPath`.
+- **Title tabs:** the title becomes two big title tabs, `FRIENDS` and `ENEMIES`, in the same `text-h4 text-uppercase text-no-bg` style.
+  - The active tab is bright, and the other dims with a hover highlight.
+  - They are links to `/friends` and `/enemies`: a plain click calls `router.navigate`, and a modified click opens a new tab.
+- **The rest of the page** works the same on both tabs: the subtitle (`n of N online`), All / Online / Offline tabs, search over names and notes, sortable columns, and the Message / Edit note / Remove actions.
+- **The right-hand button** reads **+ Add enemy** on the Enemies tab. It uses the same search pop-out, where **Add** adds an enemy and shows **✓ Enemy** for existing ones.
+- **Remove on the Enemies tab** asks "Remove {name} from your enemies?".
+- **Enemy rows** show the red skull (§C.5) before the name chip.
+- **Empty state:** "No enemies yet. Use **Add enemy** above, or **Add Enemy** on a player's profile."
+- **Switching tabs:** search and the confirm/edit state reset, while sort and the All/Online/Offline tab carry over.
+- **Presence:** while `/enemies` is showing, the presence poller refreshes **enemies** instead of friends, with the same list-open budget (20 a minute, stalest first). Responses update enemies' saved usernames and avatars.
+- **Top-bar button:** stays the plain friends icon and opens `/friends`.
+
+## C.4 Profile button: Add Enemy
+
+- **Placement:** on another player's profile, a second cloned button sits **right after our Add Friend button**: `[Trade][Add Friend][Add Enemy][Mail]`.
+  - When Trade and Mail are hidden (a blocked player), it follows Add Friend after Block.
+  - There's no button on your own profile.
+- **Look:** icon `fas fa-skull`, label `Add Enemy`, in the same outline style as Add Friend.
+- **When they're already an enemy:** the label reads `Enemy`, and our own class sets the outline and text to `#ef5350`, like `zcf-is-friend` does for friends.
+  - Clicking it shows `Remove?` for 4s, and a second click removes them, the same as the friend button.
+- **Implementation:** generalize `src/ui/profile-button.js` into one component, created once per list (`friend`, `enemy`), with the label, icon, color class, `isOn`, add and remove passed in. Keep the existing friend-button tests passing, and add enemy ones.
+- **Username and avatar** for a new enemy come from `players.get(id)`, the same as for friends.
+
+## C.5 Enemy markers in chats
+
+A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `aria-label="Enemy"`) goes before an enemy's name:
+- **Private Messages window:** rows in the Chats, Friends and Faction tabs, and search results.
+- **DM window:** the header name, and the sender name on their messages.
+- **The game's Global, Faction and Activity chats:** before `.sender-name` in `.msg-cont` rows.
+  - Rows don't carry user IDs, so match the sender name to enemies' saved usernames, case-insensitively.
+  - Watch each chat's `.message-panel` for new rows with one `MutationObserver` per panel, handling only added nodes, batched per frame, so the cost is O(new rows).
+  - Insert our own `<i class="fas fa-skull zcf-enemy-mark">` as a sibling just before the name span. Never change the game's own nodes or attributes.
+  - Re-scan the visible rows when the enemies list changes.
+  - Mark each row we've handled with a `WeakSet`, not a DOM attribute.
+- **Friends and enemies at once:** a player who is both gets the skull too. Nothing is shown for friends.
+
+## C.6 Architecture (Part C)
+
+| Module | Status | Contents |
+|---|---|---|
+| `src/store.js` | changed | the generic document store; `createEnemiesStore` (and `createSettingsStore` from Part B on top of it) |
+| `src/enemies.js` | new, pure | mutators and normalization |
+| `src/backup.js` | changed | enemies in export/import; the new toast wording |
+| `src/ui/friends-page.js` | changed | title tabs, `/enemies`, the enemies data source, Add enemy, the skull |
+| `src/friends-table.js` | changed | takes the list to show (friends or enemies) instead of assuming friends |
+| `src/ui/profile-button.js` | changed | generalized, with two instances |
+| `src/ui/enemy-marks.js` | new | the game-chat sender marker (observer per message panel), plus a `markEnemy(el, name/id)` helper used by the PM and DM windows |
+| `src/app.js` | changed | enemies store, actions (`addEnemy`, `removeEnemy`, `setEnemyNote`), presence targets by route, wiring |
+
+## C.7 Tests
+
+- **`enemies.js`:** add, remove, note, info-update and normalization.
+- **The generic document store:** separate keys, cross-tab reload, corrupt input falling back to empty.
+- **`backup.js`:**
+  - enemies round-trip
+  - import merge and the notes rule
+  - an old-format file without `enemies` still imports
+  - the toast text
+- **`friends-page.js`:**
+  - `/enemies` shows the Enemies tab with enemy rows and skulls
+  - the title tabs navigate
+  - Add enemy uses the search, and shows ✓ Enemy
+  - the remove confirm wording
+  - the empty state
+  - presence targets enemies while on `/enemies`
+- **`profile-button.js`:**
+  - Add Enemy lands right after Add Friend
+  - the Enemy state, color class, and remove confirm
+  - the blocked-profile and own-profile cases
+  - the existing friend tests stay green
+- **`enemy-marks.js`:**
+  - a new game chat row from an enemy (case-insensitive) gets the skull, and a non-enemy's row doesn't
+  - no duplicates on re-scan
+  - marks appear and disappear when the enemies list changes
+  - game nodes' attributes are never changed
+- **The PM and DM windows:** skulls on enemy rows and headers.
+- **Load-order test** (`styles.test.js`): the new rules hold whichever stylesheet loads last.
+
+## C.8 Verify live
+
+1. `.msg-cont` / `.sender-name` is still the game's chat row markup, and our inserted skull survives new messages and scrolling. If the game re-renders rows, re-marking catches it.
+2. Where the Add Enemy button looks best in the profile's button row on desktop and on phones. The default is right after Add Friend.
+
+---
+
+## D. Error handling (all parts)
 
 - **Every new entry point is wrapped** (`safe()`, try/catch), and failures log once with `[ZCF]`.
 - **API failures:** Faction and Blocked show an inline "Couldn't load. Retry" line. Mark all as read stops with a toast. Search keeps the existing "Search failed. Try again." message.
 - **All player strings are text only** (names, previews, faction and blocked usernames), never `innerHTML`. Avatars use `avatarUrl()` as before.
 
-## D. Testing
+## E. Testing
 
-**Unit tests** (Vitest + jsdom):
+**Unit tests** (Vitest + jsdom). For Part C's tests, see §C.7.
 - `pm-view.js`: merging page 1 with extra pages, dropping system threads, dedupe, newest first, the `You:` / `Name:` preview, and faction/blocked row sorting.
 - `chat-custom/chats.js`: defaults, clamps, key validation, removal of entries equal to the defaults, corrupt input.
 - `chat-custom/geometry.js`: on-screen clamping; each grip's resize math and fixed edges; limits; the drag threshold.
@@ -329,7 +447,7 @@ Other modules:
 
 **Manual checklist:** add the new items to `docs/manual-test.md`.
 
-## E. Verify live (needs the user logged in; defaults already set above)
+## F. Verify live (needs the user logged in; defaults already set above)
 
 1. The `getFactionMembers` shape, and what it returns when you're not in a faction.
 2. `blockList` row fields and `total`; the `unblockUser` response.
@@ -339,7 +457,7 @@ Other modules:
 6. Our padlock and grips inside the game's chat headers survive the game's re-renders (opening and closing, switching rooms, new messages), or the keeper puts them back without flicker.
 7. A game chat set to `position:fixed` and a custom size still scrolls, loads history and sends normally; its GIF and emoji pickers still open in the right place.
 
-## F. Overnight build instructions (for the next session)
+## G. Overnight build instructions (for the next session)
 
 - **Branch:** work on a new branch `pm-and-settings` from `main`. Commit as the repo-local identity "Zed City Friends" (`git config user.name` must say so).
 - **Don't push or merge.** The user reviews in the morning.
@@ -348,5 +466,6 @@ Other modules:
   2. Execute it: TDD per task, batched commits.
   3. Run one code review at the end (a reviewer agent), fixing only Critical/Important issues and logging Minor ones.
   4. Set the version to 0.5.0 and build `dist/`.
-  5. Run the visual check (§D).
-- **Morning summary:** leave a short summary as the session's final message: what was built, the screenshots taken, the review findings and what was fixed, and the open questions (§B.7, §E).
+  5. Run the visual check (§E).
+- **Build order:** Part A (Private Messages), then Part C (Enemies), then Part B (per-chat customization and the settings cog), because B carries the most risk. Commit each part in a working, fully tested state. If something blocks a later part, stop there, keep what's done, and explain it in the morning summary rather than leaving a half-built part.
+- **Morning summary:** leave a short summary as the session's final message: what was built, the screenshots taken, the review findings and what was fixed, and the open questions (§B.7, §C.8, §F).
