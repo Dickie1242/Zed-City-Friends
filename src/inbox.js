@@ -109,6 +109,13 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
       const t = threads.find((x) => x.userId === userId);
       return t ? t.lastReply : null;
     },
+    // An older page of the thread list, for the Private Messages window's Chats tab. Nothing else
+    // (badges, pop-ups, change signals) looks at these; page 1 stays the poll's job.
+    async fetchPage(page) {
+      const r = await api.getChats(page);
+      if (!r.ok) return r;
+      return { ok: true, threads: normalizeThreads(r.data) };
+    },
     subscribe(fn) {
       subs.add(fn);
       return () => subs.delete(fn);

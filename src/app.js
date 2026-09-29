@@ -1,5 +1,6 @@
 // Wires the modules together: store, pollers, dock UI and profile button.
-import { createStore } from './store.js';
+import { createStore, createSettingsStore } from './store.js';
+import { setPmTab } from './settings.js';
 import { createRouter } from './router.js';
 import { createPlayers } from './players.js';
 import { createPresence } from './presence.js';
@@ -34,6 +35,7 @@ export const PRESENCE_PER_SWEEP = 20;
 
 export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
   const store = createStore({ playerId, storage, win, now });
+  const settings = createSettingsStore({ playerId, storage, win, now });
   const router = createRouter({ win, doc });
   const toast = createToaster(doc);
   const players = createPlayers({ api, now });
@@ -132,7 +134,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     interval: INTERVALS.dmInfo,
     doc,
   });
-  // A friends list is on screen: the dock's Friends window, or the Friends page.
+  // A friends list is on screen: the Private Messages window, or the Friends page.
   const listOpen = () => store.get().dock.friendsOpen || page.active;
   const presencePoller = makePoller({
     run: () => {
@@ -204,12 +206,13 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       store.update((s) => closeDm(s, id));
       if (activeDmId === id) activeDmId = null;
     },
-    toggleFriends() {
+    togglePm() {
       const open = !store.get().dock.friendsOpen;
       const small = dock.isSmall();
       store.update((s) => setFriendsOpen(s, open, { exclusive: small }));
       if (open && small) dock.minimizeGameChats();
     },
+    setPmTab: (tab) => settings.update((s) => setPmTab(s, tab)),
     setActiveDm(id) {
       if (activeDmId === id) return;
       activeDmId = id;
@@ -224,6 +227,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   };
 
   const services = {
+    api,
+    settings,
     playerId,
     myId: playerId,
     myName: playerName,
@@ -251,7 +256,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     page.scheduleRender();
   });
   presence.subscribe(() => {
-    view.friends.scheduleList();
+    view.pm.scheduleList();
     for (const d of store.get().dock.dms) {
       const w = view.dmWindow(d.id);
       if (w) w.update();
@@ -259,9 +264,10 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     page.scheduleRender();
   });
   inbox.subscribe(() => {
-    view.friends.scheduleList();
-    view.friends.syncBadge();
+    view.pm.scheduleList();
+    view.pm.syncBadge();
   });
+  settings.subscribe(() => view.render());
   router.onChange((path) => {
     profileButton.onRoute(path);
     page.onRoute(path);
@@ -315,6 +321,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       keeper.destroy();
       router.destroy();
       store.destroy();
+      settings.destroy();
     },
   };
 }

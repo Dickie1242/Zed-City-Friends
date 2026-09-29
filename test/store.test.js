@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createStore, storageKey, readGameRecentEmojis, rememberGameRecentEmoji } from '../src/store.js';
+import { createStore, storageKey, readGameRecentEmojis, rememberGameRecentEmoji, createDocStore, createSettingsStore, settingsKey } from '../src/store.js';
 import { addFriend } from '../src/state.js';
 import { memoryStorage } from './helpers.js';
 
@@ -291,5 +291,66 @@ describe('recent-emoji storage helpers', () => {
     const out = readGameRecentEmojis(storage);
     expect(out).toHaveLength(18);
     expect(out[0]).toBe('e19');
+  });
+});
+
+describe('document store', () => {
+  const normalize = (d) => {
+    if (!d || d.v !== 1) throw new Error('bad');
+    return { v: 1, n: Number(d.n) || 0 };
+  };
+  const make = (storage, win = new EventTarget()) => createDocStore({ key: 'k', empty: () => ({ v: 1, n: 0 }), normalize, storage, win, now: () => 7 });
+
+  it('reads, updates on top of other tabs, and saves under its own key', () => {
+    const storage = memoryStorage({ k: JSON.stringify({ v: 1, n: 2 }) });
+    const a = make(storage);
+    const b = make(storage);
+    expect(a.get()).toEqual({ v: 1, n: 2 });
+    a.update((d) => { d.n += 1; });
+    b.update((d) => { d.n += 10; });
+    expect(JSON.parse(storage.getItem('k'))).toEqual({ v: 1, n: 13 });
+    a.destroy();
+    b.destroy();
+  });
+
+  it('reloads on the storage event for its key only', () => {
+    const storage = memoryStorage();
+    const win = new EventTarget();
+    const store = make(storage, win);
+    const fn = vi.fn();
+    store.subscribe(fn);
+    storage.setItem('k', JSON.stringify({ v: 1, n: 5 }));
+    win.dispatchEvent(storageEvent('other'));
+    expect(fn).not.toHaveBeenCalled();
+    win.dispatchEvent(storageEvent('k'));
+    expect(store.get().n).toBe(5);
+    expect(fn).toHaveBeenCalledTimes(1);
+    store.destroy();
+  });
+
+  it('backs up a corrupt document and starts empty; leaves a newer version alone', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const storage = memoryStorage({ k: '{nope' });
+    const store = make(storage);
+    expect(store.get()).toEqual({ v: 1, n: 0 });
+    expect(storage.getItem('k:corrupt:7')).toBe('{nope');
+    store.destroy();
+    const newer = memoryStorage({ k: JSON.stringify({ v: 2, n: 9 }) });
+    const s2 = make(newer);
+    s2.update((d) => { d.n = 1; });
+    expect(s2.get().n).toBe(1);
+    expect(JSON.parse(newer.getItem('k')).v).toBe(2);
+    s2.destroy();
+  });
+
+  it('keeps the settings document beside the main one', () => {
+    const storage = memoryStorage();
+    const settings = createSettingsStore({ playerId: 1, storage, win: new EventTarget() });
+    expect(settings.key).toBe(settingsKey(1));
+    expect(settingsKey(1)).toBe('zcf:v1:1:settings');
+    settings.update((s) => { s.pmTab = 'friends'; });
+    expect(JSON.parse(storage.getItem('zcf:v1:1:settings')).pmTab).toBe('friends');
+    expect(storage.getItem(storageKey(1))).toBeNull();
+    settings.destroy();
   });
 });

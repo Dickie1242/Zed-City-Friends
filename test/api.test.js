@@ -39,6 +39,22 @@ describe('classifyResponse', () => {
 });
 
 describe('createApi', () => {
+  it('calls the faction, block-list and unblock endpoints the game uses', async () => {
+    const fetchImpl = vi.fn((url) => Promise.resolve(url.endsWith('csrfToken') ? response(200, { token: 'tok' }) : response(200, { success: true })));
+    const api = createApi({ fetchImpl });
+    await api.getFactionMembers();
+    await api.blockList(3);
+    const r = await api.unblockUser(41);
+    expect(r).toEqual({ ok: true, data: { success: true } });
+    const urls = fetchImpl.mock.calls.map(([u]) => u);
+    expect(urls).toContain('https://api.zed.city/getFactionMembers');
+    expect(urls).toContain('https://api.zed.city/blockList?page=3');
+    const [, init] = fetchImpl.mock.calls.find(([u]) => u.endsWith('unblockUser'));
+    expect(init.method).toBe('POST');
+    expect(init.headers['X-CSRF-Token']).toBe('tok');
+    expect(JSON.parse(init.body)).toEqual({ user_id: 41 });
+  });
+
   it('sends GETs with credentials and query params', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(200, []));
     const api = createApi({ fetchImpl });

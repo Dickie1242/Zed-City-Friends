@@ -2,7 +2,7 @@
 
 A userscript that adds a **friends list** and **Torn-style DM chat windows** to [Zed City](https://www.zed.city)'s bottom-right chat dock, next to the Global and Faction chats.
 
-- **Friends tab.** Your friends with live online status, a filter, a Recent section for other conversations, and a person-plus button to find and add players. When it's minimized, a green number shows your unread chats.
+- **Private Messages.** A window in the dock with **Chats** (every conversation, newest first, with previews), **Friends** (online first), **Faction** (your faction members) and **Blocked** (unblock in place) tabs. Search any player by name to start a chat. When it's minimized, a green number shows your unread chats.
 - **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
 - **GIFs and emoji.** Pick a GIF or an emoji right from the composer, rendered the same way the game's own chat does, including its custom Zed City emojis.
 - **Add Friend button** on player profiles, between Trade and Mail.
@@ -29,11 +29,11 @@ Zed City doesn't push new mail to the browser, so the script checks on a timer:
 | Idle | ~15s (the game's envelope badge: 60s) | 4 |
 | Game tab in the background | checked the moment you return | 0 |
 
-While the Friends window or Friends page is open, it also refreshes online/last-active status for your friends list, capped at 20 `getProfile` calls a minute (stalest friends first) no matter how many friends you have.
+While the Private Messages window or Friends page is open, it also refreshes online/last-active status for your friends list, capped at 20 `getProfile` calls a minute (stalest friends first) no matter how many friends you have.
 
 ## Backup
 
-In the Friends window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any.
+In the Private Messages window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any.
 
 ## Development
 
@@ -56,7 +56,7 @@ npm run build     # writes dist/zed-city-friends.user.js
 | `src/presence.js`, `src/players.js` | Online status cache, player search/lookup |
 | `src/router.js` | Page-change events and navigation via the game's router |
 | `src/app.js` | Wiring and polling policy |
-| `src/ui/*` | Dock mounting, Friends window, DM windows, profile button |
+| `src/ui/*` | Dock mounting, Private Messages window, DM windows, profile button |
 
 Design spec: `docs/superpowers/specs/2026-09-28-zed-city-friends-design.md`
 
@@ -64,9 +64,9 @@ Design spec: `docs/superpowers/specs/2026-09-28-zed-city-friends-design.md`
 
 Everything here maps onto the game's own code:
 
-- Each window (`ui/friends-window.js`, `ui/dm-window.js`) is a Vue SFC waiting to happen. The markup already uses the dock's `.chat-container` / `.chat-header` / `.chat-content` classes.
+- Each window (`ui/pm-window.js`, `ui/dm-window.js`) is a Vue SFC waiting to happen. The markup already uses the dock's `.chat-container` / `.chat-header` / `.chat-content` classes.
 - `store.js` / `state.js` become a Pinia store. The dock logic in `ui/dock.js` goes away once the windows render inside the layout component.
-- Only the existing endpoints are used: `getChats`, `getChatInfo`, `getChatMessages`, `getNewMessages`, `sendMail`, `getProfile`, `findPlayer`.
+- Only the existing endpoints are used: `getChats`, `getChatInfo`, `getChatMessages`, `getNewMessages`, `sendMail`, `getProfile`, `findPlayer`, `getFactionMembers`, `blockList`, `unblockUser`.
 
 Server-side changes that would remove the client-side workarounds:
 

@@ -1,16 +1,20 @@
-// The pop-out behind the person-plus button: search the game's players by name or ID and add them.
+// The pop-out behind the Friends page's Add button: search the game's players by name or ID and add them
+// to the list the page is showing (friends or enemies).
 import { h, clear, avatar } from './dom.js';
-import { debounce } from '../util.js';
+import { createPlayerSearch } from './player-search.js';
 
-export const MAX_RESULTS = 8;
+export { MAX_RESULTS } from './player-search.js';
 
-export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
-  let seq = 0;
+const MESSAGES = { idle: '', short: 'Keep typing…', searching: 'Searching…' };
+
+export function createAddFriendPopover({ players, isAdded, onAdd, onClose, title = 'Add friend', doneText = '✓ Friend' }) {
   let results = [];
+  let done = doneText;
 
   const input = h('input', { class: 'zcf-input', type: 'text', placeholder: 'Name or player ID', 'aria-label': 'Find a player' });
   const list = h('div', { class: 'zcf-results' });
-  const el = h('div', { class: 'zcf-pop', hidden: true }, h('div', { class: 'zcf-pop-title' }, 'Add friend'), input, list);
+  const titleEl = h('div', { class: 'zcf-pop-title' }, title);
+  const el = h('div', { class: 'zcf-pop', hidden: true }, titleEl, input, list);
 
   function message(text) {
     clear(list);
@@ -18,8 +22,8 @@ export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
   }
 
   function row(p) {
-    const action = isFriend(p.id)
-      ? h('span', { class: 'zcf-done' }, '✓ Friend')
+    const action = isAdded(p.id)
+      ? h('span', { class: 'zcf-done' }, done)
       : h('button', {
           class: 'zcf-add',
           type: 'button',
@@ -45,39 +49,21 @@ export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
     for (const p of results) list.appendChild(row(p));
   }
 
-  // `mine` is snapshotted per keystroke (below), not per debounced call, so a request already in
-  // flight is dropped as soon as the query moves on, even before the next debounce fires.
-  const search = debounce(async (mine, q) => {
-    let r;
-    try {
-      r = await players.search(q);
-    } catch {
-      r = { ok: false };
-    }
-    if (mine !== seq) return;
-    if (!r.ok) {
-      message('Search failed. Try again.');
-      return;
-    }
-    results = r.data.slice(0, MAX_RESULTS);
-    render();
-  }, 300);
-
-  input.addEventListener('input', () => {
-    const q = input.value.trim();
-    seq += 1;
-    const mine = seq;
-    if (q.length >= 2 || /^\d+$/.test(q)) {
-      message('Searching…');
-      search(mine, q);
-    } else {
-      search.cancel();
+  const search = createPlayerSearch({
+    players,
+    onState(st) {
+      if (st.kind === 'results') {
+        results = st.results;
+        render();
+        return;
+      }
       results = [];
-      message(q ? 'Keep typing…' : '');
-    }
+      message(st.kind === 'error' ? st.text : MESSAGES[st.kind]);
+    },
   });
-  // Capture phase, so Escape closes the pop-out no matter which of its children (input, a result's
-  // Add button, …) currently has focus.
+
+  input.addEventListener('input', () => search.set(input.value));
+  // Capture phase, so Escape closes the pop-out whichever of its children has focus.
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
@@ -96,7 +82,6 @@ export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
   function close() {
     el.hidden = true;
     search.cancel();
-    seq += 1;
     if (onClose) onClose();
   }
 
@@ -108,8 +93,13 @@ export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
     get isOpen() {
       return !el.hidden;
     },
-    // Re-draw "Add" / "✓ Friend" after the friends list changes elsewhere.
+    // Re-draw "Add" / "✓ Friend" after the list changes elsewhere.
     refresh() {
+      if (!el.hidden && results.length) render();
+    },
+    setLabels({ title: t, doneText: d }) {
+      titleEl.textContent = t;
+      done = d;
       if (!el.hidden && results.length) render();
     },
   };

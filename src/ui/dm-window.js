@@ -59,7 +59,7 @@ export function createDmWindow(services, userId) {
   });
   const composer = h('div', { class: 'zcf-composer' }, input, emojiBtn, gifBtn, sendBtn);
   const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, emojiPicker.el, gifPicker.el, composer);
-  const el = h('div', { class: 'chat-container zcf zcf-dm', dataset: { zcfDm: String(userId) } }, header, body);
+  const el = h('div', { class: 'chat-container zcf zcf-dm', dataset: { zcfDm: String(userId), zcfChat: `dm:${userId}` } }, header, body);
 
   // Safety net for close paths we don't call directly (Esc); the click/pick handlers below set
   // aria-expanded synchronously so tests don't need to wait on this.

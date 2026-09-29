@@ -17,6 +17,18 @@ function setup(rowsSequence) {
 }
 
 describe('inbox', () => {
+  it('fetches an older page of threads on request, normalized, without touching the poll state', async () => {
+    const { api, inbox } = setup([]);
+    api.getChats.mockResolvedValueOnce({ ok: true, data: [rawThread(8, { username: 'Old' })] });
+    const r = await inbox.fetchPage(2);
+    expect(api.getChats).toHaveBeenCalledWith(2);
+    expect(r.ok).toBe(true);
+    expect(r.threads.map((t) => [t.userId, t.username])).toEqual([[8, 'Old']]);
+    expect(inbox.threads()).toEqual([]);
+    api.getChats.mockResolvedValueOnce({ ok: false, kind: 'network' });
+    expect(await inbox.fetchPage(3)).toMatchObject({ ok: false, kind: 'network' });
+  });
+
   it('pops a minimized DM tab with a badge when a friend messages you', async () => {
     const { store, inbox } = setup([[rawThread(5, { username: 'Spike', newMail: 2 })]]);
     store.update((s) => addFriend(s, { id: 5, username: 'Spike' }, 0));

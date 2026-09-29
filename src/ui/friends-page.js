@@ -83,7 +83,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     icon('plus'), h('span', { class: 'zcf-page-add-long' }, 'Add friend'), h('span', { class: 'zcf-page-add-short' }, 'Add'));
   const pop = createAddFriendPopover({
     players,
-    isFriend: (id) => isFriend(store.get(), id),
+    isAdded: (id) => isFriend(store.get(), id),
     onAdd: (p) => {
       actions.addFriend(p);
       toast(`${p.username} added to friends`);

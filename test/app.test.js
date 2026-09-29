@@ -54,12 +54,12 @@ describe('app', () => {
     document.documentElement.classList.remove('zcf-on-friends');
   });
 
-  it('puts the Friends tab into the game dock, left of the game chats', () => {
+  it('puts Private Messages into the game dock, left of the game chats', () => {
     app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
     const dock = document.querySelector('.chat-containers');
     const first = dock.firstElementChild;
     expect(first.className).toBe('zcf-root');
-    expect(first.querySelector('.zcf-friends.chat-container.chat-minimized')).not.toBeNull();
+    expect(first.querySelector('.zcf-pm.chat-container.chat-minimized')).not.toBeNull();
     expect(first.nextElementSibling.classList.contains('faction-chat')).toBe(true);
   });
 
@@ -73,7 +73,7 @@ describe('app', () => {
     const tab = document.querySelector('.zcf-dm');
     expect(tab.classList.contains('chat-minimized')).toBe(true);
     expect(tab.querySelector('.unread-badge').textContent).toBe('1');
-    expect(document.querySelector('.zcf-friends .unread-badge').textContent).toBe('1');
+    expect(document.querySelector('.zcf-pm .unread-badge').textContent).toBe('1');
     expect(api.getChatMessages).not.toHaveBeenCalled();
 
     tab.querySelector('.chat-header').click();
@@ -160,7 +160,7 @@ describe('app', () => {
     app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(5, 6) }) });
     app.actions.openDm(5, { expand: true });
     app.actions.openDm(6, { expand: true });
-    app.actions.toggleFriends();
+    app.actions.togglePm();
     mql.set(true);
     await flush();
     const s = app.store.get();
@@ -224,7 +224,7 @@ describe('app', () => {
     app = createApp({ api, playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(5) }) });
     await vi.advanceTimersByTimeAsync(2 * INTERVALS.presence);
     expect(api.getProfile).not.toHaveBeenCalled();
-    app.actions.toggleFriends();
+    app.actions.togglePm();
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.getProfile).toHaveBeenCalledTimes(1);
   });

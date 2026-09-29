@@ -1,8 +1,10 @@
 // The only module that touches storage. One JSON document per player in localStorage.
 import { emptyState, normalizeState } from './state.js';
 import { warnOnce } from './util.js';
+import { defaultSettings, normalizeSettings } from './settings.js';
 
 export const storageKey = (playerId) => `zcf:v1:${playerId}`;
+export const settingsKey = (playerId) => `zcf:v1:${playerId}:settings`;
 
 // Shared with the game itself: its own emoji picker reads/writes the exact same key, the exact
 // same way (JSON array of shortcode names, most-recent-first, capped at 18).
@@ -168,4 +170,103 @@ export function createStore({ playerId, storage = window.localStorage, win = win
       subs.clear();
     },
   };
+}
+
+// A small JSON document of its own (settings, enemies), kept apart from the main document because older
+// script versions normalize that one and would drop fields they don't know. Same get / update / subscribe
+// shape as createStore, following other tabs through the storage event. A corrupt document is backed up
+// and replaced with empty(); one from a newer script version is left alone (changes stay in memory).
+export function createDocStore({ key, empty, normalize, storage = window.localStorage, win = window, now = () => Date.now() }) {
+  const subs = new Set();
+  let saved = true;
+
+  function read({ repair } = {}) {
+    let text = null;
+    try {
+      text = storage.getItem(key);
+    } catch (e) {
+      warnOnce(`docstore-read:${key}`, e);
+      return { doc: null, ok: false };
+    }
+    if (!text) return { doc: empty(), ok: true };
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && typeof parsed.v === 'number' && parsed.v > 1) {
+        warnOnce(`docstore-newer:${key}`, parsed.v);
+        return { doc: null, ok: false };
+      }
+      return { doc: normalize(parsed), ok: true };
+    } catch (e) {
+      warnOnce(`docstore-corrupt:${key}`, e);
+      if (!repair) return { doc: null, ok: false };
+      try {
+        storage.setItem(`${key}:corrupt:${now()}`, text);
+        storage.removeItem(key);
+      } catch {
+        return { doc: null, ok: false };
+      }
+      return { doc: empty(), ok: true, repaired: true };
+    }
+  }
+
+  const initial = read({ repair: true });
+  let doc = initial.ok ? initial.doc : empty();
+
+  function emit() {
+    for (const fn of [...subs]) {
+      try {
+        fn(doc);
+      } catch (e) {
+        warnOnce(`docstore-subscriber:${key}`, e);
+      }
+    }
+  }
+
+  function update(mutate) {
+    // Same merge rule as createStore: apply on top of what another tab saved, unless that copy is
+    // unusable or our own last save failed.
+    const r = read({ repair: true });
+    const draft = r.ok && saved && !r.repaired ? r.doc : JSON.parse(JSON.stringify(doc));
+    const result = mutate(draft);
+    doc = normalize(draft);
+    if (r.ok) {
+      try {
+        storage.setItem(key, JSON.stringify(doc));
+        saved = true;
+      } catch (e) {
+        saved = false;
+        warnOnce(`docstore-write:${key}`, e);
+      }
+    }
+    emit();
+    return result;
+  }
+
+  function onStorage(e) {
+    if (e.key !== key && e.key !== null) return;
+    const r = read({ repair: false });
+    if (!r.ok) return;
+    doc = r.doc;
+    saved = true;
+    emit();
+  }
+  win.addEventListener('storage', onStorage);
+
+  return {
+    key,
+    get: () => doc,
+    update,
+    subscribe(fn) {
+      subs.add(fn);
+      return () => subs.delete(fn);
+    },
+    destroy() {
+      win.removeEventListener('storage', onStorage);
+      subs.clear();
+    },
+  };
+}
+
+export function createSettingsStore({ playerId, ...opts }) {
+  return createDocStore({ key: settingsKey(playerId), empty: defaultSettings, normalize: normalizeSettings, ...opts });
 }

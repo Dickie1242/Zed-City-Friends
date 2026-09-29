@@ -125,7 +125,7 @@ describe('state', () => {
     expect(s.dock.dms.map((d) => d.id)).toEqual([2]);
   });
 
-  it('sums unread messages in every chat the Friends & Chats window lists', () => {
+  it('sums unread messages in every chat the Private Messages window lists', () => {
     const s = emptyState();
     addFriend(s, { id: 1, username: 'a' }, 0);
     addFriend(s, { id: 2, username: 'b' }, 0);

@@ -108,5 +108,8 @@ export function createApi({ fetchImpl = (...args) => fetch(...args), base = API_
     sendMail: (userId, message) => request('POST', 'sendMail', { body: { message, user_id: userId } }),
     getProfile: (userId) => request('GET', 'getProfile', { params: { user: userId } }),
     findPlayer: (q) => request('GET', 'findPlayer', { params: { q } }),
+    getFactionMembers: () => request('GET', 'getFactionMembers'),
+    blockList: (page = 1) => request('GET', 'blockList', { params: { page } }),
+    unblockUser: (userId) => request('POST', 'unblockUser', { body: { user_id: userId } }),
   };
 }

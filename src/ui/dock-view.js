@@ -1,5 +1,6 @@
-// Reconciles our windows inside the dock root: [DM windows in store order] then [Friends], left of the game's chats.
-import { createFriendsWindow } from './friends-window.js';
+// Reconciles our windows inside the dock root: [DM windows in store order] then [Private Messages]. CSS
+// `order` puts Private Messages right of the game's chats.
+import { createPmWindow } from './pm-window.js';
 import { createDmWindow } from './dm-window.js';
 
 export const SMALL_MAX_DMS = 2;
@@ -17,7 +18,7 @@ export function visibleDms(dms, small) {
 }
 
 export function createDockView({ root, services }) {
-  const friends = createFriendsWindow(services);
+  const pm = createPmWindow(services);
   const dms = new Map();
 
   function render() {
@@ -32,17 +33,17 @@ export function createDockView({ root, services }) {
       }
     }
     for (const e of entries) if (!dms.has(e.id)) dms.set(e.id, createDmWindow(services, e.id));
-    const desired = [...entries.map((e) => dms.get(e.id).el), friends.el];
+    const desired = [...entries.map((e) => dms.get(e.id).el), pm.el];
     desired.forEach((node, i) => {
       if (root.children[i] !== node) root.insertBefore(node, root.children[i] || null);
     });
     for (const w of dms.values()) w.update();
-    friends.update();
+    pm.update();
   }
 
   return {
     render,
-    friends,
+    pm,
     dmWindow: (id) => dms.get(id) || null,
   };
 }

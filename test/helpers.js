@@ -12,6 +12,9 @@ export function fakeApi(overrides = {}) {
     sendMail: vi.fn(() => ok({ message_id: 999 })),
     getProfile: vi.fn(() => ok({ online: false, active: null })),
     findPlayer: vi.fn(() => ok([])),
+    getFactionMembers: vi.fn(() => ok({ faction: null, members: [] })),
+    blockList: vi.fn(() => ok({ list: [], total: 0 })),
+    unblockUser: vi.fn(() => ok({ success: true })),
     ...overrides,
   };
 }
