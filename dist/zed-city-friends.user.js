@@ -2,7 +2,7 @@
 // @name         Zed City Friends
 // @namespace    zed-city-friends
 // @version      0.5.0
-// @description  Friends list and Torn-style DM windows in Zed City's chat dock.
+// @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
 // @run-at       document-idle
