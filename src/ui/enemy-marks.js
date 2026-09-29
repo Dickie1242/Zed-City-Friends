@@ -8,9 +8,12 @@ import { safe } from '../util.js';
 const ROW = '.msg-cont';
 // Past this many queued nodes (a hidden tab pauses the frame that drains them), drop the queue and rescan.
 const MAX_PENDING = 500;
+// A pass adding more rows than this to one chat is the chat drawing its history, not messages arriving.
+const MAX_FRESH = 5;
 
-// names(): the Set of lower-cased enemy usernames (enemies.js enemyNames). onRow(row): anything else done to
-// each game chat row as it appears and on refresh() (the time display, game-clock.js).
+// names(): the Set of lower-cased enemy usernames (enemies.js enemyNames). onRow(row, { fresh }): anything
+// else done to each game chat row as it appears (fresh when it arrived while you watched: at most MAX_FRESH
+// new rows in its chat in one pass) and on refresh() (never fresh).
 export function createEnemyMarks({ doc = document, win = window, keeper = null, names, onRow = null }) {
   let dockEl = null;
   let observer = null;
@@ -49,21 +52,30 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
     const set = names();
     const nodes = pending;
     pending = [];
+    const rows = [];
     for (const node of nodes) {
       if (!node.isConnected) continue;
       for (const row of rowsIn(node)) {
         if (handled.has(row) || !isGameRow(row)) continue;
         handled.add(row);
-        markRow(row, set);
-        if (onRow) onRow(row);
+        rows.push(row);
       }
+    }
+    const perChat = new Map();
+    for (const row of rows) {
+      const chat = row.closest('.chat-container');
+      perChat.set(chat, (perChat.get(chat) || 0) + 1);
+    }
+    for (const row of rows) {
+      markRow(row, set);
+      if (onRow) onRow(row, { fresh: perChat.get(row.closest('.chat-container')) <= MAX_FRESH });
     }
   }
 
   function onMutations(records) {
     for (const r of records) {
       for (const n of r.addedNodes) {
-        if (n.nodeType === 1 && !n.classList.contains('zcf-enemy-mark')) pending.push(n);
+        if (n.nodeType === 1 && !n.classList.contains('zcf-enemy-mark') && !n.classList.contains('zcf-mention-flag')) pending.push(n);
       }
     }
     if (pending.length > MAX_PENDING) {
@@ -81,7 +93,7 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
       if (!isGameRow(row)) continue;
       handled.add(row);
       markRow(row, set);
-      if (onRow) onRow(row);
+      if (onRow) onRow(row, { fresh: false });
     }
   }
 

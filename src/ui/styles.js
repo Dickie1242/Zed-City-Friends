@@ -44,6 +44,8 @@ body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.f
 .zcf-pm-confirm .zcf-row-main{font-size:12.5px}
 .zcf-enemy-mark{color:#ef5350;font-size:.85em;margin-right:4px}
 .zcf-muted-mark{font-size:.85em;margin-left:5px;opacity:.5}
+.chat-containers > .chat-container:not(.zcf) .msg-cont:has(.zcf-mention-flag){background:#f2c03714;box-shadow:inset 3px 0 #f2c037}
+::highlight(zcf-mention){color:#f2c037}
 .chat-containers .zcf-settings{order:4}
 .zcf-settings:not(.chat-minimized) .chat-content{overflow-y:auto}
 .zcf-set{padding:2px 0 8px}

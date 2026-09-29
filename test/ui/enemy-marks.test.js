@@ -74,4 +74,27 @@ describe('enemy marks in the game chats', () => {
     await flush();
     expect(document.querySelectorAll('.general-chat .zcf-enemy-mark')).toHaveLength(601);
   });
+
+  it('tells onRow which rows arrive while you watch: few at a time, never a refresh or a history load', async () => {
+    document.body.innerHTML = DOCK_HTML;
+    const seen = [];
+    marks = createEnemyMarks({ names: () => new Set(), onRow: (r, info) => seen.push([r.querySelector('.sender-name').textContent, info.fresh]) });
+    marks.start();
+    expect(seen.every(([, fresh]) => fresh === false)).toBe(true);
+    seen.length = 0;
+    const panel = document.querySelector('.general-chat .message-panel');
+    panel.insertAdjacentHTML('beforeend', row('Nyx'));
+    await flush();
+    await flush();
+    expect(seen).toEqual([['Nyx', true]]);
+    seen.length = 0;
+    panel.insertAdjacentHTML('beforeend', Array.from({ length: 6 }, (_, i) => row(`P${i}`)).join(''));
+    await flush();
+    await flush();
+    expect(seen).toHaveLength(6);
+    expect(seen.every(([, fresh]) => fresh === false)).toBe(true);
+    seen.length = 0;
+    marks.refresh();
+    expect(seen.every(([, fresh]) => fresh === false)).toBe(true);
+  });
 });
