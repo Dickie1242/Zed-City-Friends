@@ -6,13 +6,13 @@ import { findChats } from './chat-custom/registry.js';
 import { chatLabel, describeChat, isLocked, dmKey, dmIdOf } from '../chat-custom/chats.js';
 import { SOUNDS } from '../settings.js';
 import { WHATS_NEW } from '../whats-new.js';
-import { VERSION } from '../version.js';
+import { VERSION, DEV_PROFILE_ID } from '../version.js';
 
 const SOUND_LABELS = { off: 'Off', chirp: 'Chirp', ping: 'Ping', bell: 'Bell' };
 const ORDER = (key) => (key.startsWith('game:') ? 0 : key === 'pm' ? 1 : key === 'settings' ? 2 : 3);
 
 export function createSettingsWindow(services, { doc = document } = {}) {
-  const { store, settings, actions, sound } = services;
+  const { store, settings, actions, sound, router } = services;
   let marking = null; // { done, total } while Mark all as read runs
   let showNews = false;
   let showOlder = false;
@@ -83,6 +83,22 @@ export function createSettingsWindow(services, { doc = document } = {}) {
       showNews && showOlder ? older.map(versionBlock) : null);
   }
 
+  // A plain left click navigates in-app; middle and modified clicks open the profile in a new tab.
+  function devLink() {
+    if (!DEV_PROFILE_ID) return null;
+    const href = `/profile/${DEV_PROFILE_ID}`;
+    return h('a', {
+      class: 'zcf-set-dev',
+      href,
+      'data-zcf-focus': 'dev',
+      onclick: (e) => {
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        router.navigate(href);
+      },
+    }, h('i', { class: 'fas fa-user-plus', 'aria-hidden': 'true' }), ' Become friends or enemies with the dev!');
+  }
+
   async function markAll() {
     if (marking) return;
     marking = { done: 0, total: 0 };
@@ -117,7 +133,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
           h('button', { class: 'zcf-mini', type: 'button', 'data-zcf-focus': `reset:${r.key}`, disabled: !r.entry, onclick: () => actions.resetChat(r.key) }, 'Reset'))),
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
       section('Sounds', h('label', { class: 'zcf-set-sound' }, h('span', null, 'New private message'), select, play)),
-      section('About', h('div', { class: 'zcf-set-about' }, `Zed City Friends v${VERSION}`), whatsNew()),
+      section('About', h('div', { class: 'zcf-set-about' }, `Zed City Friends v${VERSION}`), whatsNew(), devLink()),
     ];
   }
 

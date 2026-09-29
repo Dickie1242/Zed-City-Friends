@@ -3,6 +3,7 @@ import { createSettingsWindow } from '../../src/ui/settings-window.js';
 import { openDm } from '../../src/state.js';
 import { updateChat } from '../../src/settings.js';
 import { WHATS_NEW } from '../../src/whats-new.js';
+import { DEV_PROFILE_ID } from '../../src/version.js';
 import { makeServices } from './services.js';
 import { DOCK_HTML } from '../fixtures/game-dom.js';
 import { flush } from '../helpers.js';
@@ -111,5 +112,17 @@ describe('chat settings window', () => {
     expect(el.querySelector('.zcf-news img, .zcf-news a')).toBeNull();
     button(el, `What's new in v${WHATS_NEW[0].version} ▾`).click();
     expect(el.querySelector('.zcf-news-ver')).toBeNull();
+  });
+
+  it('ends with a small link to the dev\'s profile, opened in-app', () => {
+    const { services, el } = mount();
+    const link = el.querySelector('.zcf-set-dev');
+    expect(link.textContent.trim()).toBe('Become friends or enemies with the dev!');
+    expect(link.getAttribute('href')).toBe(`/profile/${DEV_PROFILE_ID}`);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(services.router.navigate).toHaveBeenCalledWith(`/profile/${DEV_PROFILE_ID}`);
+    expect(el.querySelector('.zcf-set-sec:last-child').lastElementChild).toBe(link);
   });
 });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.5.0
+// @version      0.5.1
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
@@ -5311,7 +5311,7 @@ sandfish		/items/sandfish.webp`;
   // src/whats-new.js
   var WHATS_NEW = [
     {
-      version: "0.5.0",
+      version: "0.5.x",
       date: "2026-09-29",
       features: [
         {
@@ -5382,13 +5382,14 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.5.0" : "dev";
+  var VERSION = true ? "0.5.1" : "dev";
+  var DEV_PROFILE_ID = 27581;
 
   // src/ui/settings-window.js
   var SOUND_LABELS = { off: "Off", chirp: "Chirp", ping: "Ping", bell: "Bell" };
   var ORDER = (key) => key.startsWith("game:") ? 0 : key === "pm" ? 1 : key === "settings" ? 2 : 3;
   function createSettingsWindow(services, { doc = document } = {}) {
-    const { store, settings, actions, sound } = services;
+    const { store, settings, actions, sound, router } = services;
     let marking = null;
     let showNews = false;
     let showOlder = false;
@@ -5455,6 +5456,20 @@ sandfish		/items/sandfish.webp`;
         showNews && showOlder ? older.map(versionBlock) : null
       );
     }
+    function devLink() {
+      if (!DEV_PROFILE_ID) return null;
+      const href = `/profile/${DEV_PROFILE_ID}`;
+      return h("a", {
+        class: "zcf-set-dev",
+        href,
+        "data-zcf-focus": "dev",
+        onclick: (e) => {
+          if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          router.navigate(href);
+        }
+      }, h("i", { class: "fas fa-user-plus", "aria-hidden": "true" }), " Become friends or enemies with the dev!");
+    }
     async function markAll() {
       if (marking) return;
       marking = { done: 0, total: 0 };
@@ -5499,7 +5514,7 @@ sandfish		/items/sandfish.webp`;
           h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, "Reset all chats")
         ),
         section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
-        section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew())
+        section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
       ];
     }
     function render() {
@@ -7548,6 +7563,9 @@ sandfish		/items/sandfish.webp`;
 .zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
 .zcf-set-about{font-size:12px;opacity:.6}
+.zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
+.zcf-set-dev:hover{opacity:1;text-decoration:underline}
+.zcf-set-dev i{font-size:10px}
 .zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .zcf-news-toggle:hover{text-decoration:underline}
 .zcf-news-ver{margin-top:8px}

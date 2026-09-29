@@ -53,6 +53,9 @@ export const CSS = `
 .zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
 .zcf-set-about{font-size:12px;opacity:.6}
+.zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
+.zcf-set-dev:hover{opacity:1;text-decoration:underline}
+.zcf-set-dev i{font-size:10px}
 .zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .zcf-news-toggle:hover{text-decoration:underline}
 .zcf-news-ver{margin-top:8px}

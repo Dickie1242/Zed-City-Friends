@@ -2,7 +2,7 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
-    version: '0.5.0',
+    version: '0.5.x',
     date: '2026-09-29',
     features: [
       {
