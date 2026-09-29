@@ -162,9 +162,8 @@ export function createConversation({
       emit();
       return r;
     }
-    const wasBusy = state.busy;
-    state.busy = null;
-    let changed = wasBusy !== null;
+    // Don't clear `busy` here: getChatInfo succeeding doesn't prove the mail endpoints work again.
+    let changed = false;
     const info = r.data && (r.data[userId] || r.data[String(userId)]);
     if (info && typeof info === 'object') {
       state.info = {

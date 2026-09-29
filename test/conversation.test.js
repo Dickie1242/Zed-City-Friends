@@ -227,7 +227,7 @@ describe('conversation', () => {
     expect(c.state.hasMore).toBe(true);
   });
 
-  it('clears busy on a successful refreshInfo', async () => {
+  it('keeps busy through a successful refreshInfo, since only the mail endpoints decide it', async () => {
     const api = fakeApi({
       getChatMessages: vi.fn().mockResolvedValue({ ok: false, kind: 'busy', busy: 'traveling' }),
       getChatInfo: vi.fn().mockResolvedValue({ ok: true, data: { 2: { username: 'Spike' } } }),
@@ -236,7 +236,7 @@ describe('conversation', () => {
     await c.loadInitial();
     expect(c.state.busy).toBe('traveling');
     await c.refreshInfo();
-    expect(c.state.busy).toBeNull();
+    expect(c.state.busy).toBe('traveling');
   });
 
   it('flags busy from a failed poll', async () => {
