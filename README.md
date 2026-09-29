@@ -81,3 +81,7 @@ Server-side changes that would remove the client-side workarounds:
 1. **Push new mail over the existing socket.io connection** (for example a `new-mail` event), instead of the client polling `getChats` and `getNewMessages`.
 2. **A `friends` table** with requests and approval, synced across devices, instead of per-browser storage.
 3. **A batched presence endpoint** (online / last active for a list of ids), instead of one `getProfile` per friend.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

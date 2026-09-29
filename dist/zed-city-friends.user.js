@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.5.1
+// @version      0.5.2
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
+// @license      MIT
 // @match        https://www.zed.city/*
 // @grant        none
 // @run-at       document-idle
@@ -5382,7 +5383,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.5.1" : "dev";
+  var VERSION = true ? "0.5.2" : "dev";
   var DEV_PROFILE_ID = 27581;
 
   // src/ui/settings-window.js

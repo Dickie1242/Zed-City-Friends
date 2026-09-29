@@ -10,6 +10,7 @@ describe('build', () => {
     expect(text.startsWith(HEADER)).toBe(true);
     expect(text).toContain('// @match        https://www.zed.city/*');
     expect(text).toContain('// @grant        none');
+    expect(text).toContain('// @license      MIT');
     expect(text).not.toMatch(/\bimport\s*[{*]/);
     // ~272 KB readable in 0.5.0 (Greasy Fork forbids minified code): the ~50 KB emoji table, the
     // Friends/Enemies page, and since 0.5.0 Private Messages, Chat settings and per-chat customization.

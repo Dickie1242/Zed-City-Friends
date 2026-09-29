@@ -13,6 +13,7 @@ export const HEADER = `// ==UserScript==
 // @namespace    zed-city-friends
 // @version      ${pkg.version}
 // @description  ${pkg.description}
+// @license      ${pkg.license}
 // @match        https://www.zed.city/*
 // @grant        none
 // @run-at       document-idle
