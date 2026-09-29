@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createProfileButton } from '../../src/ui/profile-button.js';
+import { createProfileButton, ENEMY_BUTTON } from '../../src/ui/profile-button.js';
 import { PROFILE_OTHER_HTML, PROFILE_BLOCKED_HTML, PROFILE_OWN_HTML } from '../fixtures/game-dom.js';
 import { makeServices } from './services.js';
 import { flush } from '../helpers.js';
@@ -97,5 +97,77 @@ describe('profile button', () => {
     await flush();
     expect(labels()).toEqual(['Block', 'Trade', 'Add Friend', 'Mail']);
     pb.onRoute('/inventory');
+  });
+});
+
+function setupBoth(html, profile = { username: 'TePuu', avatar: 'a.png' }) {
+  document.body.innerHTML = html;
+  const services = makeServices();
+  services.players.get = vi.fn().mockResolvedValue({ ok: true, data: profile });
+  const friend = createProfileButton({ ...services });
+  const enemy = createProfileButton({
+    spec: ENEMY_BUTTON,
+    isOn: (id) => services.isEnemy(id),
+    add: services.actions.addEnemy,
+    remove: services.actions.removeEnemy,
+    players: services.players,
+    toast: services.toast,
+    after: () => friend.wrap,
+  });
+  services.store.subscribe(() => friend.refresh());
+  services.enemies.subscribe(() => enemy.refresh());
+  mounted.push(friend, enemy);
+  return { services, friend, enemy };
+}
+const route = (b, path) => {
+  b.friend.onRoute(path);
+  b.enemy.onRoute(path);
+};
+
+describe('enemy profile button', () => {
+  beforeEach(() => vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(cb, 0)));
+  afterEach(() => {
+    for (const pb of mounted) pb.destroy();
+    mounted = [];
+    vi.unstubAllGlobals();
+  });
+
+  it('adds "Add Enemy" right after Add Friend, in the same outline style', () => {
+    const b = setupBoth(PROFILE_OTHER_HTML);
+    route(b, '/profile/42');
+    expect(labels()).toEqual(['Block', 'Trade', 'Add Friend', 'Add Enemy', 'Mail']);
+    const btn = document.querySelector('.zcf-profile-btn-enemy .q-btn');
+    expect(btn.classList.contains('q-btn--outline')).toBe(true);
+    expect(btn.classList.contains('text-grey-4')).toBe(true);
+    expect(btn.querySelector('i').classList.contains('fa-skull')).toBe(true);
+  });
+
+  it('turns red as "Enemy" once added, and removes only after a confirming click', async () => {
+    const b = setupBoth(PROFILE_OTHER_HTML);
+    route(b, '/profile/42');
+    const btn = document.querySelector('.zcf-profile-btn-enemy .q-btn');
+    btn.click();
+    await flush();
+    expect(b.services.enemies.get().enemies[42]).toMatchObject({ username: 'TePuu', avatar: 'a.png' });
+    expect(b.services.toast).toHaveBeenCalledWith('TePuu added to enemies');
+    expect(labels()[3]).toBe('Enemy');
+    expect(btn.classList.contains('zcf-is-enemy')).toBe(true);
+    expect(btn.classList.contains('text-grey-4')).toBe(false);
+    btn.click();
+    await flush();
+    expect(labels()[3]).toBe('Remove?');
+    btn.click();
+    await flush();
+    expect(b.services.enemies.get().enemies[42]).toBeUndefined();
+    expect(labels()[3]).toBe('Add Enemy');
+  });
+
+  it('follows Add Friend after Block on a blocked profile, and adds nothing on your own', () => {
+    const b = setupBoth(PROFILE_BLOCKED_HTML);
+    route(b, '/profile/42');
+    expect(labels()).toEqual(['Unblock', 'Add Friend', 'Add Enemy']);
+    const own = setupBoth(PROFILE_OWN_HTML);
+    route(own, '/profile/1');
+    expect(document.querySelector('.zcf-profile-btn')).toBeNull();
   });
 });

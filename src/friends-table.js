@@ -39,11 +39,11 @@ export function nextSort(sort, key) {
   return { key, dir: FIRST_DIR[key] || 'asc' };
 }
 
-// friends: the saved friends map; presence(id): cache entry or null; threads: saved thread state (unread).
-// pinned: ids kept in the list even when they no longer match the tab (a row mid-edit or mid-confirm).
-export function buildFriendsTable({ friends, presence, threads = {}, tab = 'all', query = '', sort = DEFAULT_SORT, pinned = [] }) {
+// list (or friends): the saved map to show, friends or enemies; presence(id): cache entry or null;
+// threads: saved thread state (unread). pinned: ids kept even when they no longer match the tab.
+export function buildFriendsTable({ list, friends, presence, threads = {}, tab = 'all', query = '', sort = DEFAULT_SORT, pinned = [] }) {
   const q = String(query || '').trim().toLowerCase();
-  const all = Object.values(friends).map((f) => {
+  const all = Object.values(list || friends || {}).map((f) => {
     const p = presence(f.id);
     return {
       id: f.id,

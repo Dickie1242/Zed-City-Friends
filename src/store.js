@@ -2,9 +2,11 @@
 import { emptyState, normalizeState } from './state.js';
 import { warnOnce } from './util.js';
 import { defaultSettings, normalizeSettings } from './settings.js';
+import { emptyEnemies, normalizeEnemies } from './enemies.js';
 
 export const storageKey = (playerId) => `zcf:v1:${playerId}`;
 export const settingsKey = (playerId) => `zcf:v1:${playerId}:settings`;
+export const enemiesKey = (playerId) => `zcf:v1:${playerId}:enemies`;
 
 // Shared with the game itself: its own emoji picker reads/writes the exact same key, the exact
 // same way (JSON array of shortcode names, most-recent-first, capped at 18).
@@ -269,4 +271,8 @@ export function createDocStore({ key, empty, normalize, storage = window.localSt
 
 export function createSettingsStore({ playerId, ...opts }) {
   return createDocStore({ key: settingsKey(playerId), empty: defaultSettings, normalize: normalizeSettings, ...opts });
+}
+
+export function createEnemiesStore({ playerId, ...opts }) {
+  return createDocStore({ key: enemiesKey(playerId), empty: emptyEnemies, normalize: normalizeEnemies, ...opts });
 }

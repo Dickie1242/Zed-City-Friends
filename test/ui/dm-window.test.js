@@ -332,4 +332,20 @@ describe('dm window', () => {
     el.querySelector('[title="Close"]').click();
     expect(services.store.get().dock.dms).toEqual([]);
   });
+
+  it('shows a skull for an enemy in the header and on their messages', async () => {
+    const { el, services, win } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00'), rawMsg(2, ME, 'yo', '2026-09-28 14:03:00')] }),
+    });
+    await flush();
+    const headMark = el.querySelector('.chat-title .zcf-enemy-mark');
+    expect(headMark.hidden).toBe(true);
+    expect(el.classList.contains('zcf-enemy')).toBe(false);
+    services.actions.addEnemy({ id: THEM, username: 'Spike' });
+    win.update();
+    expect(headMark.hidden).toBe(false);
+    expect(el.classList.contains('zcf-enemy')).toBe(true);
+    expect(el.querySelector('.zcf-them .zcf-enemy-mark')).not.toBeNull();
+    expect(el.querySelectorAll('.zcf-sender:not(.zcf-them) .zcf-enemy-mark')).toHaveLength(0);
+  });
 });

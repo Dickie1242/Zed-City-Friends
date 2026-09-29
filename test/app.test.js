@@ -259,4 +259,36 @@ describe('app', () => {
     const checked = new Set(api.getProfile.mock.calls.map((c) => c[0]));
     for (const id of ids.slice(20)) expect(checked.has(id)).toBe(true);
   });
+
+  it('shows the Enemies page on /enemies and checks presence for enemies there, not friends', async () => {
+    vi.useFakeTimers();
+    document.body.insertAdjacentHTML('beforeend', PAGE_404_HTML);
+    window.history.replaceState({}, '', '/enemies');
+    const storage = storageWith({ friends: friends(5) });
+    storage.setItem(`zcf:v1:${ME}:enemies`, JSON.stringify({ v: 1, enemies: { 9: { id: 9, username: 'Grim' } } }));
+    const api = fakeApi();
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(document.querySelector('main.zcf-page .zcf-chip-name').textContent).toBe('Grim');
+    expect(api.getProfile.mock.calls.map((c) => c[0])).toEqual([9]);
+  });
+
+  it("puts skulls before enemies' names in the game's chat", () => {
+    const storage = memoryStorage({ [`zcf:v1:${ME}:enemies`]: JSON.stringify({ v: 1, enemies: { 9: { id: 9, username: 'nyx' } } }) });
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage });
+    const marked = [...document.querySelectorAll('.general-chat .msg-cont')].filter((r) => r.querySelector('.zcf-enemy-mark'));
+    expect(marked.map((r) => r.querySelector('.sender-name').textContent)).toEqual(['Nyx']);
+    app.actions.removeEnemy(9);
+    expect(document.querySelectorAll('.general-chat .zcf-enemy-mark')).toHaveLength(0);
+  });
+
+  it('exports and imports enemies with friends', () => {
+    const storage = storageWith({ friends: friends(5) });
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage });
+    app.actions.addEnemy({ id: 9, username: 'Grim' });
+    const text = app.actions.exportFriends();
+    expect(JSON.parse(text).enemies).toEqual([{ id: 9, username: 'Grim' }]);
+    app.actions.removeEnemy(9);
+    expect(app.actions.importFriends(text)).toEqual({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
+  });
 });

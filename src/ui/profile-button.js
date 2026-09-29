@@ -1,11 +1,49 @@
-// "Add Friend" / "Friends" button on /profile/{id}, cloned from the game's own Mail button so it matches exactly.
+// A button on /profile/{id} for one of your lists (Add Friend, Add Enemy), cloned from the game's own
+// Mail button so it matches exactly. One instance per list; `after` puts one right after another.
 import { isFriend } from '../state.js';
 import { safe, warnOnce } from '../util.js';
 
 export const PROFILE_PATH = /^\/profile\/(\d+)\/?$/;
 const CONFIRM_MS = 4000;
 
-export function createProfileButton({ doc = document, win = window, store, actions, players, toast }) {
+export const FRIEND_BUTTON = {
+  key: 'friend',
+  label: 'Add Friend',
+  onLabel: 'Friends',
+  icon: 'fa-user-plus',
+  onIcon: 'fa-user-check',
+  onClass: 'zcf-is-friend',
+  addTitle: 'Add to your friends list',
+  removeTitle: 'Click to remove from friends',
+  added: (name) => `${name} added to friends`,
+};
+
+export const ENEMY_BUTTON = {
+  key: 'enemy',
+  label: 'Add Enemy',
+  onLabel: 'Enemy',
+  icon: 'fa-skull',
+  onIcon: 'fa-skull',
+  onClass: 'zcf-is-enemy',
+  addTitle: 'Add to your enemies list',
+  removeTitle: 'Click to remove from enemies',
+  added: (name) => `${name} added to enemies`,
+};
+
+// Without `spec`, it's the friend button over `store` and `actions` (the 0.4 call shape).
+export function createProfileButton({
+  doc = document,
+  win = window,
+  spec = FRIEND_BUTTON,
+  store,
+  actions,
+  isOn = (id) => isFriend(store.get(), id),
+  add = (p) => actions.addFriend(p),
+  remove = (id) => actions.removeFriend(id),
+  players,
+  toast,
+  after = null,
+}) {
   let profileId = null;
   let wrap = null;
   let button = null;
@@ -33,12 +71,12 @@ export function createProfileButton({ doc = document, win = window, store, actio
 
   function refresh() {
     if (!button || !button.isConnected || profileId === null) return;
-    const friend = isFriend(store.get(), profileId);
-    setIcon(friend ? 'fa-user-check' : 'fa-user-plus');
-    label.textContent = friend ? (confirming ? 'Remove?' : 'Friends') : 'Add Friend';
-    button.classList.toggle('zcf-is-friend', friend);
-    button.classList.toggle('text-grey-4', !friend);
-    button.title = friend ? 'Click to remove from friends' : 'Add to your friends list';
+    const on = isOn(profileId);
+    setIcon(on ? spec.onIcon : spec.icon);
+    label.textContent = on ? (confirming ? 'Remove?' : spec.onLabel) : spec.label;
+    button.classList.toggle(spec.onClass, on);
+    button.classList.toggle('text-grey-4', !on);
+    button.title = on ? spec.removeTitle : spec.addTitle;
   }
 
   async function onClick(e) {
@@ -46,11 +84,11 @@ export function createProfileButton({ doc = document, win = window, store, actio
     e.stopPropagation();
     const id = profileId;
     if (id === null) return;
-    if (isFriend(store.get(), id)) {
+    if (isOn(id)) {
       if (confirming) {
         confirming = false;
         clearTimeout(confirmTimer);
-        actions.removeFriend(id);
+        remove(id);
       } else {
         confirming = true;
         confirmTimer = setTimeout(() => {
@@ -64,8 +102,8 @@ export function createProfileButton({ doc = document, win = window, store, actio
     const r = await players.get(id);
     const data = r.ok && r.data ? r.data : {};
     const username = typeof data.username === 'string' && data.username ? data.username : `#${id}`;
-    actions.addFriend({ id, username, avatar: typeof data.avatar === 'string' ? data.avatar : null });
-    toast(`${username} added to friends`);
+    add({ id, username, avatar: typeof data.avatar === 'string' ? data.avatar : null });
+    toast(spec.added(username));
   }
 
   // Returns true once there is nothing left to do on this page (inserted, or it's our own profile).
@@ -78,9 +116,11 @@ export function createProfileButton({ doc = document, win = window, store, actio
     const block = findButton('fa-ban', /^(un)?block$/i);
     const template = mail || block;
     if (!template || !template.parentElement) return false;
+    const prev = after ? after() : null;
+    if (after && !(prev && prev.isConnected)) return false; // wait for the button this one follows
 
     wrap = template.parentElement.cloneNode(true);
-    wrap.classList.add('zcf-profile-btn');
+    wrap.classList.add('zcf-profile-btn', `zcf-profile-btn-${spec.key}`);
     button = wrap.querySelector('.q-btn');
     button.removeAttribute('href');
     button.removeAttribute('to');
@@ -93,9 +133,10 @@ export function createProfileButton({ doc = document, win = window, store, actio
       label.className = 'block';
       button.querySelector('.q-btn__content').appendChild(label);
     }
-    button.addEventListener('click', safe('profile-button-click', onClick));
+    button.addEventListener('click', safe(`profile-button-click-${spec.key}`, onClick));
 
-    if (mail && trade) trade.parentElement.after(wrap);
+    if (prev) prev.after(wrap);
+    else if (mail && trade) trade.parentElement.after(wrap);
     else if (mail) mail.parentElement.before(wrap);
     else block.parentElement.after(wrap);
     confirming = false;
@@ -130,7 +171,7 @@ export function createProfileButton({ doc = document, win = window, store, actio
     });
     observer.observe(doc.body, { childList: true, subtree: true });
     warnTimer = setTimeout(() => {
-      if (!wrap && !findButton('fa-cog', /^settings$/i)) warnOnce('profile-buttons-not-found', path);
+      if (!wrap && !findButton('fa-cog', /^settings$/i)) warnOnce(`profile-buttons-not-found-${spec.key}`, path);
     }, 10000);
   }
 
@@ -143,5 +184,13 @@ export function createProfileButton({ doc = document, win = window, store, actio
     profileId = null;
   }
 
-  return { onRoute, refresh, tryInsert, destroy };
+  return {
+    onRoute,
+    refresh,
+    tryInsert,
+    destroy,
+    get wrap() {
+      return wrap;
+    },
+  };
 }

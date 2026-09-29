@@ -1,9 +1,10 @@
 // Real store + real conversations over a fake api, with simple stand-ins for everything else.
 import { vi } from 'vitest';
-import { createStore, createSettingsStore } from '../../src/store.js';
+import { createStore, createSettingsStore, createEnemiesStore } from '../../src/store.js';
 import { createConversations } from '../../src/conversation.js';
 import { addFriend, removeFriend, openDm, setDmOpen, closeDm, setFriendsOpen, setFriendNote } from '../../src/state.js';
 import { setPmTab } from '../../src/settings.js';
+import { addEnemy, removeEnemy, setEnemyNote, isEnemy } from '../../src/enemies.js';
 import { exportFriends, parseImport, mergeImport } from '../../src/backup.js';
 import { fakeApi, memoryStorage } from '../helpers.js';
 
@@ -12,6 +13,7 @@ export const ME = 1;
 export function makeServices({ api = fakeApi(), threads = [], presence = {}, searchResults = [], fetchImpl, storage = memoryStorage(), olderPages = [] } = {}) {
   const store = createStore({ playerId: ME, storage });
   const settings = createSettingsStore({ playerId: ME, storage });
+  const enemies = createEnemiesStore({ playerId: ME, storage });
   const conversations = createConversations({ api, myId: ME });
   const actions = {
     addFriend: vi.fn((p) => store.update((s) => addFriend(s, p, 0))),
@@ -27,6 +29,9 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     togglePm: vi.fn(() => store.update((s) => setFriendsOpen(s, !s.dock.friendsOpen))),
     setPmTab: vi.fn((tab) => settings.update((s) => setPmTab(s, tab))),
     setActiveDm: vi.fn(),
+    addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
+    removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
+    setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),
     exportFriends: () => exportFriends(store.get(), ME),
     importFriends: (text) => {
       const r = parseImport(text, ME);
@@ -41,6 +46,8 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     myName: 'Me',
     store,
     settings,
+    enemies,
+    isEnemy: (id) => isEnemy(enemies.get(), id),
     storage,
     actions,
     conversations,

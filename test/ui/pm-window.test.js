@@ -334,4 +334,17 @@ describe('private messages window', () => {
     expect(after).not.toBe(before);
     expect(document.activeElement).toBe(after);
   });
+
+  it('puts a skull before enemies in the Chats rows and search results', async () => {
+    vi.useFakeTimers();
+    const { services, el } = mount({ threads: [thread(9, { username: 'Grim' }), thread(8)], searchResults: [{ id: 9, username: 'Grim', avatar: null }] });
+    services.actions.addEnemy({ id: 9, username: 'Grim' });
+    current.update();
+    const rows = list(el).querySelectorAll('.zcf-row');
+    expect(rows[1].querySelector('.zcf-name .zcf-enemy-mark')).not.toBeNull();
+    expect(rows[0].querySelector('.zcf-enemy-mark')).toBeNull();
+    typeSearch(el, 'gri');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(list(el).querySelector('.zcf-row .zcf-enemy-mark')).not.toBeNull();
+  });
 });

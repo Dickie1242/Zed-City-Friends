@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { exportFriends, parseImport, mergeImport, importMessage } from '../src/backup.js';
+import { exportFriends, parseImport, mergeImport, mergeEnemiesImport, importMessage } from '../src/backup.js';
 import { emptyState, addFriend, setFriendNote, MAX_NOTE } from '../src/state.js';
+import { emptyEnemies, addEnemy, setEnemyNote } from '../src/enemies.js';
 
 describe('backup', () => {
   it('round-trips an export', () => {
@@ -8,7 +9,7 @@ describe('backup', () => {
     addFriend(s, { id: 5, username: 'Spike', avatar: 'a.png' }, 0);
     const text = exportFriends(s, 77);
     expect(JSON.parse(text)).toEqual({ v: 1, playerId: 77, friends: [{ id: 5, username: 'Spike' }] });
-    expect(parseImport(text, 77)).toEqual({ ok: true, friends: [{ id: 5, username: 'Spike' }] });
+    expect(parseImport(text, 77)).toEqual({ ok: true, friends: [{ id: 5, username: 'Spike' }], enemies: [] });
   });
 
   it('rejects bad files and other players', () => {
@@ -23,7 +24,7 @@ describe('backup', () => {
       playerId: 1,
       friends: [{ id: 3, username: 'x'.repeat(40) }, { id: 3, username: 'dup' }, { id: -1 }, { id: 'abc' }, { id: 4, extra: 'drop me' }],
     });
-    expect(parseImport(text, 1)).toEqual({ ok: true, friends: [{ id: 3, username: 'x'.repeat(32) }, { id: 4, username: '#4' }] });
+    expect(parseImport(text, 1)).toEqual({ ok: true, friends: [{ id: 3, username: 'x'.repeat(32) }, { id: 4, username: '#4' }], enemies: [] });
   });
   it('exports notes and imports them onto new friends, or onto existing friends without one', () => {
     const s = emptyState();
@@ -62,5 +63,40 @@ describe('backup', () => {
     expect(importMessage({ added: 1, notes: 0 })).toBe('Imported 1 new friend.');
     expect(importMessage({ added: 0, notes: 2 })).toBe('Imported 0 new friends and 2 notes.');
     expect(importMessage({ added: 3, notes: 1 })).toBe('Imported 3 new friends and 1 note.');
+  });
+  it('exports enemies beside friends, and only when there are some', () => {
+    const s = emptyState();
+    addFriend(s, { id: 5, username: 'Spike' }, 0);
+    expect(JSON.parse(exportFriends(s, 77, emptyEnemies())).enemies).toBeUndefined();
+    const e = emptyEnemies();
+    addEnemy(e, { id: 9, username: 'Grim' }, 0);
+    setEnemyNote(e, 9, 'stole my nails');
+    expect(JSON.parse(exportFriends(s, 77, e)).enemies).toEqual([{ id: 9, username: 'Grim', note: 'stole my nails' }]);
+  });
+
+  it('imports enemies with the friends rules: add new, fill in missing notes, never remove', () => {
+    const file = JSON.stringify({
+      v: 1,
+      playerId: 77,
+      friends: [{ id: 5, username: 'Spike' }],
+      enemies: [{ id: 9, username: 'Grim', note: 'stole my nails' }, { id: 10, username: 'Moth', note: 'theirs' }, { id: 'x' }],
+    });
+    const r = parseImport(file, 77);
+    expect(r.enemies).toEqual([{ id: 9, username: 'Grim', note: 'stole my nails' }, { id: 10, username: 'Moth', note: 'theirs' }]);
+    const target = emptyEnemies();
+    addEnemy(target, { id: 10, username: 'Moth' }, 0);
+    setEnemyNote(target, 10, 'mine');
+    expect(mergeEnemiesImport(target, r.enemies, 1)).toEqual({ added: 1, notes: 1 });
+    expect(target.enemies[10].note).toBe('mine');
+  });
+
+  it('still imports an older file without enemies', () => {
+    const r = parseImport(JSON.stringify({ v: 1, playerId: 1, friends: [{ id: 3, username: 'A' }] }), 1);
+    expect(r).toEqual({ ok: true, friends: [{ id: 3, username: 'A' }], enemies: [] });
+  });
+
+  it('mentions enemies in the import message', () => {
+    expect(importMessage({ added: 2, enemiesAdded: 1, notes: 3 })).toBe('Imported 2 new friends, 1 new enemy and 3 notes.');
+    expect(importMessage({ added: 0, enemiesAdded: 2 })).toBe('Imported 0 new friends and 2 new enemies.');
   });
 });

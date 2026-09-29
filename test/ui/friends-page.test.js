@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFriendsPage, hideGame404Early, PAGE_CLASS } from '../../src/ui/friends-page.js';
 import { createKeeper } from '../../src/ui/keeper.js';
 import { addFriend, setFriendNote } from '../../src/state.js';
+import { addEnemy } from '../../src/enemies.js';
 import { makeServices } from './services.js';
 import { PAGE_404_HTML } from '../fixtures/game-dom.js';
 import { flush } from '../helpers.js';
@@ -33,6 +34,7 @@ function mount({ friends = [], presence = {}, threads = {} } = {}) {
   const page = createFriendsPage(services, { keeper });
   page.start();
   services.store.subscribe(() => page.scheduleRender());
+  services.enemies.subscribe(() => page.scheduleRender());
   page.onRoute('/friends');
   current = { services, page, keeper };
   return current;
@@ -371,5 +373,73 @@ describe('friends page', () => {
     row(1).querySelector('.zcf-note-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(services.actions.setFriendNote).not.toHaveBeenCalled();
     expect(row(1).querySelector('.zcf-note-input')).toBeNull();
+  });
+  it('shows the Enemies list on /enemies with skulls and its own wording', () => {
+    const { services, page } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    services.enemies.update((d) => {
+      addEnemy(d, { id: 3, username: 'Rustbucket' }, 0);
+      addEnemy(d, { id: 9, username: 'Grim' }, 0);
+    });
+    page.onRoute('/enemies');
+    expect(page.kind).toBe('enemies');
+    expect(names()).toEqual(['Rustbucket', 'Grim']);
+    expect(row(9).querySelector('.zcf-col-name .zcf-enemy-mark')).not.toBeNull();
+    const [f, e] = document.querySelectorAll('.zcf-page-h');
+    expect(e.classList.contains('zcf-page-h-on')).toBe(true);
+    expect(e.getAttribute('aria-current')).toBe('page');
+    expect(f.classList.contains('zcf-page-h-on')).toBe(false);
+    expect(document.querySelector('.zcf-page-sub').textContent).toBe('0 of 2 online');
+    expect(document.querySelector('.zcf-page-add-long').textContent).toBe('Add enemy');
+    row(9).querySelector('[title="Remove"]').click();
+    expect(row(9).textContent).toContain('Remove Grim from your enemies?');
+    [...row(9).querySelectorAll('button')].find((b) => b.textContent === 'Remove').click();
+    expect(services.enemies.get().enemies[9]).toBeUndefined();
+  });
+
+  it('marks friends who are also enemies on the Friends list', () => {
+    const { services, page } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    services.enemies.update((d) => addEnemy(d, { id: 3, username: 'Rustbucket' }, 0));
+    page.render();
+    expect(row(3).querySelector('.zcf-enemy-mark')).not.toBeNull();
+    expect(row(1).querySelector('.zcf-enemy-mark')).toBeNull();
+  });
+
+  it('switches lists from the title tabs, keeping sort and tab but resetting the search', () => {
+    const { services, page } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    byText('.zcf-page-tab', 'Offline').click();
+    const input = document.querySelector('.zcf-page-input');
+    input.value = 'rust';
+    input.dispatchEvent(new Event('input'));
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    document.querySelectorAll('.zcf-page-h')[1].dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(services.router.navigate).toHaveBeenCalledWith('/enemies');
+    page.onRoute('/enemies');
+    expect(document.querySelector('.zcf-page-input').value).toBe('');
+    expect(byText('.zcf-page-tab', 'Offline').classList.contains('zcf-page-tab-on')).toBe(true);
+    page.onRoute('/friends');
+    expect(names()).toEqual(['Rustbucket']);
+  });
+
+  it('explains an empty Enemies list', () => {
+    const { page } = mount();
+    page.onRoute('/enemies');
+    expect(document.querySelector('.zcf-page-empty').textContent).toBe("No enemies yet. Use Add enemy above, or Add Enemy on a player's profile.");
+  });
+
+  it('adds an enemy from the Add enemy search, showing ✓ Enemy afterwards', async () => {
+    const { services, page } = mount({ friends: FRIENDS });
+    services.players.search.mockResolvedValue({ ok: true, data: [{ id: 50, username: 'Grackle' }] });
+    page.onRoute('/enemies');
+    document.querySelector('.zcf-page-add').click();
+    expect(document.querySelector('.zcf-page .zcf-pop-title').textContent).toBe('Add enemy');
+    const input = document.querySelector('.zcf-page .zcf-pop input');
+    input.value = 'gra';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 350));
+    document.querySelector('.zcf-page .zcf-result .zcf-add').click();
+    expect(services.actions.addEnemy).toHaveBeenCalledWith({ id: 50, username: 'Grackle' });
+    expect(services.toast).toHaveBeenCalledWith('Grackle added to enemies');
+    expect(document.querySelector('.zcf-page .zcf-result .zcf-done').textContent).toBe('✓ Enemy');
   });
 });

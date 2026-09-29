@@ -2,6 +2,7 @@
 import { h, clear, icon, avatar, badge, setBadge } from './dom.js';
 import { createGifPicker } from './gif-picker.js';
 import { createEmojiPicker } from './emoji-picker.js';
+import { enemyMark } from './marks.js';
 import { buildLog, messageParts } from '../mail.js';
 import { formatMessageTime, statusText } from '../time.js';
 
@@ -14,6 +15,7 @@ const BUSY_TEXT = {
 
 export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
+  const isEnemy = services.isEnemy || (() => false);
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -23,7 +25,9 @@ export function createDmWindow(services, userId) {
   const nameEl = h('span', { class: 'zcf-dm-name' });
   const statusEl = h('span', { class: 'zcf-dm-status' });
   const unreadBadge = badge();
-  const title = h('div', { class: 'chat-title' }, avatarSlot, nameEl, statusEl, unreadBadge);
+  const headMark = enemyMark();
+  headMark.hidden = true;
+  const title = h('div', { class: 'chat-title' }, avatarSlot, headMark, nameEl, statusEl, unreadBadge);
   const inboxBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'Open in inbox', 'aria-label': 'Open in inbox' }, icon('external-link-alt'));
   const minBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'Minimize', 'aria-label': 'Minimize' }, icon('minus'));
   const closeBtn = h('button', { class: 'zcf-hbtn zcf-close', type: 'button', title: 'Close', 'aria-label': 'Close' }, icon('times'));
@@ -195,7 +199,7 @@ export function createDmWindow(services, userId) {
     const mine = m.senderId === myId;
     const sender = mine
       ? h('span', { class: 'zcf-sender' }, myName)
-      : h('span', { class: 'zcf-sender zcf-them', onclick: () => router.navigate(`/profile/${userId}`) }, displayName());
+      : h('span', { class: 'zcf-sender zcf-them', onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
     return h('div', { class: cls }, sender, h('span', { class: 'zcf-time' }, time), h('div', { class: 'zcf-text' }, ...renderText(m.text)));
   }
 
@@ -264,6 +268,9 @@ export function createDmWindow(services, userId) {
     clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : undefined, size: open ? 18 : 24 }));
     nameEl.textContent = displayName();
     nameEl.title = displayName();
+    const enemy = isEnemy(userId);
+    headMark.hidden = !enemy;
+    el.classList.toggle('zcf-enemy', enemy);
     statusEl.textContent = statusText(p);
     statusEl.classList.toggle('zcf-status-on', !!(p && p.online));
     el.title = open ? '' : displayName();

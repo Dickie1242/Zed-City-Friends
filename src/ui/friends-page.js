@@ -1,24 +1,38 @@
-// The Friends page at /friends: a game-style table of your friends (spec §4), drawn in the slot where
-// the game's logged-in layout shows its catch-all 404 for a path it doesn't know.
+// The Friends page at /friends and the Enemies page at /enemies (spec §4, §C.3): a game-style table of one
+// of your lists, drawn in the slot where the game's logged-in layout shows its catch-all 404 for a path it
+// doesn't know. The title is two tabs, FRIENDS | ENEMIES.
 import { h, clear, append, icon, avatar, highlightMatch, wireMenuKeys } from './dom.js';
 import { createAddFriendPopover } from './add-friend-popover.js';
+import { enemyMark } from './marks.js';
 import { buildFriendsTable, nextSort, DEFAULT_SORT } from '../friends-table.js';
-import { isFriend, normalizeNote, MAX_NOTE } from '../state.js';
+import { normalizeNote, MAX_NOTE } from '../state.js';
 import { longStatusText } from '../time.js';
 import { safe, warnOnce } from '../util.js';
 
 export const FRIENDS_PATH = '/friends';
+export const ENEMIES_PATH = '/enemies';
 export const PAGE_CLASS = 'zcf-on-friends';
-// Hides the game's "Sorry, nothing here..." while we're on /friends.
+// Hides the game's "Sorry, nothing here..." while one of our pages is showing.
 export const HIDE_404_CSS = `html.${PAGE_CLASS} .q-page-container > .fixed-center{display:none!important}`;
 const WARN_MS = 10000;
 // How long a leave waits for the next route to replace the game's 404 before giving up.
 const LEAVE_MS = 1000;
 
-export const isFriendsPath = (path) => path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`;
+// Which list a path shows: 'friends', 'enemies', or null for any other page.
+export function pageKind(path) {
+  if (path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`) return 'friends';
+  if (path === ENEMIES_PATH || path === `${ENEMIES_PATH}/`) return 'enemies';
+  return null;
+}
+export const isFriendsPath = (path) => pageKind(path) !== null;
 
-// Runs at script start, before login is known (main.js), so a direct load or refresh of /friends
-// never flashes the game's 404: adds the hide rule, and the <html> class when we're on /friends.
+const LISTS = {
+  friends: { path: FRIENDS_PATH, many: 'friends', title: 'Friends', add: 'Add friend', done: '✓ Friend', profile: 'Add Friend' },
+  enemies: { path: ENEMIES_PATH, many: 'enemies', title: 'Enemies', add: 'Add enemy', done: '✓ Enemy', profile: 'Add Enemy' },
+};
+
+// Runs at script start, before login is known (main.js), so a direct load or refresh of one of our pages
+// never flashes the game's 404: adds the hide rule, and the <html> class when we're on one.
 export function hideGame404Early(doc = document, win = window) {
   if (!doc.getElementById('zcf-early-styles')) {
     const style = doc.createElement('style');
@@ -46,7 +60,10 @@ const plainClick = (e) => e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shift
 
 export function createFriendsPage(services, { doc = document, win = window, keeper = null } = {}) {
   const { store, actions, presence, players, router, toast } = services;
+  const enemies = services.enemies || { get: () => ({ enemies: {} }) };
+  const isEnemy = services.isEnemy || (() => false);
   let active = false;
+  let kind = 'friends';
   let tab = 'all';
   let query = '';
   let sort = DEFAULT_SORT;
@@ -58,7 +75,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   let frame = 0;
   let holdRender = false; // a pointer is down in the page: a redraw now could swallow the click
   let renderWanted = false;
-  let popFriendsSig = '';
+  let popSig = '';
   let headSig = null;
   let currentIds = [];
   let unkeep = null;
@@ -66,6 +83,12 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   let leaveObserver = null;
   let leaveTimer = null;
   const rowEls = new Map(); // id -> { sig, el }: rows are reused while what they show is unchanged
+
+  const L = () => LISTS[kind];
+  const listOf = () => (kind === 'enemies' ? enemies.get().enemies : store.get().friends);
+  const listActions = () => (kind === 'enemies'
+    ? { add: actions.addEnemy, remove: actions.removeEnemy, setNote: actions.setEnemyNote }
+    : { add: actions.addFriend, remove: actions.removeFriend, setNote: actions.setFriendNote });
 
   const link = (href, className, children, extra = {}) => h('a', {
     class: className,
@@ -79,20 +102,22 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   }, children);
 
   const subtitle = h('div', { class: 'zcf-page-sub' });
+  const addLong = h('span', { class: 'zcf-page-add-long' }, LISTS.friends.add);
   const addBtn = h('button', { class: 'zcf-page-add', type: 'button', 'aria-expanded': 'false' },
-    icon('plus'), h('span', { class: 'zcf-page-add-long' }, 'Add friend'), h('span', { class: 'zcf-page-add-short' }, 'Add'));
+    icon('plus'), addLong, h('span', { class: 'zcf-page-add-short' }, 'Add'));
   const pop = createAddFriendPopover({
     players,
-    isAdded: (id) => isFriend(store.get(), id),
+    isAdded: (id) => !!listOf()[id],
     onAdd: (p) => {
-      actions.addFriend(p);
-      toast(`${p.username} added to friends`);
+      listActions().add(p);
+      toast(`${p.username} added to ${L().many}`);
     },
     onClose: () => syncAddBtn(),
   });
+  const headings = new Map(Object.entries(LISTS).map(([k, l]) => [k, link(l.path, 'text-h4 text-uppercase text-no-bg zcf-page-h', l.title)]));
   const title = h('div', { class: 'zcf-page-title' },
     h('div', { class: 'zcf-page-side' }, link('/city', 'zcf-page-back', [icon('chevron-left'), 'City'])),
-    h('div', { class: 'zcf-page-mid' }, h('div', { class: 'text-h4 text-uppercase text-no-bg zcf-page-h' }, 'Friends'), subtitle),
+    h('div', { class: 'zcf-page-mid' }, h('div', { class: 'zcf-page-htabs' }, [...headings.values()]), subtitle),
     h('div', { class: 'zcf-page-side zcf-page-side-r' }, h('div', { class: 'zcf-page-addwrap' }, addBtn, pop.el)));
 
   const tabEls = new Map();
@@ -118,6 +143,19 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   const table = h('table', { class: 'zcf-page-table' }, h('thead', null, headRow), tbody);
   const empty = h('div', { class: 'zcf-page-empty', hidden: true });
   const el = h('main', { class: 'q-page q-layout-padding zcf zcf-page' }, title, bar, h('div', { class: 'zcf-page-panel' }, table, empty));
+
+  // The title tabs, the Add button and the search box follow the list being shown.
+  function syncKind() {
+    for (const [k, a] of headings) {
+      a.classList.toggle('zcf-page-h-on', k === kind);
+      if (k === kind) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
+    addLong.textContent = L().add;
+    search.setAttribute('aria-label', `Search ${L().many}`);
+    pop.setLabels({ title: L().add, doneText: L().done });
+  }
+  syncKind();
 
   el.addEventListener('pointerdown', () => {
     holdRender = true;
@@ -170,7 +208,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   function startEdit(id) {
     if (editId === id) return;
     commitEdit();
-    const f = store.get().friends[id];
+    const f = listOf()[id];
     if (!f) return;
     menuId = null;
     confirmId = null;
@@ -204,8 +242,8 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     const text = editInput.value;
     editId = null;
     editInput = null;
-    const f = store.get().friends[id];
-    if (f && (f.note || '') !== normalizeNote(text)) actions.setFriendNote(id, text);
+    const f = listOf()[id];
+    if (f && (f.note || '') !== normalizeNote(text)) listActions().setNote(id, text);
     if (later) {
       scheduleRender();
       return;
@@ -237,6 +275,15 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     focusKey(`remove:${id}`, `more:${id}`);
   }
 
+  function doRemove(id) {
+    const i = currentIds.indexOf(id);
+    const next = currentIds[i + 1] ?? currentIds[i - 1];
+    confirmId = null;
+    listActions().remove(id);
+    render();
+    if (next !== undefined) focusKey(`name:${next}`);
+  }
+
   function toggleMenu(id) {
     menuId = menuId === id ? null : id;
     render();
@@ -247,15 +294,6 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     menuId = null;
     render();
     focusKey(`more:${id}`);
-  }
-
-  function doRemove(id) {
-    const i = currentIds.indexOf(id);
-    const next = currentIds[i + 1] ?? currentIds[i - 1];
-    confirmId = null;
-    actions.removeFriend(id);
-    render();
-    if (next !== undefined) focusKey(`name:${next}`);
   }
 
   function renderHead() {
@@ -285,9 +323,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
 
   // Everything a row shows, so an unchanged row keeps its nodes (and focus) across redraws.
   function rowSig(r, now) {
-    if (confirmId === r.id) return JSON.stringify(['confirm', r.id, r.username]);
+    if (confirmId === r.id) return JSON.stringify(['confirm', r.id, r.username, kind]);
     if (editId === r.id) return JSON.stringify(['edit', r.id]);
-    return JSON.stringify([r.id, r.username, r.avatar, r.note, r.unread, !!r.presence, longStatusText(r.presence, now), r.profile, menuId === r.id, query.trim()]);
+    return JSON.stringify([r.id, r.username, r.avatar, r.note, r.unread, !!r.presence, longStatusText(r.presence, now), r.profile, menuId === r.id, query.trim(), isEnemy(r.id)]);
   }
 
   function confirmRow(r) {
@@ -301,7 +339,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
             cancelRemove(r.id);
           },
         },
-        h('span', { class: 'zcf-confirm-text' }, `Remove ${r.username} from your friends?`),
+        h('span', { class: 'zcf-confirm-text' }, `Remove ${r.username} from your ${L().many}?`),
         h('button', { class: 'zcf-page-btn zcf-page-danger', type: 'button', 'data-zcf-focus': `confirm:${r.id}`, onclick: () => doRemove(r.id) }, 'Remove'),
         h('button', { class: 'zcf-page-btn', type: 'button', 'data-zcf-focus': `cancel:${r.id}`, onclick: () => cancelRemove(r.id) }, 'Cancel'))));
   }
@@ -327,6 +365,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     const meta = [`Lv ${level}`, p && p.faction ? p.faction.name : null].filter(Boolean).join(' · ');
 
     const nameCell = h('td', { class: 'zcf-col-name' },
+      isEnemy(r.id) ? enemyMark() : null,
       link(`/profile/${r.id}`, 'zcf-chip', [
         avatar({ avatar: r.avatar, online: r.presence ? online : undefined, size: 24 }),
         h('span', { class: 'zcf-chip-name' }, highlightMatch(r.username, query)),
@@ -391,7 +430,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     const now = Date.now();
     // Rows mid-edit or mid-confirm stay put even if they stop matching the tab (spec §D.3 #2).
     const pinned = [editId, confirmId, menuId].filter((id) => id !== null);
-    const { rows, counts } = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads, tab, query, sort, pinned });
+    const { rows, counts } = buildFriendsTable({ list: listOf(), presence: presence.get, threads: s.threads, tab, query, sort, pinned });
     const ids = rows.map((r) => r.id);
     // A note being edited for a row that just left the list (a search, a remove in another tab) is saved, not lost.
     if (editId !== null && !ids.includes(editId)) {
@@ -442,13 +481,13 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     if (!rows.length) {
       clear(empty);
       const q = query.trim();
-      if (!counts.all) append(empty, ['No friends yet. Use ', h('b', null, 'Add friend'), ' above, or ', h('b', null, 'Add Friend'), " on a player's profile."]);
-      else if (q) empty.textContent = `No friends match "${q}".`;
-      else empty.textContent = tab === 'online' ? 'No friends online right now.' : 'No offline friends.';
+      if (!counts.all) append(empty, [`No ${L().many} yet. Use `, h('b', null, L().add), ' above, or ', h('b', null, L().profile), " on a player's profile."]);
+      else if (q) empty.textContent = `No ${L().many} match "${q}".`;
+      else empty.textContent = tab === 'online' ? `No ${L().many} online right now.` : `No offline ${L().many}.`;
     }
-    const friendsSig = Object.keys(s.friends).join(',');
-    if (pop.isOpen && friendsSig !== popFriendsSig) pop.refresh();
-    popFriendsSig = friendsSig;
+    const sig = `${kind}:${Object.keys(listOf()).join(',')}`;
+    if (pop.isOpen && sig !== popSig) pop.refresh();
+    popSig = sig;
 
     if (editSel && editInput && doc.activeElement !== editInput) {
       editInput.focus();
@@ -469,6 +508,23 @@ export function createFriendsPage(services, { doc = document, win = window, keep
       }
       safe('friends-page-render', render)();
     });
+  }
+
+  // Friends ↔ Enemies: the search and any edit / confirm / menu reset; sort and the All/Online/Offline tab carry over.
+  function switchKind(next) {
+    if (next === kind) return;
+    commitEdit();
+    kind = next;
+    query = '';
+    search.value = '';
+    confirmId = null;
+    menuId = null;
+    pop.close();
+    for (const entry of rowEls.values()) entry.el.remove();
+    rowEls.clear();
+    popSig = '';
+    syncKind();
+    render();
   }
 
   function ensure() {
@@ -546,7 +602,8 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   }
 
   function onRoute(path) {
-    const want = isFriendsPath(path);
+    const want = pageKind(path);
+    if (want) switchKind(want);
     if (want && !active) show();
     else if (!want && active) hide();
     else if (!want && !leaving()) doc.documentElement.classList.remove(PAGE_CLASS); // left over from hideGame404Early
@@ -562,6 +619,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     scheduleRender,
     get active() {
       return active;
+    },
+    get kind() {
+      return kind;
     },
     destroy() {
       if (active) hide();

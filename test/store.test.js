@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createStore, storageKey, readGameRecentEmojis, rememberGameRecentEmoji, createDocStore, createSettingsStore, settingsKey } from '../src/store.js';
+import { createStore, storageKey, readGameRecentEmojis, rememberGameRecentEmoji, createDocStore, createSettingsStore, settingsKey, createEnemiesStore, enemiesKey } from '../src/store.js';
 import { addFriend } from '../src/state.js';
 import { memoryStorage } from './helpers.js';
 
@@ -352,5 +352,21 @@ describe('document store', () => {
     expect(JSON.parse(storage.getItem('zcf:v1:1:settings')).pmTab).toBe('friends');
     expect(storage.getItem(storageKey(1))).toBeNull();
     settings.destroy();
+  });
+});
+
+describe('enemies store', () => {
+  it('keeps enemies in their own document and follows other tabs', () => {
+    const storage = memoryStorage();
+    const win = new EventTarget();
+    const a = createEnemiesStore({ playerId: 1, storage, win });
+    const b = createEnemiesStore({ playerId: 1, storage, win: new EventTarget() });
+    expect(enemiesKey(1)).toBe('zcf:v1:1:enemies');
+    b.update((d) => { d.enemies[9] = { id: 9, username: 'Grim' }; });
+    win.dispatchEvent(storageEvent(enemiesKey(1)));
+    expect(a.get().enemies[9].username).toBe('Grim');
+    expect(storage.getItem(storageKey(1))).toBeNull();
+    a.destroy();
+    b.destroy();
   });
 });

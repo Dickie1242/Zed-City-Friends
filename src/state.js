@@ -28,45 +28,51 @@ export function isFriend(state, id) {
   return !!state.friends[id];
 }
 
-export function addFriend(state, { id, username, avatar }, now) {
-  if (state.friends[id]) return false;
-  state.friends[id] = { id, username: username || `#${id}`, avatar: avatar || null, addedAt: now };
+export const MAX_NOTE = 200;
+
+export const normalizeNote = (note) => (typeof note === 'string' ? note.trim().slice(0, MAX_NOTE).trim() : '');
+
+// Friends and enemies are both maps of id -> { id, username, avatar, addedAt, note? }; these work on either.
+export function addPerson(map, { id, username, avatar }, now) {
+  if (map[id]) return false;
+  map[id] = { id, username: username || `#${id}`, avatar: avatar || null, addedAt: now };
   return true;
 }
 
-export function removeFriend(state, id) {
-  delete state.friends[id];
+export function removePerson(map, id) {
+  delete map[id];
 }
 
-export function updateFriendInfo(state, id, { username, avatar }) {
-  const f = state.friends[id];
-  if (!f) return false;
+export function updatePersonInfo(map, id, { username, avatar }) {
+  const p = map[id];
+  if (!p) return false;
   let changed = false;
-  if (typeof username === 'string' && username && username !== f.username) {
-    f.username = username;
+  if (typeof username === 'string' && username && username !== p.username) {
+    p.username = username;
     changed = true;
   }
-  if (typeof avatar === 'string' && avatar && avatar !== f.avatar) {
-    f.avatar = avatar;
+  if (typeof avatar === 'string' && avatar && avatar !== p.avatar) {
+    p.avatar = avatar;
     changed = true;
   }
   return changed;
 }
 
-export const MAX_NOTE = 200;
-
-export const normalizeNote = (note) => (typeof note === 'string' ? note.trim().slice(0, MAX_NOTE).trim() : '');
-
-// A friend's private note: trimmed and capped; an empty note removes the field. Returns whether it changed.
-export function setFriendNote(state, id, note) {
-  const f = state.friends[id];
-  if (!f) return false;
+// A private note: trimmed and capped; an empty note removes the field. Returns whether it changed.
+export function setPersonNote(map, id, note) {
+  const p = map[id];
+  if (!p) return false;
   const text = normalizeNote(note);
-  if ((f.note || '') === text) return false;
-  if (text) f.note = text;
-  else delete f.note;
+  if ((p.note || '') === text) return false;
+  if (text) p.note = text;
+  else delete p.note;
   return true;
 }
+
+export const addFriend = (state, p, now) => addPerson(state.friends, p, now);
+export const removeFriend = (state, id) => removePerson(state.friends, id);
+export const updateFriendInfo = (state, id, info) => updatePersonInfo(state.friends, id, info);
+export const setFriendNote = (state, id, note) => setPersonNote(state.friends, id, note);
 
 export function threadEntry(state, id) {
   if (!state.threads[id]) state.threads[id] = { lastSeenReply: 0, lastNotifiedReply: 0, unread: 0 };

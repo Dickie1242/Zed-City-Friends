@@ -90,6 +90,9 @@ export const CSS = `
 .zcf-sender{font-weight:700;line-height:1.5}
 .zcf-sender.zcf-them{color:#6fb3c8;cursor:pointer}
 .zcf-sender.zcf-them:hover{text-decoration:underline}
+.zcf-dm:not(.zcf-enemy) .zcf-them .zcf-enemy-mark{display:none}
+.zcf-dm.chat-minimized .chat-title .zcf-enemy-mark{display:none}
+.msg-cont .zcf-enemy-mark{margin-right:4px}
 .zcf-time{opacity:.4;margin-left:8px;font-size:11px}
 .zcf-text{opacity:.9;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
@@ -135,11 +138,17 @@ export const CSS = `
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
 .q-btn.zcf-is-friend{color:#81c784!important}
+.q-btn.zcf-is-enemy{color:#ef5350!important}
 .zcf-page{max-width:1000px;margin:0 auto;color:#d9d9d9;font-size:13px}
 .zcf-page-title{display:flex;align-items:center;margin-bottom:16px}
 .zcf-page-side{flex:1;display:flex;align-items:center;min-width:0}
 .zcf-page-side-r{justify-content:flex-end}
 .zcf-page-mid{text-align:center}
+.zcf-page-htabs{display:flex;justify-content:center;gap:18px}
+.zcf-page .zcf-page-h{color:#e0e0e0;text-decoration:none;opacity:.35;transition:opacity .15s}
+.zcf-page .zcf-page-h:hover{opacity:.7}
+.zcf-page .zcf-page-h.zcf-page-h-on{opacity:1}
+.zcf-page .zcf-col-name > .zcf-enemy-mark{margin-right:6px}
 .zcf-page-sub{font-size:12px;color:#9e9e9e;margin-top:2px}
 .zcf-page-back{display:inline-flex;align-items:center;gap:6px;color:#bdbdbd;font-size:12px;text-transform:uppercase;text-decoration:none;padding:4px 8px;border-radius:4px}
 .zcf-page-back:hover{background:#ffffff0d;color:#e0e0e0}

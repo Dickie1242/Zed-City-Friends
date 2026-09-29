@@ -50,6 +50,9 @@ Record the answers in this file under "Findings", and fix the code only if an an
 28. **Message** opens the DM in the dock. **Remove** asks first. **Add friend** finds and adds a player, who appears in the table.
 29. Injured and traveling icons and the faction match those players' profiles.
 30. **Export → Import** round-trips notes. When idle with no friends list open, the Network tab shows about 4 requests a minute (no `getProfile`).
+31. **Enemies:** on another player's profile, `ADD ENEMY` sits right after `ADD FRIEND` (desktop and phone width). Click → red `ENEMY`; click → `Remove?` → click → removed. Own profile: no button.
+32. `/enemies` shows the ENEMIES title tab bright and FRIENDS dim; both tabs switch without a reload. Notes, search, sort and **Add enemy** work as on Friends.
+33. An enemy who posts in Global, Faction or Activity gets a red skull before their name, including on messages that arrive later and after scrolling back; removing them takes the skull away.
 
 ## Findings
 

@@ -7,6 +7,7 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 - **GIFs and emoji.** Pick a GIF or an emoji right from the composer, rendered the same way the game's own chat does, including its custom Zed City emojis.
 - **Add Friend button** on player profiles, between Trade and Mail.
 - **Friends page.** A friends icon in the top bar opens a full Friends page at `zed.city/friends`. It's a sortable table with level, online status, injured/traveling icons and faction, plus private notes that only you can see.
+- **Enemies.** A second list beside Friends: the page title switches between **FRIENDS | ENEMIES** (`zed.city/enemies`), and profiles get an **Add Enemy** button right after Add Friend. Enemies get private notes too, and a red skull marks them in chats, including the game's Global, Faction and Activity chats. A player can be on both lists.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 
@@ -33,7 +34,7 @@ While the Private Messages window or Friends page is open, it also refreshes onl
 
 ## Backup
 
-In the Private Messages window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any.
+In the Private Messages window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any. Enemies and notes travel in the same file.
 
 ## Development
 

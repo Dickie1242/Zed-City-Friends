@@ -1,5 +1,5 @@
-// Wires the modules together: store, pollers, dock UI and profile button.
-import { createStore, createSettingsStore } from './store.js';
+// Wires the modules together: stores, pollers, dock UI, profile buttons and pages.
+import { createStore, createSettingsStore, createEnemiesStore } from './store.js';
 import { setPmTab } from './settings.js';
 import { createRouter } from './router.js';
 import { createPlayers } from './players.js';
@@ -7,7 +7,8 @@ import { createPresence } from './presence.js';
 import { createConversations } from './conversation.js';
 import { createInbox } from './inbox.js';
 import { makePoller } from './poller.js';
-import { exportFriends, parseImport, mergeImport } from './backup.js';
+import { exportFriends, parseImport, mergeImport, mergeEnemiesImport } from './backup.js';
+import { addEnemy, removeEnemy, setEnemyNote, updateEnemyInfo, isEnemy, enemyNames } from './enemies.js';
 import {
   addFriend,
   removeFriend,
@@ -23,7 +24,8 @@ import {
 import { createDock } from './ui/dock.js';
 import { createDockView } from './ui/dock-view.js';
 import { createToaster } from './ui/toast.js';
-import { createProfileButton } from './ui/profile-button.js';
+import { createProfileButton, ENEMY_BUTTON } from './ui/profile-button.js';
+import { createEnemyMarks } from './ui/enemy-marks.js';
 import { createKeeper } from './ui/keeper.js';
 import { createTopbarButton } from './ui/topbar-button.js';
 import { createFriendsPage } from './ui/friends-page.js';
@@ -36,6 +38,7 @@ export const PRESENCE_PER_SWEEP = 20;
 export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
   const store = createStore({ playerId, storage, win, now });
   const settings = createSettingsStore({ playerId, storage, win, now });
+  const enemies = createEnemiesStore({ playerId, storage, win, now });
   const router = createRouter({ win, doc });
   const toast = createToaster(doc);
   const players = createPlayers({ api, now });
@@ -48,15 +51,17 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const isExpanded = (id) => !!(dmEntry(id) && dmEntry(id).open);
   const expandedIds = () => store.get().dock.dms.filter((d) => d.open).map((d) => d.id);
 
-  function syncFriendInfo(id, info) {
-    const f = store.get().friends[id];
-    if (!f || !info) return;
-    const nameChanged = typeof info.username === 'string' && info.username && info.username !== f.username;
-    const avatarChanged = typeof info.avatar === 'string' && info.avatar && info.avatar !== f.avatar;
-    if (nameChanged || avatarChanged) store.update((s) => updateFriendInfo(s, id, info));
+  // Keeps saved names and avatars fresh from presence answers, for friends and enemies alike.
+  function syncPlayerInfo(id, info) {
+    if (!info) return;
+    const stale = (p) => !!p && (
+      (typeof info.username === 'string' && info.username && info.username !== p.username)
+      || (typeof info.avatar === 'string' && info.avatar && info.avatar !== p.avatar));
+    if (stale(store.get().friends[id])) store.update((s) => updateFriendInfo(s, id, info));
+    if (stale(enemies.get().enemies[id])) enemies.update((d) => updateEnemyInfo(d, id, info));
   }
 
-  const presence = createPresence({ fetchProfile: (id) => api.getProfile(id), onProfile: syncFriendInfo, now });
+  const presence = createPresence({ fetchProfile: (id) => api.getProfile(id), onProfile: syncPlayerInfo, now });
 
   function markChatting() {
     const was = isChatting();
@@ -80,7 +85,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     onActivity: () => markChatting(),
     onInfo: (id, info) => {
       presence.set(id, info);
-      syncFriendInfo(id, info);
+      syncPlayerInfo(id, info);
     },
     onChange: (id) => markSeenIfNeeded(id),
   });
@@ -134,13 +139,22 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     interval: INTERVALS.dmInfo,
     doc,
   });
-  // A friends list is on screen: the Private Messages window, or the Friends page.
+  // A list with presence is on screen: the Private Messages window, or the Friends / Enemies page.
   const listOpen = () => store.get().dock.friendsOpen || page.active;
+  // Whose presence that list shows: friends in Private Messages or on the Friends page, enemies on the
+  // Enemies page (spec §C.3).
+  function presenceTargets() {
+    const ids = new Set();
+    const onPage = page.active ? page.kind : null;
+    if (store.get().dock.friendsOpen || onPage === 'friends') for (const id of Object.keys(store.get().friends)) ids.add(Number(id));
+    if (onPage === 'enemies') for (const id of Object.keys(enemies.get().enemies)) ids.add(Number(id));
+    return [...ids];
+  }
   const presencePoller = makePoller({
     run: () => {
-      // Stalest first, capped, so a long friends list can't turn into one getProfile per friend per minute.
+      // Stalest first, capped, so a long list can't turn into one getProfile per player per minute.
       const age = (id) => presence.lastTried(id);
-      const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
+      const stale = presenceTargets().filter((id) => presence.isStale(id));
       presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
       return { ok: true };
     },
@@ -218,17 +232,27 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       activeDmId = id;
       activeDmPoller.poke();
     },
-    exportFriends: () => exportFriends(store.get(), playerId),
+    addEnemy(p) {
+      enemies.update((d) => addEnemy(d, p, now()));
+      presence.refresh([p.id]);
+    },
+    removeEnemy: (id) => enemies.update((d) => removeEnemy(d, id)),
+    setEnemyNote: (id, note) => enemies.update((d) => setEnemyNote(d, id, note)),
+    exportFriends: () => exportFriends(store.get(), playerId, enemies.get()),
     importFriends(text) {
       const r = parseImport(text, playerId);
       if (!r.ok) return r;
-      return { ok: true, ...store.update((s) => mergeImport(s, r.friends, now())) };
+      const f = store.update((s) => mergeImport(s, r.friends, now()));
+      const e = r.enemies.length ? enemies.update((d) => mergeEnemiesImport(d, r.enemies, now())) : { added: 0, notes: 0 };
+      return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes };
     },
   };
 
   const services = {
     api,
     settings,
+    enemies,
+    isEnemy: (id) => isEnemy(enemies.get(), id),
     playerId,
     myId: playerId,
     myName: playerName,
@@ -246,6 +270,18 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   const view = createDockView({ root: dock.root, services });
   const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+  const enemyButton = createProfileButton({
+    doc,
+    win,
+    spec: ENEMY_BUTTON,
+    isOn: (id) => isEnemy(enemies.get(), id),
+    add: (p) => actions.addEnemy(p),
+    remove: (id) => actions.removeEnemy(id),
+    players,
+    toast,
+    after: () => profileButton.wrap,
+  });
+  const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
   const page = createFriendsPage(services, { doc, win, keeper });
   const topbar = createTopbarButton({ doc, keeper, router });
 
@@ -268,8 +304,15 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     view.pm.syncBadge();
   });
   settings.subscribe(() => view.render());
+  enemies.subscribe(() => {
+    view.render();
+    enemyButton.refresh();
+    page.scheduleRender();
+    marks.refresh();
+  });
   router.onChange((path) => {
     profileButton.onRoute(path);
+    enemyButton.onRoute(path);
     page.onRoute(path);
     syncPollers();
     resumeIfLoggedIn();
@@ -298,15 +341,19 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   dock.start();
   page.start();
   topbar.start();
+  marks.start();
   if (dock.isSmall()) enforcePhoneRule();
   view.render();
   profileButton.onRoute(router.path);
+  enemyButton.onRoute(router.path);
   page.onRoute(router.path);
   threadsPoller.start();
   syncPollers();
 
   return {
     store,
+    settings,
+    enemies,
     actions,
     view,
     conversations,
@@ -316,12 +363,15 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       for (const p of pollers) p.destroy();
       dock.destroy();
       profileButton.destroy();
+      enemyButton.destroy();
+      marks.destroy();
       page.destroy();
       topbar.destroy();
       keeper.destroy();
       router.destroy();
       store.destroy();
       settings.destroy();
+      enemies.destroy();
     },
   };
 }
