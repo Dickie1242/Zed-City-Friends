@@ -54,11 +54,19 @@ export function formatClock(ts, local = false) {
   return `${pad(h)}:${pad(mi)}`;
 }
 
+// A calendar day back: in local time a day can be 23 or 25 hours long around daylight-saving changes.
+function yesterdayKey(now, local) {
+  if (!local) return dayKey(now - DAY_MS, false);
+  const d = new Date(now);
+  d.setDate(d.getDate() - 1);
+  return dayKey(d.getTime(), true);
+}
+
 export function formatMessageTime(ts, now = Date.now(), local = false) {
   const clock = formatClock(ts, local);
   const day = dayKey(ts, local);
   if (day === dayKey(now, local)) return clock;
-  if (day === dayKey(now - DAY_MS, local)) return `Yesterday at ${clock}`;
+  if (day === yesterdayKey(now, local)) return `Yesterday at ${clock}`;
   const [y, m, d] = parts(ts, local);
   return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
 }

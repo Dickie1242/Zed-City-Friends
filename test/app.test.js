@@ -369,6 +369,7 @@ describe('app', () => {
       permission: vi.fn(() => permission),
       request: vi.fn(async () => permission),
       show: vi.fn(),
+      confirm: vi.fn(() => true),
     });
     const settingsDoc = (extra) => ({ [`zcf:v1:${ME}:settings`]: JSON.stringify({ v: 1, ...extra }) });
     const setVisibility = (state) => {
@@ -471,6 +472,30 @@ describe('app', () => {
       expect(document.title).toBe('(2) Zed City');
       app.actions.setTitleCount(false);
       expect(document.title).toBe('Zed City');
+    });
+
+    it('keeps notifications off when the prompt is dismissed, the browser refuses them, or you untick first', async () => {
+      const dismissed = fakeNotifier('default');
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier: dismissed });
+      await app.actions.setNotify(true);
+      expect(app.settings.get().notify).toBe(false);
+      expect(document.querySelector('.zcf-toast').textContent).toContain('when your browser asks');
+      app.destroy();
+      const refused = fakeNotifier('granted');
+      refused.confirm.mockReturnValue(false);
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier: refused });
+      await app.actions.setNotify(true);
+      expect(app.settings.get().notify).toBe(false);
+      app.destroy();
+      let answer;
+      const slow = fakeNotifier('granted');
+      slow.request.mockImplementation(() => new Promise((r) => { answer = r; }));
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier: slow });
+      const asking = app.actions.setNotify(true);
+      app.actions.setNotify(false);
+      answer('granted');
+      await asking;
+      expect(app.settings.get().notify).toBe(false);
     });
 
     it('says so when the pin list is full', () => {

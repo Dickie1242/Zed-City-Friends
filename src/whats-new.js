@@ -8,13 +8,20 @@ export const WHATS_NEW = [
       {
         title: 'Never miss a message',
         points: [
-          'Optional desktop notifications for new private messages (Chat settings), with a Friends only switch.',
+          'Optional desktop notifications for new private messages (Chat settings), with a Friends only switch. With the game open in two tabs, only one of them speaks up.',
           "The browser tab's title shows your unread count, like (2) Zed City. You can turn it off in Chat settings.",
         ],
       },
       { title: 'Pinned chats', points: ['Pin conversations to the top of the Chats tab with the pin on each row.'] },
       { title: 'Phones', points: ['An open chat gets the full width, with every bubble on a row underneath.'] },
-      { title: 'Local time', points: ['Show message times in your own time zone instead of game time (Chat settings).'] },
+      {
+        title: 'Chats',
+        points: [
+          "Hover (or tap) any chat time, in DMs and in the game's own chats, to see it in the other clock: your time or game time.",
+          'Opening a DM with unread messages puts a "New" line above the first one.',
+          'Moved chats that overlap: the one you click comes to the front.',
+        ],
+      },
       { title: 'Fixes', points: ['Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus.'] },
     ],
   },

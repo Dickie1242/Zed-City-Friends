@@ -89,7 +89,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
   function onVisibility() {
     if (!active) return;
     if (visible()) tick();
-    else if (hiddenMs() !== null) schedule(hiddenMs());
+    else if (hiddenMs() !== null) schedule(Math.max(hiddenMs(), backoff)); // keep an error backoff going
     else clear();
   }
   doc.addEventListener('visibilitychange', onVisibility);

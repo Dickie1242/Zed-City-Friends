@@ -9,7 +9,7 @@ export const SOUNDS = ['off', 'chirp', 'ping', 'bell'];
 export const MAX_MUTED = 500;
 export const MAX_PINNED = 20;
 // On/off switches: notifications and Friends only (off by default), the tab-title count (on), local time (off).
-export const FLAGS = ['notify', 'notifyFriendsOnly', 'titleCount', 'localTime'];
+export const FLAGS = ['notify', 'notifyFriendsOnly', 'titleCount'];
 
 export function defaultSettings() {
   return {
@@ -22,7 +22,6 @@ export function defaultSettings() {
     notify: false,
     notifyFriendsOnly: false,
     titleCount: true,
-    localTime: false,
   };
 }
 
@@ -54,7 +53,6 @@ export function normalizeSettings(doc) {
     notify: doc.notify === true,
     notifyFriendsOnly: doc.notifyFriendsOnly === true,
     titleCount: doc.titleCount !== false,
-    localTime: doc.localTime === true,
   };
 }
 

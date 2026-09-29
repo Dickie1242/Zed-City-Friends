@@ -139,7 +139,7 @@ if (scene === 'enemies') history.replaceState(null, '', `/enemies${location.sear
 if (scene === 'profile') history.replaceState(null, '', `/profile/7${location.search}${location.hash}`);
 
 const storage = memoryStorage({
-  [`zcf:v1:${ME}`]: { v: 1, friends, threads: { 10: { unread: 2, lastSeenReply: 0, lastNotifiedReply: 0 }, 7: { unread: 1, lastSeenReply: 0, lastNotifiedReply: 0 } }, dock },
+  [`zcf:v1:${ME}`]: { v: 1, friends, threads: { 10: { unread: 2, lastSeenReply: 0, lastNotifiedReply: 0 }, 7: { unread: 1, lastSeenReply: 0, lastNotifiedReply: 0 }, ...(scene === 'dm' ? { 5: { unread: 2, lastSeenReply: 0, lastNotifiedReply: 0 } } : {}) }, dock },
   [`zcf:v1:${ME}:settings`]: settings,
   [`zcf:v1:${ME}:enemies`]: { v: 1, enemies },
 });

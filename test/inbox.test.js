@@ -99,16 +99,19 @@ describe('inbox', () => {
     expect(inbox.lastReply(5)).toBeNull();
   });
 
-  it('makes no store writes and no emit on an API failure', async () => {
+  it('makes no store writes on an API failure, and tells subscribers only that the first check failed', async () => {
     const api = fakeApi({ getChats: vi.fn().mockResolvedValue({ ok: false, kind: 'network' }) });
     const store = createStore({ playerId: ME, storage: memoryStorage() });
     const inbox = createInbox({ api, store, myId: ME });
     const updateSpy = vi.spyOn(store, 'update');
     let emits = 0;
     inbox.subscribe(() => emits++);
+    expect(inbox.status()).toBe('loading');
+    await inbox.poll();
     await inbox.poll();
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(emits).toBe(0);
+    expect(emits).toBe(1);
+    expect(inbox.status()).toBe('error');
   });
 
   it('keeps the newest pop-ups when more threads pop in one poll than the dock can hold', async () => {

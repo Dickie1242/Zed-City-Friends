@@ -16,6 +16,8 @@ export const FACTION_MS = 60000;
 const LOAD_MORE_PX = 80;
 const TABS = [['chats', 'Chats'], ['friends', 'Friends'], ['faction', 'Faction'], ['blocked', 'Blocked']];
 const SEARCH_TEXT = { short: 'Keep typing…', searching: 'Searching…' };
+// After a pin click, further clicks on pins and rows wait this long (no double toggles or stray opens).
+const PIN_QUIET_MS = 400;
 
 export function createPmWindow(services, { doc = document } = {}) {
   const { store, settings, actions, presence, inbox, players, router, toast, playerId, myId, api } = services;
@@ -40,6 +42,7 @@ export function createPmWindow(services, { doc = document } = {}) {
   }
   // Faction and Blocked are loaded while their tab shows.
   let faction = { status: 'idle', data: null }; // idle | loading | ok | none | error
+  let pinQuietUntil = 0;
   let blocked = { status: 'idle', pages: [], total: 0, loading: false, done: false };
   let blockedShowing = false;
   let reloadBlocked = false; // a reload asked for while a page was still loading
@@ -277,6 +280,9 @@ export function createPmWindow(services, { doc = document } = {}) {
       'data-zcf-focus': `pin:${t.userId}`,
       onclick: (e) => {
         e.stopPropagation();
+        // A double click would pin and unpin, or land on whichever row moved under the pointer.
+        if (Date.now() < pinQuietUntil) return;
+        pinQuietUntil = Date.now() + PIN_QUIET_MS;
         actions.togglePin(t.userId);
       },
     }, icon('thumbtack'));
@@ -310,14 +316,18 @@ export function createPmWindow(services, { doc = document } = {}) {
       const when = t.lastReply ? longAgo(t.lastReply, now) : '';
       const line = previewLine(t, myId);
       return item(['chat', t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy(t.userId), muted, !!t.pinned], () =>
-        rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
+        rowEl(`row:${t.userId}`, () => Date.now() >= pinQuietUntil && openChat(t.userId, t.username, t.avatar), [
           avatar({ avatar: t.avatar, online: onDot(p), size: 30 }),
           h('div', { class: 'zcf-row-main' },
             h('div', { class: 'zcf-pm-line' }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h('span', { class: 'zcf-pm-time' }, when), pinButton(t)),
             h('div', { class: `zcf-status zcf-pm-preview${t.unread > 0 ? ' zcf-unread' : ''}` }, line || ' ')),
         ]));
     });
-    if (!rows.length) return [note('No conversations yet.')]; // page 1 empty: there's nothing older either
+    if (!rows.length) {
+      // Page 1 empty means nothing older either; before the first answer, say what's actually going on.
+      const status = inbox.status ? inbox.status() : 'ok';
+      return [note(status === 'loading' ? 'Loading…' : status === 'error' ? "Couldn't load your chats. Trying again…" : 'No conversations yet.')];
+    }
     if (olderState !== 'done') {
       const label = olderState === 'loading' ? 'Loading…' : olderState === 'error' ? "Couldn't load. Retry" : 'Load older chats';
       items.push(item(['older', olderState], () => h('button', {
@@ -357,7 +367,11 @@ export function createPmWindow(services, { doc = document } = {}) {
   function factionItems(now) {
     if (faction.status === 'idle' || faction.status === 'loading') return [note('Loading…')];
     if (faction.status === 'none') return [note("You're not in a faction.")];
-    if (faction.status === 'error') return [retryItem(() => factionPoller.poke())];
+    // start() too: a logged-out answer stops the poller, and a poke alone wouldn't wake it.
+    if (faction.status === 'error') return [retryItem(() => {
+      factionPoller.poke();
+      factionPoller.start();
+    })];
     const rows = buildFactionRows(faction.data, { myId, now });
     if (!rows.length) return [note('No other members.')];
     return rows.map((m) => {
@@ -443,6 +457,7 @@ export function createPmWindow(services, { doc = document } = {}) {
   function focusKey(k) {
     const target = el.querySelector(`[data-zcf-focus="${k}"]`);
     if (target) target.focus();
+    return !!target;
   }
 
   function renderList() {
@@ -468,12 +483,18 @@ export function createPmWindow(services, { doc = document } = {}) {
     if (sig === lastSig) return;
     lastSig = sig;
     const activeKey = list.contains(doc.activeElement) ? doc.activeElement.dataset.zcfFocus : undefined;
+    const activeRow = activeKey ? [...list.querySelectorAll('.zcf-row')].findIndex((r) => r.contains(doc.activeElement)) : -1;
     const scrollTop = view === lastView ? list.scrollTop : 0;
     lastView = view;
     clear(list);
     for (const i of items) list.appendChild(i.build());
     list.scrollTop = scrollTop;
-    if (activeKey) focusKey(activeKey);
+    if (activeKey && !focusKey(activeKey) && activeRow >= 0) {
+      // Its row went away (an unpinned chat that only showed because it was pinned): stay nearby.
+      const rows = list.querySelectorAll('.zcf-row');
+      const next = rows[Math.min(activeRow, rows.length - 1)];
+      if (next) next.focus();
+    }
   }
 
   // Starts and stops what the shown tab needs: the Faction poller, a fresh Blocked page 1.

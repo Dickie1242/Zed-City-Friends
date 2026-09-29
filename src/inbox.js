@@ -16,6 +16,7 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
   let threads = [];
   let previous = null; // Map userId -> lastReply from the previous poll; null until the first poll
   let lastSignature = null; // Recent-list signature from the previous poll; null until the first poll
+  let status = 'loading'; // until the first answer; 'error' while the first checks fail; then 'ok'
   const subs = new Set();
 
   function emit() {
@@ -30,7 +31,14 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
 
   async function poll() {
     const r = await api.getChats(1);
-    if (!r.ok) return r;
+    if (!r.ok) {
+      if (status === 'loading') {
+        status = 'error';
+        emit();
+      }
+      return r;
+    }
+    status = 'ok';
     threads = normalizeThreads(r.data, now());
     if (previous) {
       for (const t of threads) {
@@ -125,6 +133,7 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
   return {
     poll,
     threads: () => threads,
+    status: () => status,
     lastReply(userId) {
       const t = threads.find((x) => x.userId === userId);
       return t ? t.lastReply : null;

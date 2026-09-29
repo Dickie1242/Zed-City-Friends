@@ -384,6 +384,10 @@ describe('private messages window', () => {
     services.actions.togglePin(9);
     expect(rowNames(el)).toEqual(['U2', 'Grim', 'U1']); // a pin with no loaded messages sorts last among pins
     list(el).querySelectorAll('.zcf-row')[1].click();
+    expect(services.actions.openDm).not.toHaveBeenCalled(); // right after a pin click: likely a double click
+    const later = Date.now() + 1000;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+    list(el).querySelectorAll('.zcf-row')[1].click();
     expect(services.actions.openDm).toHaveBeenCalledWith(9, { expand: true, username: 'Grim', avatar: null });
   });
 
@@ -437,9 +441,15 @@ describe('private messages window', () => {
     expect(list(el).querySelector('.zcf-pill').textContent).toBe('3');
   });
 
-  it('says there are no conversations yet when the inbox is empty', () => {
-    const { el } = mount();
+  it('says there are no conversations yet when the inbox is empty, and not before it has answered', () => {
+    const { el, services, w } = mount();
     expect(list(el).textContent).toContain('No conversations yet.');
+    services.inbox.status = () => 'loading';
+    w.update();
+    expect(list(el).textContent).toContain('Loading…');
+    services.inbox.status = () => 'error';
+    w.update();
+    expect(list(el).textContent).toContain("Couldn't load your chats.");
     expect(el.querySelector('.zcf-pm-more')).toBeNull();
   });
 });

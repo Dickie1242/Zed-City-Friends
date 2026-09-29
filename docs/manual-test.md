@@ -70,7 +70,10 @@ Record the answers in this file under "Findings", and fix the code only if an an
 47. **Tab title:** with unread messages the browser tab reads "(N) …"; it follows the green count and goes away at zero or when switched off; it survives page changes.
 48. **Pinned chats:** the pin on a Chats row pins it to the top (and unpins); it stays pinned after a reload and in another tab; a 21st pin shows "You can pin up to 20 chats."
 49. **Phones:** with a window open, it takes the full width on its own row and every bubble (the cog too) sits underneath.
-50. **Local time:** switching Message times to local changes the times and day dividers in open DMs.
+50. **Times:** hovering a DM time shows "… your time"; a grouped message shows both clocks. Hovering a time in Global chat shows the other clock once a fresh message has come in (right after a reload it may show nothing until one does). Taps work on phones. Nobody in UTC sees a tooltip over a DM time.
+51. **New line:** open a DM that has 2 unread messages: a green "New" line sits above the first of them; with many unread it opens at the line, not the bottom; it goes away when you reply or minimize.
+52. **Bring to front:** move two chats so they overlap; clicking the lower one brings it on top.
+53. **Two tabs:** with notifications on and the game open in two tabs, a DM gives one notification and one sound, from the tab you're using.
 
 ## Findings
 

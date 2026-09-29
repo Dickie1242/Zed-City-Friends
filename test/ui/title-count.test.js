@@ -30,4 +30,18 @@ describe('title count', () => {
     await flush();
     expect(document.title).toBe('(1) Inventory | Zed City');
   });
+
+  it("only ever removes its own prefix, and stops watching when there's nothing to show", async () => {
+    document.title = '(3) Some page';
+    tc = createTitleCount();
+    tc.set(0, true);
+    expect(document.title).toBe('(3) Some page');
+    tc.set(2, true);
+    expect(document.title).toBe('(2) (3) Some page');
+    tc.set(0, true);
+    expect(document.title).toBe('(3) Some page');
+    document.title = 'Inventory | Zed City';
+    await flush();
+    expect(document.title).toBe('Inventory | Zed City');
+  });
 });

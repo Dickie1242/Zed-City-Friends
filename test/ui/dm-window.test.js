@@ -371,31 +371,49 @@ describe('dm window', () => {
     expect(services.store.get().dock.dms[0].open).toBe(true);
   });
 
-  it('switches message times to local time when that option changes', async () => {
-    const sent = '2026-09-28 14:02:00';
-    const { el, services, win } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', sent)] }) });
+  it('puts a "New" line above the messages that were unread when it opened, until you answer', async () => {
+    const { el, services, win } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({
+        ok: true,
+        data: [
+          rawMsg(1, THEM, 'old', '2026-09-28 14:00:00'),
+          rawMsg(2, ME, 'mine', '2026-09-28 14:01:00'),
+          rawMsg(3, THEM, 'new one', '2026-09-28 14:02:00'),
+          rawMsg(4, THEM, 'new two', '2026-09-28 14:02:30'),
+        ],
+      }),
+    }, { open: false });
+    services.store.update((s) => { s.threads[THEM] = { unread: 2 }; });
+    services.store.update((s) => setDmOpen(s, THEM, true));
     await flush();
-    const ts = Date.UTC(2026, 8, 28, 14, 2);
-    const d = new Date(ts);
-    const pad = (n) => String(n).padStart(2, '0');
-    expect(el.querySelector('.zcf-time').textContent).toContain('14:02');
-    services.settings.update((s) => { s.localTime = true; });
+    const line = el.querySelector('.zcf-new-line');
+    expect(line.textContent).toBe('New');
+    expect(line.nextElementSibling.querySelector('.zcf-text').textContent).toBe('new one');
+    expect(line.nextElementSibling.classList.contains('zcf-grouped')).toBe(false);
+    const input = el.querySelector('textarea');
+    input.value = 'hey';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await flush();
+    expect(el.querySelector('.zcf-new-line')).toBeNull();
+    services.store.update((s) => { s.threads[THEM].unread = 0; }); // the app marks it seen once it's open
+    services.store.update((s) => setDmOpen(s, THEM, false));
+    services.store.update((s) => setDmOpen(s, THEM, true));
+    await flush();
+    expect(el.querySelector('.zcf-new-line')).toBeNull(); // nothing unread this time
     win.update();
-    expect(el.querySelector('.zcf-time').textContent).toContain(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
   });
 
-  it('catches up on the time mode when a window minimized during the switch reopens', async () => {
-    const { el, services, win } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00')] }) });
+  it('shows game time and stamps each time with its moment, for the your-time hover', async () => {
+    const { el } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00'), rawMsg(2, THEM, 'again', '2026-09-28 14:03:00')] }),
+    });
     await flush();
-    const d = new Date(Date.UTC(2026, 8, 28, 14, 2));
-    const pad = (n) => String(n).padStart(2, '0');
-    services.store.update((s) => setDmOpen(s, THEM, false));
-    win.update();
-    services.settings.update((s) => { s.localTime = true; });
-    win.update();
-    services.store.update((s) => setDmOpen(s, THEM, true));
-    win.update();
-    await flush();
-    expect(el.querySelector('.zcf-time').textContent).toContain(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    const ts = Date.UTC(2026, 8, 28, 14, 2);
+    const time = el.querySelector('.zcf-time');
+    expect(time.textContent).toContain('14:02');
+    expect(time.getAttribute('data-zcf-ts')).toBe(String(ts));
+    const grouped = el.querySelector('.zcf-grouped');
+    expect(grouped.getAttribute('data-zcf-ts')).toBe(String(ts + 60000));
+    expect(grouped.hasAttribute('title')).toBe(false);
   });
 });

@@ -129,6 +129,20 @@ describe('chat customization', () => {
     expect(chat('game:general')).toEqual({ locked: false, w: 450, h: window.innerHeight - 60 });
   });
 
+  it('puts the chat you last clicked on top once chats have been moved', () => {
+    const { settings, general, pm } = setup();
+    pm.querySelector('.chat-content').dispatchEvent(ptr('pointerdown', 10, 10));
+    expect(userCss()).not.toContain('z-index');
+    settings.update((s) => updateChat(s, 'game:general', { x: 40, y: 50 }));
+    pm.querySelector('.chat-content').dispatchEvent(ptr('pointerdown', 10, 10));
+    general.querySelector('.chat-content').dispatchEvent(ptr('pointerdown', 10, 10));
+    general.querySelector('.chat-content').dispatchEvent(ptr('pointerup', 10, 10));
+    expect(userCss()).toContain('body .chat-containers .zcf[data-zcf-chat="pm"]{z-index:1}');
+    expect(userCss()).toContain('body .chat-containers > .chat-container.general-chat{z-index:2}');
+    ctx.setSmall(true);
+    expect(userCss()).not.toContain('z-index');
+  });
+
   it('returns a moved chat to the row with the arrow, keeping its size', () => {
     const { settings, general } = setup();
     settings.update((s) => updateChat(s, 'game:general', { x: 40, y: 50, w: 420 }));

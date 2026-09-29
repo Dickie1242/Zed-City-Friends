@@ -39,6 +39,7 @@ import { createTopbarButton } from './ui/topbar-button.js';
 import { createFriendsPage } from './ui/friends-page.js';
 import { createChatCustom } from './ui/chat-custom/index.js';
 import { createTitleCount } from './ui/title-count.js';
+import { createTimeHover } from './ui/time-hover.js';
 import { avatarUrl } from './ui/dom.js';
 import { statsPlayer } from './util.js';
 
@@ -56,7 +57,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const toast = createToaster(doc);
   const players = createPlayers({ api, now });
   // Created here, not as a default parameter, so its click can reach `actions` below.
-  const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
+  const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => openFromNotification(id) });
+  let notifyAsk = 0; // the latest switch-on, so an older permission answer can't override a newer choice
   const notificationsOn = () => settings.get().notify && notifier.permission() === 'granted';
   const tabFocus = createTabFocus({ storage, key: `zcf:v1:${playerId}:focus`, doc, win, now });
   let stopped = false;
@@ -88,7 +90,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   // Clears the unread badge once an expanded DM has loaded; skips the write when nothing changed.
   function markSeenIfNeeded(id) {
-    if (!isExpanded(id)) return;
+    // A hidden tab isn't being read: its count stays until you come back (onVisible).
+    if (!isExpanded(id) || doc.visibilityState === 'hidden') return;
     const c = conversations.get(id);
     if (!c || !c.state.loaded) return;
     // The chat list's reply time is by our clock (it comes as seconds ago); message times are the server's.
@@ -140,7 +143,14 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       .filter((t) => !s.notifyFriendsOnly || friends[t.userId])
       .sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0))
       .slice(0, MAX_NOTIFY);
-    for (const t of list) notifier.show({ id: t.userId, title: t.username, body: (t.preview || '').slice(0, 120), icon: avatarUrl(t.avatar) });
+    // Cut by characters, not UTF-16 units, so an emoji at the end isn't split in half.
+    for (const t of list) notifier.show({ id: t.userId, title: t.username, body: Array.from(t.preview || '').slice(0, 120).join(''), icon: avatarUrl(t.avatar) });
+  }
+
+  // A notification's click: the DM with the name and picture from the chat list, like opening it there.
+  function openFromNotification(id) {
+    const t = inbox.threads().find((x) => x.userId === id);
+    actions.openDm(id, { expand: true, username: t ? t.username : undefined, avatar: t ? t.avatar : undefined });
   }
 
   function pickActive() {
@@ -289,19 +299,22 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     resetChat: (key) => settings.update((s) => resetChat(s, key)),
     resetAllChats: () => settings.update((s) => resetAllChats(s)),
     async setNotify(on) {
-      if (on) {
-        const answer = await notifier.request();
-        if (answer !== 'granted') {
-          settings.update((s) => setFlag(s, 'notify', false));
-          toast(answer === 'unsupported' ? 'This browser has no desktop notifications.' : "Notifications are blocked for zed.city in your browser's site settings.", { error: true });
-          return;
-        }
-      }
-      settings.update((s) => setFlag(s, 'notify', on));
+      const ask = ++notifyAsk;
+      const off = (message, opts) => {
+        settings.update((s) => setFlag(s, 'notify', false));
+        if (message) toast(message, opts);
+      };
+      if (!on) return off();
+      const answer = await notifier.request();
+      if (ask !== notifyAsk) return; // switched off (or on again) while the browser was asking
+      if (answer === 'default') return off('Notifications stay off until you allow them when your browser asks.');
+      if (answer === 'unsupported') return off('This browser has no desktop notifications.', { error: true });
+      if (answer !== 'granted') return off("Notifications are blocked for zed.city in your browser's site settings.", { error: true });
+      if (!notifier.confirm()) return off("This browser won't show notifications from a web page.", { error: true });
+      settings.update((s) => setFlag(s, 'notify', true));
     },
     setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on)),
     setTitleCount: (on) => settings.update((s) => setFlag(s, 'titleCount', on)),
-    setLocalTime: (on) => settings.update((s) => setFlag(s, 'localTime', on)),
     togglePin(id) {
       if (!settings.update((s) => togglePinned(s, id))) toast('You can pin up to 20 chats.');
     },
@@ -339,7 +352,6 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
     isMuted: (id) => isMuted(settings.get(), id),
-    isLocalTime: () => settings.get().localTime,
     notifier,
     sound,
     playerId,
@@ -395,6 +407,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
   const page = createFriendsPage(services, { doc, win, keeper });
   const titleCount = createTitleCount({ doc, win });
+  const timeHover = createTimeHover({ doc, win, storage, key: `zcf:v1:${playerId}:gameClock`, now });
   const syncTitle = () => {
     const s = settings.get();
     titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -477,6 +490,10 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     if (settings.get().sound !== 'off') sound.unlock();
   };
   doc.addEventListener('pointerdown', unlockSound, { capture: true, once: true });
+  const onVisible = () => {
+    if (doc.visibilityState !== 'hidden') for (const id of expandedIds()) markSeenIfNeeded(id);
+  };
+  doc.addEventListener('visibilitychange', onVisible);
   if (dock.isSmall()) enforcePhoneRule();
   renderDock();
   syncTitle();
@@ -503,9 +520,11 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       marks.destroy();
       custom.destroy();
       titleCount.destroy();
+      timeHover.destroy();
       tabFocus.destroy();
       view.destroy();
       doc.removeEventListener('pointerdown', unlockSound, true);
+      doc.removeEventListener('visibilitychange', onVisible);
       page.destroy();
       topbar.destroy();
       keeper.destroy();

@@ -153,14 +153,10 @@ describe('chat settings window', () => {
     expect(el.querySelector('.zcf-set-note').textContent).toContain('Not supported');
   });
 
-  it('picks game or local time for messages', () => {
-    const { services, el } = mount();
-    const select = el.querySelector('select[aria-label="Message times"]');
-    expect(select.value).toBe('game');
-    select.value = 'local';
-    select.dispatchEvent(new Event('change'));
-    expect(services.actions.setLocalTime).toHaveBeenCalledWith(true);
-    expect(select.value).toBe('local');
+  it('has no time zone setting: hovering a time shows your own', () => {
+    const { el } = mount();
+    expect(el.querySelector('select[aria-label="Message times"]')).toBeNull();
+    expect(el.textContent).not.toContain('Display');
   });
 
   it('keeps focus on the sound picker when the window redraws', () => {

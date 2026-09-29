@@ -106,7 +106,8 @@ export function normalizeThreads(data, now = Date.now()) {
 
 // Turns messages (any order, duplicates allowed) into render items: day dividers + messages with a `grouped` flag.
 // `local`: group and label days in the player's time zone instead of game time.
-export function buildLog(messages, { local = false } = {}) {
+// newFrom: the message a "New" line goes above (the first one that was unread when the window opened).
+export function buildLog(messages, { local = false, newFrom = null } = {}) {
   const byId = new Map();
   for (const m of messages) byId.set(m.id, m);
   const sorted = [...byId.values()].sort((a, b) => a.id - b.id);
@@ -122,7 +123,9 @@ export function buildLog(messages, { local = false } = {}) {
       day !== null &&
       day === prevDay &&
       Math.abs(m.ts - prev.ts) <= GROUP_WINDOW_MS;
-    items.push({ type: 'msg', key: `m:${m.id}`, msg: m, grouped });
+    const isNew = m.id === newFrom;
+    if (isNew) items.push({ type: 'new', key: 'new' });
+    items.push({ type: 'msg', key: `m:${m.id}`, msg: m, grouped: grouped && !isNew });
     prev = m;
   }
   return items;

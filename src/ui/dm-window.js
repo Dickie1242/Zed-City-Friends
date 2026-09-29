@@ -17,11 +17,13 @@ export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const isEnemy = services.isEnemy || (() => false);
   const isMuted = services.isMuted || (() => false);
-  const localTime = () => !!(services.isLocalTime && services.isLocalTime());
-  let drawnLocal = null; // the time mode the log was last drawn in
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
+  // Unread count when the window opened: once messages are in, a "New" line goes above the first of them.
+  let unreadAtOpen = 0;
+  let newFrom = null;
+  let showNewLine = false;
   let wasOpen = false;
 
   const avatarSlot = h('span', { class: 'zcf-dm-avatar' });
@@ -152,6 +154,7 @@ export function createDmWindow(services, userId) {
     const text = input.value;
     input.value = '';
     atBottom = true;
+    newFrom = null; // you've answered: the "New" line has done its job
     conv.send(text);
   }
 
@@ -198,15 +201,17 @@ export function createDmWindow(services, userId) {
 
   function renderItem(item) {
     if (item.type === 'divider') return h('div', { class: 'zcf-divider' }, item.label);
+    if (item.type === 'new') return h('div', { class: 'zcf-new-line' }, 'New');
     const m = item.msg;
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
-    const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : '';
-    if (item.grouped) return h('div', { class: cls, title: time }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
+    const time = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
+    // data-zcf-ts: hovering shows the time in your own time zone (ui/time-hover.js).
+    if (item.grouped) return h('div', { class: cls, 'data-zcf-ts': m.ts || null }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
     const mine = m.senderId === myId;
     const sender = mine
       ? h('span', { class: 'zcf-sender' }, myName)
       : h('span', { class: 'zcf-sender zcf-them', onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
-    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time' }, time), h('div', { class: 'zcf-text' }, ...renderText(m.text)));
+    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time', 'data-zcf-ts': m.ts || null }, time), h('div', { class: 'zcf-text' }, ...renderText(m.text)));
   }
 
   function renderPending() {
@@ -234,15 +239,8 @@ export function createDmWindow(services, userId) {
   function renderConversation() {
     renderNotice();
     loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-    const local = localTime();
-    if (drawnLocal !== null && drawnLocal !== local) {
-      // Game time ↔ local time: every time and day divider changes, so draw the log afresh. Checked here,
-      // not only on a settings change, so a window that was minimized at the time catches up on reopen.
-      renderedKeys = [];
-      clear(log);
-    }
-    drawnLocal = local;
-    const items = buildLog(conv.messages(), { local });
+    placeNewLine();
+    const items = buildLog(conv.messages(), { newFrom });
     const keys = items.map((i) => i.key);
     const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
     const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -259,12 +257,33 @@ export function createDmWindow(services, userId) {
     renderPending();
     if (atBottom) {
       scrollToBottom();
+      if (showNewLine) revealNewLine();
       if (conv.trim()) return;
     } else if (prepended) {
       scroller.scrollTop = prevTop + (scroller.scrollHeight - prevHeight);
     } else if (grew) {
       newChip.hidden = false;
     }
+  }
+
+  function placeNewLine() {
+    if (!unreadAtOpen || !conv.state.loaded) return;
+    const theirs = conv.messages().filter((m) => m.senderId !== myId).sort((a, b) => a.id - b.id);
+    const first = theirs[Math.max(0, theirs.length - unreadAtOpen)];
+    unreadAtOpen = 0;
+    newFrom = first ? first.id : null;
+    showNewLine = !!first;
+  }
+
+  // More unread than fits: start at the "New" line rather than the bottom.
+  function revealNewLine() {
+    showNewLine = false;
+    const line = log.querySelector('.zcf-new-line');
+    if (!line) return;
+    const off = line.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (off >= 0) return;
+    scroller.scrollTop += off - 8;
+    atBottom = isAtBottom();
   }
 
   function update() {
@@ -297,13 +316,15 @@ export function createDmWindow(services, userId) {
     const unread = (s.threads[userId] && s.threads[userId].unread) || 0;
     setBadge(unreadBadge, unread, !open);
     if (open && !wasOpen) {
+      unreadAtOpen = unread;
+      newFrom = null;
       conv.ensureLoaded();
       atBottom = true;
       renderConversation();
-    } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
-      renderConversation();
     }
     if (!open) {
+      unreadAtOpen = 0;
+      newFrom = null;
       gifPicker.close();
       syncGifBtn();
       emojiPicker.close();

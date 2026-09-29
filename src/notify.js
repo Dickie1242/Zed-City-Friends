@@ -33,10 +33,19 @@ export function createNotifier({ win = window, onOpen = () => {} } = {}) {
         } catch {
           // focusing can be refused; opening the DM still helps
         }
-        onOpen(id);
+        if (id > 0) onOpen(id);
         n.close();
       };
       return n;
+    },
+    // Shown once when they're switched on. Some browsers (Chrome on Android) grant permission but refuse
+    // page notifications, so this is also the check that they can appear at all.
+    confirm() {
+      return !!this.show({
+        id: 0,
+        title: 'Zed City Friends',
+        body: "Desktop notifications are on. New private messages show up here while the game isn't in focus.",
+      });
     },
   };
 }

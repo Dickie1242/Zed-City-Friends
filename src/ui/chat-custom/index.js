@@ -12,6 +12,9 @@ import { gripsFor } from '../../chat-custom/geometry.js';
 import { isLocked, isMoved, textOf, clampText, dmIdOf, chatLabel, LIMITS } from '../../chat-custom/chats.js';
 import { updateChat } from '../../settings.js';
 
+// Chats remembered for stacking order; more than this and the oldest drop back to the page order.
+const MAX_FRONT = 12;
+
 // dm: { name(id), isMuted(id), toggleMute(id) } for a DM's menu.
 export function createChatCustom({ doc = document, win = window, keeper = null, settings, isSmall, dm = null }) {
   const styleEl = doc.createElement('style');
@@ -25,6 +28,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
   let rootEl = null;
   let rootCount = -1;
   let live = null; // { key, entry } while a drag or resize is under way
+  let front = []; // chat keys by last use (pointer down in them), the latest last: on top when moved chats overlap
   let unkeep = null;
   let unsubscribe = null;
   let frame = 0;
@@ -80,7 +84,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
       const m = measure(c);
       if (m) sizes[c.key] = m;
     }
-    const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes });
+    const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
     if (styleEl.textContent !== css) styleEl.textContent = css;
     if (!styleEl.isConnected) (doc.head || doc.documentElement).appendChild(styleEl);
   }
@@ -200,6 +204,18 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     },
   });
 
+  // Clicking or dragging a chat puts it on top, once any chat has been moved (docked ones never overlap).
+  function onPointerDown(e) {
+    const target = e.target;
+    if (isSmall() || !target || !target.closest || !target.closest('.chat-containers')) return;
+    const all = settings.get().chats;
+    if (!Object.keys(all).some((k) => isMoved(all[k]))) return;
+    const c = findChats(doc).find((x) => x.el.contains(target));
+    if (!c || front[front.length - 1] === c.key) return;
+    front = [...front.filter((k) => k !== c.key), c.key].slice(-MAX_FRONT);
+    applyStyle();
+  }
+
   // Viewport changes re-clamp moved chats and re-check the 400px header controls, once per frame.
   function onViewport() {
     if (frame) return;
@@ -214,6 +230,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
       if (unsubscribe) return;
       unsubscribe = settings.subscribe(() => refresh());
       win.addEventListener('resize', onViewport);
+      doc.addEventListener('pointerdown', onPointerDown, true);
       if (keeper) unkeep = keeper.add({ name: 'chat-custom', attached, ensure: refresh });
       refresh();
     },
@@ -224,6 +241,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
       if (unkeep) unkeep();
       unkeep = null;
       win.removeEventListener('resize', onViewport);
+      doc.removeEventListener('pointerdown', onPointerDown, true);
       if (frame) win.cancelAnimationFrame(frame);
       frame = 0;
       drag.destroy();

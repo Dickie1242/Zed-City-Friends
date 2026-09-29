@@ -20,7 +20,8 @@ const zoomTargets = (key) => (key.startsWith('game:') ? ['.chat-content'] : ['.z
 
 // chats: settings.chats. live: { key, entry } overriding one chat mid-gesture. sizes: key -> { w, h } as
 // drawn now, to keep a moved chat fully on screen. small: the phone layout, where only message size applies.
-export function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {} }) {
+// front: chat keys by last use, the latest last, so moved chats that overlap stack that way.
+export function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {}, front = [] }) {
   const rules = [];
   const keys = new Set(Object.keys(chats));
   if (live) keys.add(live.key);
@@ -49,5 +50,6 @@ export function buildUserCss({ chats = {}, live = null, small = false, vw = 1280
     if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(';')};flex:none}`);
     if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab;touch-action:none}`); // a touch drag moves it, not the page
   }
+  if (!small) front.forEach((key, i) => rules.push(`${chatSelector(key)}{z-index:${i + 1}}`));
   return rules.join('\n');
 }

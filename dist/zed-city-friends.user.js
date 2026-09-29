@@ -372,7 +372,7 @@
   var SOUNDS = ["off", "chirp", "ping", "bell"];
   var MAX_MUTED = 500;
   var MAX_PINNED = 20;
-  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "localTime"];
+  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount"];
   function defaultSettings() {
     return {
       v: 1,
@@ -383,8 +383,7 @@
       pinned: [],
       notify: false,
       notifyFriendsOnly: false,
-      titleCount: true,
-      localTime: false
+      titleCount: true
     };
   }
   var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
@@ -409,8 +408,7 @@
       pinned: normalizeIdList(doc.pinned, MAX_PINNED),
       notify: doc.notify === true,
       notifyFriendsOnly: doc.notifyFriendsOnly === true,
-      titleCount: doc.titleCount !== false,
-      localTime: doc.localTime === true
+      titleCount: doc.titleCount !== false
     };
   }
   function setPmTab(s, tab) {
@@ -743,10 +741,19 @@
             win.focus();
           } catch {
           }
-          onOpen(id);
+          if (id > 0) onOpen(id);
           n.close();
         };
         return n;
+      },
+      // Shown once when they're switched on. Some browsers (Chrome on Android) grant permission but refuse
+      // page notifications, so this is also the check that they can appear at all.
+      confirm() {
+        return !!this.show({
+          id: 0,
+          title: "Zed City Friends",
+          body: "Desktop notifications are on. New private messages show up here while the game isn't in focus."
+        });
       }
     };
   }
@@ -1042,11 +1049,17 @@
     const [, , , h2, mi] = parts(ts, local);
     return `${pad(h2)}:${pad(mi)}`;
   }
+  function yesterdayKey(now, local) {
+    if (!local) return dayKey(now - DAY_MS, false);
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return dayKey(d.getTime(), true);
+  }
   function formatMessageTime(ts, now = Date.now(), local = false) {
     const clock = formatClock(ts, local);
     const day = dayKey(ts, local);
     if (day === dayKey(now, local)) return clock;
-    if (day === dayKey(now - DAY_MS, local)) return `Yesterday at ${clock}`;
+    if (day === yesterdayKey(now, local)) return `Yesterday at ${clock}`;
     const [y, m, d] = parts(ts, local);
     return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
   }
@@ -3495,7 +3508,7 @@ sandfish		/items/sandfish.webp`;
   function normalizeThreads(data, now = Date.now()) {
     return asArray(data).map((raw) => normalizeThread(raw, now)).filter(Boolean);
   }
-  function buildLog(messages, { local = false } = {}) {
+  function buildLog(messages, { local = false, newFrom = null } = {}) {
     const byId = /* @__PURE__ */ new Map();
     for (const m of messages) byId.set(m.id, m);
     const sorted = [...byId.values()].sort((a, b) => a.id - b.id);
@@ -3506,7 +3519,9 @@ sandfish		/items/sandfish.webp`;
       const prevDay = prev && prev.ts !== null ? dayKey(prev.ts, local) : null;
       if (day && day !== prevDay) items.push({ type: "divider", key: `d:${day}`, label: formatDayLabel(m.ts, local) });
       const grouped = !!prev && prev.senderId === m.senderId && day !== null && day === prevDay && Math.abs(m.ts - prev.ts) <= GROUP_WINDOW_MS;
-      items.push({ type: "msg", key: `m:${m.id}`, msg: m, grouped });
+      const isNew = m.id === newFrom;
+      if (isNew) items.push({ type: "new", key: "new" });
+      items.push({ type: "msg", key: `m:${m.id}`, msg: m, grouped: grouped && !isNew });
       prev = m;
     }
     return items;
@@ -3785,6 +3800,7 @@ sandfish		/items/sandfish.webp`;
     let threads = [];
     let previous = null;
     let lastSignature = null;
+    let status = "loading";
     const subs = /* @__PURE__ */ new Set();
     function emit() {
       for (const fn of [...subs]) {
@@ -3797,7 +3813,14 @@ sandfish		/items/sandfish.webp`;
     }
     async function poll() {
       const r = await api.getChats(1);
-      if (!r.ok) return r;
+      if (!r.ok) {
+        if (status === "loading") {
+          status = "error";
+          emit();
+        }
+        return r;
+      }
+      status = "ok";
       threads = normalizeThreads(r.data, now());
       if (previous) {
         for (const t of threads) {
@@ -3870,6 +3893,7 @@ sandfish		/items/sandfish.webp`;
     return {
       poll,
       threads: () => threads,
+      status: () => status,
       lastReply(userId) {
         const t = threads.find((x) => x.userId === userId);
         return t ? t.lastReply : null;
@@ -3965,7 +3989,7 @@ sandfish		/items/sandfish.webp`;
     function onVisibility() {
       if (!active) return;
       if (visible()) tick();
-      else if (hiddenMs() !== null) schedule(hiddenMs());
+      else if (hiddenMs() !== null) schedule(Math.max(hiddenMs(), backoff));
       else clear2();
     }
     doc.addEventListener("visibilitychange", onVisibility);
@@ -4447,6 +4471,7 @@ sandfish		/items/sandfish.webp`;
   var LOAD_MORE_PX = 80;
   var TABS = [["chats", "Chats"], ["friends", "Friends"], ["faction", "Faction"], ["blocked", "Blocked"]];
   var SEARCH_TEXT = { short: "Keep typing…", searching: "Searching…" };
+  var PIN_QUIET_MS = 400;
   function createPmWindow(services, { doc = document } = {}) {
     const { store, settings, actions, presence, inbox, players, router, toast, playerId, myId, api } = services;
     const isEnemy2 = services.isEnemy || (() => false);
@@ -4465,6 +4490,7 @@ sandfish		/items/sandfish.webp`;
       for (const t of inbox.threads()) seenOnPage1.set(t.userId, t);
     }
     let faction = { status: "idle", data: null };
+    let pinQuietUntil = 0;
     let blocked = { status: "idle", pages: [], total: 0, loading: false, done: false };
     let blockedShowing = false;
     let reloadBlocked = false;
@@ -4682,6 +4708,8 @@ sandfish		/items/sandfish.webp`;
         "data-zcf-focus": `pin:${t.userId}`,
         onclick: (e) => {
           e.stopPropagation();
+          if (Date.now() < pinQuietUntil) return;
+          pinQuietUntil = Date.now() + PIN_QUIET_MS;
           actions.togglePin(t.userId);
         }
       }, icon("thumbtack"));
@@ -4712,7 +4740,7 @@ sandfish		/items/sandfish.webp`;
         const muted = isMuted2(t.userId);
         const when = t.lastReply ? longAgo(t.lastReply, now) : "";
         const line = previewLine(t, myId);
-        return item(["chat", t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy2(t.userId), muted, !!t.pinned], () => rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
+        return item(["chat", t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy2(t.userId), muted, !!t.pinned], () => rowEl(`row:${t.userId}`, () => Date.now() >= pinQuietUntil && openChat(t.userId, t.username, t.avatar), [
           avatar({ avatar: t.avatar, online: onDot(p), size: 30 }),
           h(
             "div",
@@ -4722,7 +4750,10 @@ sandfish		/items/sandfish.webp`;
           )
         ]));
       });
-      if (!rows.length) return [note("No conversations yet.")];
+      if (!rows.length) {
+        const status = inbox.status ? inbox.status() : "ok";
+        return [note(status === "loading" ? "Loading…" : status === "error" ? "Couldn't load your chats. Trying again…" : "No conversations yet.")];
+      }
       if (olderState !== "done") {
         const label = olderState === "loading" ? "Loading…" : olderState === "error" ? "Couldn't load. Retry" : "Load older chats";
         items.push(item(["older", olderState], () => h("button", {
@@ -4765,7 +4796,10 @@ sandfish		/items/sandfish.webp`;
     function factionItems(now) {
       if (faction.status === "idle" || faction.status === "loading") return [note("Loading…")];
       if (faction.status === "none") return [note("You're not in a faction.")];
-      if (faction.status === "error") return [retryItem(() => factionPoller.poke())];
+      if (faction.status === "error") return [retryItem(() => {
+        factionPoller.poke();
+        factionPoller.start();
+      })];
       const rows = buildFactionRows(faction.data, { myId, now });
       if (!rows.length) return [note("No other members.")];
       return rows.map((m) => {
@@ -4853,6 +4887,7 @@ sandfish		/items/sandfish.webp`;
     function focusKey(k) {
       const target = el.querySelector(`[data-zcf-focus="${k}"]`);
       if (target) target.focus();
+      return !!target;
     }
     function renderList() {
       if (frame) {
@@ -4877,12 +4912,17 @@ sandfish		/items/sandfish.webp`;
       if (sig === lastSig) return;
       lastSig = sig;
       const activeKey = list.contains(doc.activeElement) ? doc.activeElement.dataset.zcfFocus : void 0;
+      const activeRow = activeKey ? [...list.querySelectorAll(".zcf-row")].findIndex((r) => r.contains(doc.activeElement)) : -1;
       const scrollTop = view === lastView ? list.scrollTop : 0;
       lastView = view;
       clear(list);
       for (const i of items) list.appendChild(i.build());
       list.scrollTop = scrollTop;
-      if (activeKey) focusKey(activeKey);
+      if (activeKey && !focusKey(activeKey) && activeRow >= 0) {
+        const rows = list.querySelectorAll(".zcf-row");
+        const next = rows[Math.min(activeRow, rows.length - 1)];
+        if (next) next.focus();
+      }
     }
     function syncLoaders() {
       const open = isOpen();
@@ -5205,11 +5245,12 @@ sandfish		/items/sandfish.webp`;
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const isEnemy2 = services.isEnemy || (() => false);
     const isMuted2 = services.isMuted || (() => false);
-    const localTime = () => !!(services.isLocalTime && services.isLocalTime());
-    let drawnLocal = null;
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
+    let unreadAtOpen = 0;
+    let newFrom = null;
+    let showNewLine = false;
     let wasOpen = false;
     const avatarSlot = h("span", { class: "zcf-dm-avatar" });
     const nameEl = h("span", { class: "zcf-dm-name" });
@@ -5324,6 +5365,7 @@ sandfish		/items/sandfish.webp`;
       const text2 = input.value;
       input.value = "";
       atBottom = true;
+      newFrom = null;
       conv.send(text2);
     }
     function displayName() {
@@ -5359,13 +5401,14 @@ sandfish		/items/sandfish.webp`;
     }
     function renderItem(item) {
       if (item.type === "divider") return h("div", { class: "zcf-divider" }, item.label);
+      if (item.type === "new") return h("div", { class: "zcf-new-line" }, "New");
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
-      const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : "";
-      if (item.grouped) return h("div", { class: cls, title: time }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
+      const time = m.ts ? formatMessageTime(m.ts, Date.now()) : "";
+      if (item.grouped) return h("div", { class: cls, "data-zcf-ts": m.ts || null }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
-      return h("div", { class: cls }, sender, h("span", { class: "zcf-time" }, time), h("div", { class: "zcf-text" }, ...renderText(m.text)));
+      return h("div", { class: cls }, sender, h("span", { class: "zcf-time", "data-zcf-ts": m.ts || null }, time), h("div", { class: "zcf-text" }, ...renderText(m.text)));
     }
     function renderPending() {
       clear(pendingEl);
@@ -5390,13 +5433,8 @@ sandfish		/items/sandfish.webp`;
     function renderConversation() {
       renderNotice();
       loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-      const local = localTime();
-      if (drawnLocal !== null && drawnLocal !== local) {
-        renderedKeys = [];
-        clear(log);
-      }
-      drawnLocal = local;
-      const items = buildLog(conv.messages(), { local });
+      placeNewLine();
+      const items = buildLog(conv.messages(), { newFrom });
       const keys = items.map((i) => i.key);
       const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
       const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -5413,12 +5451,30 @@ sandfish		/items/sandfish.webp`;
       renderPending();
       if (atBottom) {
         scrollToBottom();
+        if (showNewLine) revealNewLine();
         if (conv.trim()) return;
       } else if (prepended) {
         scroller.scrollTop = prevTop + (scroller.scrollHeight - prevHeight);
       } else if (grew) {
         newChip.hidden = false;
       }
+    }
+    function placeNewLine() {
+      if (!unreadAtOpen || !conv.state.loaded) return;
+      const theirs = conv.messages().filter((m) => m.senderId !== myId).sort((a, b) => a.id - b.id);
+      const first = theirs[Math.max(0, theirs.length - unreadAtOpen)];
+      unreadAtOpen = 0;
+      newFrom = first ? first.id : null;
+      showNewLine = !!first;
+    }
+    function revealNewLine() {
+      showNewLine = false;
+      const line = log.querySelector(".zcf-new-line");
+      if (!line) return;
+      const off = line.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      if (off >= 0) return;
+      scroller.scrollTop += off - 8;
+      atBottom = isAtBottom();
     }
     function update() {
       const s = store.get();
@@ -5450,13 +5506,15 @@ sandfish		/items/sandfish.webp`;
       const unread = s.threads[userId] && s.threads[userId].unread || 0;
       setBadge(unreadBadge, unread, !open);
       if (open && !wasOpen) {
+        unreadAtOpen = unread;
+        newFrom = null;
         conv.ensureLoaded();
         atBottom = true;
         renderConversation();
-      } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
-        renderConversation();
       }
       if (!open) {
+        unreadAtOpen = 0;
+        newFrom = null;
         gifPicker.close();
         syncGifBtn();
         emojiPicker.close();
@@ -5506,13 +5564,20 @@ sandfish		/items/sandfish.webp`;
         {
           title: "Never miss a message",
           points: [
-            "Optional desktop notifications for new private messages (Chat settings), with a Friends only switch.",
+            "Optional desktop notifications for new private messages (Chat settings), with a Friends only switch. With the game open in two tabs, only one of them speaks up.",
             "The browser tab's title shows your unread count, like (2) Zed City. You can turn it off in Chat settings."
           ]
         },
         { title: "Pinned chats", points: ["Pin conversations to the top of the Chats tab with the pin on each row."] },
         { title: "Phones", points: ["An open chat gets the full width, with every bubble on a row underneath."] },
-        { title: "Local time", points: ["Show message times in your own time zone instead of game time (Chat settings)."] },
+        {
+          title: "Chats",
+          points: [
+            "Hover (or tap) any chat time, in DMs and in the game's own chats, to see it in the other clock: your time or game time.",
+            'Opening a DM with unread messages puts a "New" line above the first one.',
+            "Moved chats that overlap: the one you click comes to the front."
+          ]
+        },
         { title: "Fixes", points: ["Smaller fixes for unblocking, the Faction tab, sounds, tablets and keyboard focus."] }
       ]
     },
@@ -5624,13 +5689,6 @@ sandfish		/items/sandfish.webp`;
     const friendsOnlyBox = checkbox("Friends only", "notify-friends", (on) => actions.setNotifyFriendsOnly(on));
     const titleBox = checkbox("Unread count in the browser tab", "title-count", (on) => actions.setTitleCount(on));
     const note = h("div", { class: "zcf-set-note" });
-    const timeSelect = h(
-      "select",
-      { class: "zcf-set-select", "aria-label": "Message times", "data-zcf-focus": "times" },
-      h("option", { value: "game" }, "Game time (ZCT)"),
-      h("option", { value: "local" }, "Your local time")
-    );
-    timeSelect.addEventListener("change", () => actions.setLocalTime(timeSelect.value === "local"));
     function permissionNote() {
       const n = services.notifier;
       if (!n || !n.supported) return "Not supported in this browser.";
@@ -5742,7 +5800,6 @@ sandfish		/items/sandfish.webp`;
         ),
         section("Notifications", notifyBox.row, h("div", { class: "zcf-set-sub" }, friendsOnlyBox.row), note, titleBox.row),
         section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
-        section("Display", h("label", { class: "zcf-set-sound" }, h("span", null, "Message times"), timeSelect)),
         section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
       ];
     }
@@ -5757,7 +5814,6 @@ sandfish		/items/sandfish.webp`;
       friendsOnlyBox.input.checked = s.notifyFriendsOnly;
       friendsOnlyBox.input.disabled = !s.notify;
       titleBox.input.checked = s.titleCount;
-      timeSelect.value = s.localTime ? "local" : "game";
       note.textContent = blocked;
       note.hidden = !blocked;
       const rows = chatRows();
@@ -7170,7 +7226,7 @@ sandfish		/items/sandfish.webp`;
     return `body .chat-containers .zcf[data-zcf-chat="${key}"]`;
   }
   var zoomTargets = (key) => key.startsWith("game:") ? [".chat-content"] : [".zcf-zoom"];
-  function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {} }) {
+  function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {}, front = [] }) {
     const rules = [];
     const keys = new Set(Object.keys(chats));
     if (live) keys.add(live.key);
@@ -7198,10 +7254,12 @@ sandfish		/items/sandfish.webp`;
       if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(";")};flex:none}`);
       if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab;touch-action:none}`);
     }
+    if (!small) front.forEach((key, i) => rules.push(`${chatSelector(key)}{z-index:${i + 1}}`));
     return rules.join("\n");
   }
 
   // src/ui/chat-custom/index.js
+  var MAX_FRONT = 12;
   function createChatCustom({ doc = document, win = window, keeper = null, settings, isSmall, dm = null }) {
     const styleEl = doc.createElement("style");
     styleEl.id = STYLE_ID;
@@ -7212,6 +7270,7 @@ sandfish		/items/sandfish.webp`;
     let rootEl = null;
     let rootCount = -1;
     let live = null;
+    let front = [];
     let unkeep = null;
     let unsubscribe = null;
     let frame = 0;
@@ -7261,7 +7320,7 @@ sandfish		/items/sandfish.webp`;
         const m = measure(c);
         if (m) sizes[c.key] = m;
       }
-      const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes });
+      const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
       if (styleEl.textContent !== css) styleEl.textContent = css;
       if (!styleEl.isConnected) (doc.head || doc.documentElement).appendChild(styleEl);
     }
@@ -7372,6 +7431,16 @@ sandfish		/items/sandfish.webp`;
         applyStyle();
       }
     });
+    function onPointerDown(e) {
+      const target = e.target;
+      if (isSmall() || !target || !target.closest || !target.closest(".chat-containers")) return;
+      const all = settings.get().chats;
+      if (!Object.keys(all).some((k) => isMoved(all[k]))) return;
+      const c = findChats(doc).find((x) => x.el.contains(target));
+      if (!c || front[front.length - 1] === c.key) return;
+      front = [...front.filter((k) => k !== c.key), c.key].slice(-MAX_FRONT);
+      applyStyle();
+    }
     function onViewport() {
       if (frame) return;
       frame = win.requestAnimationFrame(() => {
@@ -7384,6 +7453,7 @@ sandfish		/items/sandfish.webp`;
         if (unsubscribe) return;
         unsubscribe = settings.subscribe(() => refresh());
         win.addEventListener("resize", onViewport);
+        doc.addEventListener("pointerdown", onPointerDown, true);
         if (keeper) unkeep = keeper.add({ name: "chat-custom", attached, ensure: refresh });
         refresh();
       },
@@ -7394,6 +7464,7 @@ sandfish		/items/sandfish.webp`;
         if (unkeep) unkeep();
         unkeep = null;
         win.removeEventListener("resize", onViewport);
+        doc.removeEventListener("pointerdown", onPointerDown, true);
         if (frame) win.cancelAnimationFrame(frame);
         frame = 0;
         drag.destroy();
@@ -7407,30 +7478,164 @@ sandfish		/items/sandfish.webp`;
   }
 
   // src/ui/title-count.js
-  var PREFIX = /^\(\d+\) /;
   function createTitleCount({ doc = document, win = window } = {}) {
     let want = "";
+    let written = "";
     let observer = null;
     function apply() {
-      const next = want + doc.title.replace(PREFIX, "");
-      if (doc.title !== next) doc.title = next;
+      const title = doc.title;
+      const base = written && title.startsWith(written) ? title.slice(written.length) : title;
+      const next = want + base;
+      written = want;
+      if (title !== next) doc.title = next;
     }
-    function watch() {
-      if (observer) return;
-      observer = new win.MutationObserver(() => apply());
-      observer.observe(doc.head || doc.documentElement, { childList: true, subtree: true, characterData: true });
+    function watch(on) {
+      if (on && !observer) {
+        observer = new win.MutationObserver(() => apply());
+        observer.observe(doc.head || doc.documentElement, { childList: true, subtree: true, characterData: true });
+      } else if (!on && observer) {
+        observer.disconnect();
+        observer = null;
+      }
     }
     return {
       set(count, enabled) {
         want = enabled && count > 0 ? `(${count}) ` : "";
         apply();
-        if (want) watch();
+        watch(!!want);
       },
       destroy() {
-        if (observer) observer.disconnect();
-        observer = null;
         want = "";
         apply();
+        watch(false);
+      }
+    };
+  }
+
+  // src/ui/time-hover.js
+  var DAY_MS2 = 864e5;
+  var NEAR_MIN = 2;
+  var TAP_MS = 2500;
+  var OURS = "[data-zcf-ts]";
+  var GAME = ".chat-container:not(.zcf) .msg-time";
+  var minutesOf = (text2) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(text2).trim());
+    return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  var near = (a, b) => {
+    const d = Math.abs(a - b) % 1440;
+    return Math.min(d, 1440 - d) <= NEAR_MIN;
+  };
+  function createTimeHover({ doc = document, win = window, storage, key, now = () => Date.now() }) {
+    let tip = null;
+    let shownFor = null;
+    let hideTimer = 0;
+    let clock = null;
+    try {
+      const v = storage.getItem(key);
+      if (v === "local" || v === "game") clock = v;
+    } catch {
+    }
+    const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
+    function learnClock() {
+      const d = new Date(now());
+      const local = d.getHours() * 60 + d.getMinutes();
+      const game = d.getUTCHours() * 60 + d.getUTCMinutes();
+      for (const chat of doc.querySelectorAll(".chat-container:not(.zcf)")) {
+        const times = chat.querySelectorAll(".msg-time");
+        const m = times.length ? minutesOf(times[times.length - 1].textContent) : null;
+        if (m === null) continue;
+        const isLocal = near(m, local);
+        if (isLocal === near(m, game)) continue;
+        const found = isLocal ? "local" : "game";
+        if (found !== clock) {
+          clock = found;
+          try {
+            storage.setItem(key, found);
+          } catch {
+          }
+        }
+        return;
+      }
+    }
+    function gameMoment(minutes) {
+      const t = now();
+      const d = new Date(t);
+      const at = clock === "game" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Math.floor(minutes / 60), minutes % 60) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
+      if (at <= t + NEAR_MIN * 6e4) return at;
+      if (clock === "game") return at - DAY_MS2;
+      const y = new Date(at);
+      y.setDate(y.getDate() - 1);
+      return y.getTime();
+    }
+    function textFor(el) {
+      if (el.matches(OURS)) {
+        const ts2 = Number(el.getAttribute("data-zcf-ts"));
+        if (!Number.isFinite(ts2) || ts2 <= 0) return "";
+        const game = formatMessageTime(ts2, now(), false);
+        if (sameClocks()) return el.classList.contains("zcf-time") ? "" : game;
+        const local = `${formatMessageTime(ts2, now(), true)} your time`;
+        return el.classList.contains("zcf-time") ? local : `${game} ZCT · ${local}`;
+      }
+      if (sameClocks()) return "";
+      const minutes = minutesOf(el.textContent);
+      if (minutes === null) return "";
+      learnClock();
+      if (!clock) return "";
+      const ts = gameMoment(minutes);
+      return clock === "game" ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
+    }
+    function hide() {
+      clearTimeout(hideTimer);
+      shownFor = null;
+      if (tip) tip.hidden = true;
+    }
+    function show(el) {
+      const text2 = textFor(el);
+      if (!text2) return hide();
+      if (!tip) {
+        tip = doc.createElement("div");
+        tip.className = "zcf-tip";
+        tip.setAttribute("role", "tooltip");
+      }
+      if (!tip.isConnected) doc.body.appendChild(tip);
+      tip.textContent = text2;
+      tip.hidden = false;
+      shownFor = el;
+      const r = el.getBoundingClientRect();
+      const w = tip.offsetWidth;
+      const left = Math.max(4, Math.min(r.left + r.width / 2 - w / 2, win.innerWidth - w - 4));
+      const above = r.top - tip.offsetHeight - 6;
+      tip.style.left = `${Math.round(left)}px`;
+      tip.style.top = `${Math.round(above >= 4 ? above : r.bottom + 6)}px`;
+    }
+    const timeAt = (target) => target && target.closest ? target.closest(`${OURS}, ${GAME}`) : null;
+    function onOver(e) {
+      const el = timeAt(e.target);
+      if (el === shownFor) return;
+      if (el) show(el);
+      else hide();
+    }
+    function onTap(e) {
+      if (e.pointerType === "mouse") return;
+      const el = timeAt(e.target);
+      if (!el) return;
+      show(el);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hide, TAP_MS);
+    }
+    doc.addEventListener("mouseover", onOver);
+    doc.addEventListener("pointerup", onTap);
+    doc.addEventListener("scroll", hide, true);
+    return {
+      clock: () => clock,
+      destroy() {
+        doc.removeEventListener("mouseover", onOver);
+        doc.removeEventListener("pointerup", onTap);
+        doc.removeEventListener("scroll", hide, true);
+        hide();
+        if (tip) tip.remove();
+        tip = null;
       }
     };
   }
@@ -7447,7 +7652,8 @@ sandfish		/items/sandfish.webp`;
     const router = createRouter({ win, doc });
     const toast = createToaster(doc);
     const players = createPlayers({ api, now });
-    const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
+    const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => openFromNotification(id) });
+    let notifyAsk = 0;
     const notificationsOn = () => settings.get().notify && notifier.permission() === "granted";
     const tabFocus = createTabFocus({ storage, key: `zcf:v1:${playerId}:focus`, doc, win, now });
     let stopped = false;
@@ -7470,7 +7676,7 @@ sandfish		/items/sandfish.webp`;
       if (!was) threadsPoller.reschedule();
     }
     function markSeenIfNeeded(id) {
-      if (!isExpanded(id)) return;
+      if (!isExpanded(id) || doc.visibilityState === "hidden") return;
       const c = conversations.get(id);
       if (!c || !c.state.loaded) return;
       const seen = inbox.lastReply(id) || c.latestTs();
@@ -7514,7 +7720,11 @@ sandfish		/items/sandfish.webp`;
       if (!notificationsOn() || tabFocus.focused()) return;
       const friends = store.get().friends;
       const list = arrived.filter((t) => !s.notifyFriendsOnly || friends[t.userId]).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0)).slice(0, MAX_NOTIFY);
-      for (const t of list) notifier.show({ id: t.userId, title: t.username, body: (t.preview || "").slice(0, 120), icon: avatarUrl(t.avatar) });
+      for (const t of list) notifier.show({ id: t.userId, title: t.username, body: Array.from(t.preview || "").slice(0, 120).join(""), icon: avatarUrl(t.avatar) });
+    }
+    function openFromNotification(id) {
+      const t = inbox.threads().find((x) => x.userId === id);
+      actions.openDm(id, { expand: true, username: t ? t.username : void 0, avatar: t ? t.avatar : void 0 });
     }
     function pickActive() {
       if (activeDmId && isExpanded(activeDmId)) return activeDmId;
@@ -7650,19 +7860,22 @@ sandfish		/items/sandfish.webp`;
       resetChat: (key) => settings.update((s) => resetChat(s, key)),
       resetAllChats: () => settings.update((s) => resetAllChats(s)),
       async setNotify(on) {
-        if (on) {
-          const answer = await notifier.request();
-          if (answer !== "granted") {
-            settings.update((s) => setFlag(s, "notify", false));
-            toast(answer === "unsupported" ? "This browser has no desktop notifications." : "Notifications are blocked for zed.city in your browser's site settings.", { error: true });
-            return;
-          }
-        }
-        settings.update((s) => setFlag(s, "notify", on));
+        const ask = ++notifyAsk;
+        const off = (message, opts) => {
+          settings.update((s) => setFlag(s, "notify", false));
+          if (message) toast(message, opts);
+        };
+        if (!on) return off();
+        const answer = await notifier.request();
+        if (ask !== notifyAsk) return;
+        if (answer === "default") return off("Notifications stay off until you allow them when your browser asks.");
+        if (answer === "unsupported") return off("This browser has no desktop notifications.", { error: true });
+        if (answer !== "granted") return off("Notifications are blocked for zed.city in your browser's site settings.", { error: true });
+        if (!notifier.confirm()) return off("This browser won't show notifications from a web page.", { error: true });
+        settings.update((s) => setFlag(s, "notify", true));
       },
       setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, "notifyFriendsOnly", on)),
       setTitleCount: (on) => settings.update((s) => setFlag(s, "titleCount", on)),
-      setLocalTime: (on) => settings.update((s) => setFlag(s, "localTime", on)),
       togglePin(id) {
         if (!settings.update((s) => togglePinned(s, id))) toast("You can pin up to 20 chats.");
       },
@@ -7699,7 +7912,6 @@ sandfish		/items/sandfish.webp`;
       enemies,
       isEnemy: (id) => isEnemy(enemies.get(), id),
       isMuted: (id) => isMuted(settings.get(), id),
-      isLocalTime: () => settings.get().localTime,
       notifier,
       sound,
       playerId,
@@ -7753,6 +7965,7 @@ sandfish		/items/sandfish.webp`;
     const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
     const page = createFriendsPage(services, { doc, win, keeper });
     const titleCount = createTitleCount({ doc, win });
+    const timeHover = createTimeHover({ doc, win, storage, key: `zcf:v1:${playerId}:gameClock`, now });
     const syncTitle = () => {
       const s = settings.get();
       titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -7829,6 +8042,10 @@ sandfish		/items/sandfish.webp`;
       if (settings.get().sound !== "off") sound.unlock();
     };
     doc.addEventListener("pointerdown", unlockSound, { capture: true, once: true });
+    const onVisible = () => {
+      if (doc.visibilityState !== "hidden") for (const id of expandedIds()) markSeenIfNeeded(id);
+    };
+    doc.addEventListener("visibilitychange", onVisible);
     if (dock.isSmall()) enforcePhoneRule();
     renderDock();
     syncTitle();
@@ -7854,9 +8071,11 @@ sandfish		/items/sandfish.webp`;
         marks.destroy();
         custom.destroy();
         titleCount.destroy();
+        timeHover.destroy();
         tabFocus.destroy();
         view.destroy();
         doc.removeEventListener("pointerdown", unlockSound, true);
+        doc.removeEventListener("visibilitychange", onVisible);
         page.destroy();
         topbar.destroy();
         keeper.destroy();
@@ -8014,6 +8233,10 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-loader{text-align:center;font-size:11px;opacity:.5;padding:6px}
 .zcf-divider{display:flex;align-items:center;gap:8px;margin:10px 15px 2px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#ffffff59}
 .zcf-divider:before,.zcf-divider:after{content:"";flex:1;border-top:1px solid #ffffff14}
+.zcf-new-line{display:flex;align-items:center;gap:8px;margin:8px 15px 2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6fcf73}
+.zcf-new-line:before,.zcf-new-line:after{content:"";flex:1;border-top:1px solid #3d8b40aa}
+.zcf-tip{position:fixed;z-index:4001;pointer-events:none;padding:4px 8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 4px 12px #00000080;color:#e0e0e0;font-size:11px;line-height:1.3;white-space:nowrap}
+.zcf-tip[hidden]{display:none}
 .zcf-msg{padding:2px 15px;margin-top:8px}
 .zcf-msg.zcf-grouped,.zcf-pending-msg{margin-top:1px}
 .zcf-msg:hover{background:#ffffff08}

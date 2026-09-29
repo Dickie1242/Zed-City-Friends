@@ -24,6 +24,12 @@ describe('time', () => {
     expect(formatMessageTime(Date.UTC(2026, 8, 1, 9, 5), now)).toBe('01/09/2026 at 09:05');
   });
 
+  it('says Yesterday in your own time right after a 23-hour daylight-saving day', () => {
+    // New York springs forward on March 8, 2026: half past midnight on the 9th is 23 hours after the 8th began.
+    const now = new Date(2026, 2, 9, 0, 30).getTime();
+    expect(formatMessageTime(new Date(2026, 2, 8, 12, 0).getTime(), now, true)).toBe('Yesterday at 12:00');
+  });
+
   it('formats day dividers and day keys', () => {
     expect(formatDayLabel(T)).toBe('September 28, 2026');
     expect(utcDayKey(T)).toBe('2026-09-28');
