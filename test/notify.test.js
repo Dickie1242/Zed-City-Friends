@@ -51,6 +51,15 @@ describe('notifier', () => {
     expect(shown[0].close).toHaveBeenCalled();
   });
 
+  it('gives the test and switched-on notifications their own tags, and lets them pop up again every time', () => {
+    const { win, shown } = fakeWin('granted');
+    const n = createNotifier({ win });
+    n.show({ id: 0, title: 'Zed City Friends', body: 'test', tag: 'zcf-test', renotify: true });
+    expect(shown[0].opts).toMatchObject({ tag: 'zcf-test', renotify: true });
+    expect(n.confirm()).toBe(true);
+    expect(shown[1].opts).toMatchObject({ tag: 'zcf-on', renotify: true });
+  });
+
   it('shows nothing without permission', () => {
     const { win, shown } = fakeWin('denied');
     expect(createNotifier({ win }).show({ id: 5, title: 'Spike' })).toBeNull();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.7.0
+// @version      0.7.1
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -801,12 +801,13 @@
         }
       },
       // One notification per player (the tag), so a newer message replaces the older one, and a second game
-      // tab's copy replaces the first. Returns the notification, or null when it can't be shown.
-      show({ id, title, body, icon: icon2 }) {
+      // tab's copy replaces the first. A replacement comes quietly, without popping up again, unless
+      // `renotify`. Returns the notification, or null when it can't be shown.
+      show({ id, title, body, icon: icon2, tag = `zcf-dm-${id}`, renotify = false }) {
         if (!supported || N.permission !== "granted") return null;
         let n;
         try {
-          n = new N(title, { body, icon: icon2, tag: `zcf-dm-${id}` });
+          n = new N(title, renotify ? { body, icon: icon2, tag, renotify } : { body, icon: icon2, tag });
         } catch {
           return null;
         }
@@ -826,7 +827,9 @@
         return !!this.show({
           id: 0,
           title: "Zed City Friends",
-          body: "Desktop notifications are on. New private messages show up here while the game isn't in focus."
+          body: "Desktop notifications are on. New private messages show up here while the game isn't in focus.",
+          tag: "zcf-on",
+          renotify: true
         });
       }
     };
@@ -5767,9 +5770,14 @@ sandfish		/items/sandfish.webp`;
       section({ icon: "bolt", label: "Quick actions" }, h("div", { class: "zcf-set-btns" }, markBtn, closeBtn))
     ];
     function sendTest() {
+      if (!settings.get().notify) {
+        toast("Tick Desktop notifications first, then Test shows you one.");
+        return;
+      }
       const n = services.notifier;
-      const shown = n && n.show({ id: 0, title: "Zed City Friends", body: "This is how a new private message will show up." });
+      const shown = n && n.show({ id: 0, title: "Zed City Friends", body: "This is how a new private message will show up.", tag: "zcf-test", renotify: true });
       if (!shown) toast("Your browser didn't show it. Check its notification settings.", { error: true });
+      else toast("Test notification sent. If it didn't pop up, your computer may be blocking this browser's notifications, or Do not disturb is on.");
     }
     async function markAll() {
       if (marking) return;
@@ -5795,7 +5803,7 @@ sandfish		/items/sandfish.webp`;
       const supported = !!(services.notifier && services.notifier.supported);
       notify.input.checked = s.notify;
       notify.input.disabled = !supported;
-      test.disabled = !(s.notify && supported);
+      test.disabled = !supported;
       const blocked = blockedNote();
       note.textContent = blocked;
       note.hidden = !blocked;
@@ -6084,7 +6092,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.7.0" : "dev";
+  var VERSION = true ? "0.7.1" : "dev";
   var DEV_PROFILE_ID = 27581;
   var UPDATE_URL = "https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js";
 

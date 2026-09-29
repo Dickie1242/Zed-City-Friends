@@ -57,20 +57,30 @@ describe('chat settings window', () => {
   });
 
   describe('General', () => {
-    it('has the notification boxes, with Friends only and Test waiting on notifications', () => {
+    it('has the notification boxes, with Friends only waiting on notifications, and Test saying so too', () => {
       const { services, el } = mount();
       expect(box(el, 'Desktop notifications').checked).toBe(false);
       expect(box(el, 'Friends only').disabled).toBe(true);
-      expect(button(el, 'Test').disabled).toBe(true);
       expect(box(el, 'Unread count in the browser tab').checked).toBe(true);
+      button(el, 'Test').click();
+      expect(services.notifier.show).not.toHaveBeenCalled();
+      expect(services.toast).toHaveBeenCalledWith('Tick Desktop notifications first, then Test shows you one.');
       box(el, 'Desktop notifications').click();
       expect(services.actions.setNotify).toHaveBeenCalledWith(true);
       expect(box(el, 'Friends only').disabled).toBe(false);
       button(el, 'Test').click();
-      expect(services.notifier.show).toHaveBeenCalledWith(expect.objectContaining({ id: 0, title: 'Zed City Friends' }));
+      expect(services.notifier.show).toHaveBeenCalledWith(expect.objectContaining({ id: 0, title: 'Zed City Friends', tag: 'zcf-test', renotify: true }));
       expect(services.toast).toHaveBeenCalledWith("Your browser didn't show it. Check its notification settings.", { error: true });
       box(el, 'Unread count in the browser tab').click();
       expect(services.actions.setTitleCount).toHaveBeenCalledWith(false);
+    });
+
+    it('says where to look when the test notification was sent but may not have popped up', () => {
+      const { services, el } = mount();
+      services.notifier.show.mockReturnValue({});
+      box(el, 'Desktop notifications').click();
+      button(el, 'Test').click();
+      expect(services.toast).toHaveBeenCalledWith(expect.stringContaining('Test notification sent'));
     });
 
     it('explains when the browser blocks notifications or has none', () => {
@@ -82,6 +92,7 @@ describe('chat settings window', () => {
       w.update();
       expect(el.querySelector('.zcf-set-note').textContent).toContain('Not supported');
       expect(box(el, 'Desktop notifications').disabled).toBe(true);
+      expect(button(el, 'Test').disabled).toBe(true);
     });
 
     it('picks both sounds, plays them at the volume, and saves the volume', () => {

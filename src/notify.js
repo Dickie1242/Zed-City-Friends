@@ -18,12 +18,13 @@ export function createNotifier({ win = window, onOpen = () => {} } = {}) {
       }
     },
     // One notification per player (the tag), so a newer message replaces the older one, and a second game
-    // tab's copy replaces the first. Returns the notification, or null when it can't be shown.
-    show({ id, title, body, icon }) {
+    // tab's copy replaces the first. A replacement comes quietly, without popping up again, unless
+    // `renotify`. Returns the notification, or null when it can't be shown.
+    show({ id, title, body, icon, tag = `zcf-dm-${id}`, renotify = false }) {
       if (!supported || N.permission !== 'granted') return null;
       let n;
       try {
-        n = new N(title, { body, icon, tag: `zcf-dm-${id}` });
+        n = new N(title, renotify ? { body, icon, tag, renotify } : { body, icon, tag });
       } catch {
         return null;
       }
@@ -45,6 +46,8 @@ export function createNotifier({ win = window, onOpen = () => {} } = {}) {
         id: 0,
         title: 'Zed City Friends',
         body: "Desktop notifications are on. New private messages show up here while the game isn't in focus.",
+        tag: 'zcf-on',
+        renotify: true,
       });
     },
   };

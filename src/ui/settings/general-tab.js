@@ -49,10 +49,18 @@ export function createGeneralTab({ services, doc = document }) {
     section({ icon: 'bolt', label: 'Quick actions' }, h('div', { class: 'zcf-set-btns' }, markBtn, closeBtn)),
   ];
 
+  // Its own tag, popping up again each time: a notification with the tag of one still in the system's
+  // notification centre would replace it without showing. Clickable with notifications off too, so a click
+  // always answers.
   function sendTest() {
+    if (!settings.get().notify) {
+      toast('Tick Desktop notifications first, then Test shows you one.');
+      return;
+    }
     const n = services.notifier;
-    const shown = n && n.show({ id: 0, title: 'Zed City Friends', body: 'This is how a new private message will show up.' });
+    const shown = n && n.show({ id: 0, title: 'Zed City Friends', body: 'This is how a new private message will show up.', tag: 'zcf-test', renotify: true });
     if (!shown) toast("Your browser didn't show it. Check its notification settings.", { error: true });
+    else toast("Test notification sent. If it didn't pop up, your computer may be blocking this browser's notifications, or Do not disturb is on.");
   }
 
   async function markAll() {
@@ -82,7 +90,7 @@ export function createGeneralTab({ services, doc = document }) {
     const supported = !!(services.notifier && services.notifier.supported);
     notify.input.checked = s.notify;
     notify.input.disabled = !supported;
-    test.disabled = !(s.notify && supported);
+    test.disabled = !supported;
     const blocked = blockedNote();
     note.textContent = blocked;
     note.hidden = !blocked;
