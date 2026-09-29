@@ -1,8 +1,14 @@
 // The game's logged-in markup for the preview harness, trimmed from the live client (see also
 // test/fixtures/game-dom.js): the header's icon group, a page, and the chat dock with Faction, Global and
 // Activity chats.
-const msg = (name, time, text) =>
-  `<div class="msg-cont"><div><div><div><div><span class="sender-name">${name}</span><span class="text-grey-7" style="margin-left:8px;font-size:11px">${time}</span></div><div>${text}</div></div></div></div></div>`;
+// Like the game's msgTime(): the browser clock's HH:MM, here for a message sent `minAgo` minutes ago.
+const pad = (n) => String(n).padStart(2, '0');
+const ago = (minAgo) => {
+  const d = new Date(Date.now() - minAgo * 60000);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const msg = (name, minAgo, text) =>
+  `<div class="msg-cont"><div><div><div><div><span class="sender-name">${name}</span><span class="msg-time" style="margin-left:8px;font-size:11px;color:#757575">${ago(minAgo)}</span></div><div>${text}</div></div></div></div></div>`;
 
 const roundBtn = (href, iconClass, count) =>
   `<div><a class="q-btn q-btn-item non-selectable no-outline q-btn--flat q-btn--round ${count ? 'text-grey-4' : 'text-grey-7'} q-btn--actionable q-focusable q-hoverable" tabindex="0" href="${href}" style="font-size: 10px;"><span class="q-focus-helper"></span><span class="q-btn__content text-center col items-center q-anchor--skip justify-center row"><i class="q-icon fas ${iconClass}" aria-hidden="true" role="img"></i>${count ? `<div class="q-badge flex inline items-center no-wrap q-badge--single-line bg-red-5 text-white q-badge--floating q-badge--rounded" role="status">${count}</div>` : ''}</span></a></div>`;
@@ -53,13 +59,13 @@ export const DOCK_HTML_FULL = `
     <div class="chat-content">
       <div class="live-chat" style="display:flex;flex-direction:column;height:100%">
         <div class="message-panel" style="flex:auto;min-height:0;overflow-y:auto;padding:4px 0 8px;font-size:13px;height:360px">
-          ${msg('Gravedigger', '14:10', 'anyone doing the bunker tonight?')}
-          ${msg('Nyx', '14:11', 'ya, need 2 more')}
-          ${msg('Rustbucket', '14:11', 'I can bring the crowbars')}
-          ${msg('Me', '14:12', 'me too')}
-          ${msg('Hollow', '14:13', 'selling 40 nails, pm me')}
-          ${msg('Gravedigger', '14:14', 'meet at the gate in 10')}
-          ${msg('Moth', '14:15', 'omw')}
+          ${msg('Gravedigger', 9, 'anyone doing the bunker tonight?')}
+          ${msg('Nyx', 8, 'ya, need 2 more')}
+          ${msg('Rustbucket', 8, 'I can bring the crowbars')}
+          ${msg('Me', 7, 'me too')}
+          ${msg('Hollow', 6, 'selling 40 nails, pm me')}
+          ${msg('Gravedigger', 5, 'meet at the gate in 10')}
+          ${msg('Moth', 4, 'omw')}
         </div>
         ${composer}
       </div>

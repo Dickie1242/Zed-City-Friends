@@ -1,8 +1,7 @@
 // Hover (or tap) a chat time to see it in the other clock, in place of a setting. Our DM times are game
 // time (ZCT, like the game's Mail), so they show your own time. The game's Global, Faction and Activity
 // chats print times with the browser clock, which comes out as your time or as game time depending on how
-// the chat server stamps messages; the newest message in a busy chat was sent just now, so whichever clock
-// reads "now" there is the one in use. That answer is remembered, and re-checked on every hover.
+// the chat server stamps messages. The newest messages tell which (see clockNow), checked on every hover.
 import { formatClock, formatMessageTime } from '../time.js';
 
 const DAY_MS = 86400000;
@@ -35,31 +34,42 @@ export function createTimeHover({ doc = document, win = window, storage, key, no
 
   const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
 
-  function learnClock() {
+  // Which clock the game's chats print, for this hover. A chat's newest message stamped "now" in exactly one
+  // clock settles it for good (remembered). Short of that: the remembered answer; else the freshest newest
+  // message, which is youngest in the right clock (nothing is from the future); else your time, which is
+  // what the game's code gives for messages stamped with a zone.
+  function clockNow() {
     const d = new Date(now());
     const local = d.getHours() * 60 + d.getMinutes();
     const game = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const age = (from, m) => (from - m + NEAR_MIN + 1440) % 1440; // minutes old, a little clock skew allowed
+    let guess = null;
     for (const chat of doc.querySelectorAll('.chat-container:not(.zcf)')) {
       const times = chat.querySelectorAll('.msg-time');
       const m = times.length ? minutesOf(times[times.length - 1].textContent) : null;
       if (m === null) continue;
       const isLocal = near(m, local);
-      if (isLocal === near(m, game)) continue; // neither, or a zone this close to UTC can't tell
-      const found = isLocal ? 'local' : 'game';
-      if (found !== clock) {
-        clock = found;
-        try {
-          storage.setItem(key, found);
-        } catch {
-          // as above
+      if (isLocal !== near(m, game)) {
+        const found = isLocal ? 'local' : 'game';
+        if (found !== clock) {
+          clock = found;
+          try {
+            storage.setItem(key, found);
+          } catch {
+            // as above
+          }
         }
+        return clock;
       }
-      return;
+      const a = age(local, m);
+      const b = age(game, m);
+      if (a !== b && (!guess || Math.min(a, b) < guess.age)) guess = { age: Math.min(a, b), clock: a < b ? 'local' : 'game' };
     }
+    return clock || (guess ? guess.clock : 'local');
   }
 
-  // The moment a game chat's "HH:MM" stands for: the latest one not in the future.
-  function gameMoment(minutes) {
+  // The moment a game chat's "HH:MM" stands for in `clock`: the latest one not in the future.
+  function gameMoment(minutes, clock) {
     const t = now();
     const d = new Date(t);
     const at = clock === 'game'
@@ -85,10 +95,9 @@ export function createTimeHover({ doc = document, win = window, storage, key, no
     if (sameClocks()) return '';
     const minutes = minutesOf(el.textContent);
     if (minutes === null) return '';
-    learnClock();
-    if (!clock) return '';
-    const ts = gameMoment(minutes);
-    return clock === 'game' ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
+    const printed = clockNow();
+    const ts = gameMoment(minutes, printed);
+    return printed === 'game' ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
   }
 
   function hide() {

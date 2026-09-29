@@ -7537,33 +7537,40 @@ sandfish		/items/sandfish.webp`;
     } catch {
     }
     const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
-    function learnClock() {
+    function clockNow() {
       const d = new Date(now());
       const local = d.getHours() * 60 + d.getMinutes();
       const game = d.getUTCHours() * 60 + d.getUTCMinutes();
+      const age = (from, m) => (from - m + NEAR_MIN + 1440) % 1440;
+      let guess = null;
       for (const chat of doc.querySelectorAll(".chat-container:not(.zcf)")) {
         const times = chat.querySelectorAll(".msg-time");
         const m = times.length ? minutesOf(times[times.length - 1].textContent) : null;
         if (m === null) continue;
         const isLocal = near(m, local);
-        if (isLocal === near(m, game)) continue;
-        const found = isLocal ? "local" : "game";
-        if (found !== clock) {
-          clock = found;
-          try {
-            storage.setItem(key, found);
-          } catch {
+        if (isLocal !== near(m, game)) {
+          const found = isLocal ? "local" : "game";
+          if (found !== clock) {
+            clock = found;
+            try {
+              storage.setItem(key, found);
+            } catch {
+            }
           }
+          return clock;
         }
-        return;
+        const a = age(local, m);
+        const b = age(game, m);
+        if (a !== b && (!guess || Math.min(a, b) < guess.age)) guess = { age: Math.min(a, b), clock: a < b ? "local" : "game" };
       }
+      return clock || (guess ? guess.clock : "local");
     }
-    function gameMoment(minutes) {
+    function gameMoment(minutes, clock2) {
       const t = now();
       const d = new Date(t);
-      const at = clock === "game" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Math.floor(minutes / 60), minutes % 60) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
+      const at = clock2 === "game" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Math.floor(minutes / 60), minutes % 60) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
       if (at <= t + NEAR_MIN * 6e4) return at;
-      if (clock === "game") return at - DAY_MS2;
+      if (clock2 === "game") return at - DAY_MS2;
       const y = new Date(at);
       y.setDate(y.getDate() - 1);
       return y.getTime();
@@ -7580,10 +7587,9 @@ sandfish		/items/sandfish.webp`;
       if (sameClocks()) return "";
       const minutes = minutesOf(el.textContent);
       if (minutes === null) return "";
-      learnClock();
-      if (!clock) return "";
-      const ts = gameMoment(minutes);
-      return clock === "game" ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
+      const printed = clockNow();
+      const ts = gameMoment(minutes, printed);
+      return printed === "game" ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
     }
     function hide() {
       clearTimeout(hideTimer);

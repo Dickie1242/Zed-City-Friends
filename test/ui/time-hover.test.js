@@ -49,13 +49,26 @@ describe('time hover', () => {
     expect(storage.getItem(KEY)).toBe('local');
   });
 
-  it('stays quiet over a game time until it knows the clock, then remembers it', () => {
-    mount(gameChat('09:00', '10:00'));
+  it('always answers over a game time: the remembered clock, else the freshest message, else your time', () => {
+    // 10:00 is 4½ hours old in your time and 8½ in game time: most likely your time.
+    const storage = mount(gameChat('09:00', '10:00'));
     over(document.querySelectorAll('.msg-time')[0]);
-    expect(tip() === null || tip().hidden).toBe(true);
+    expect(tip().textContent).toBe('13:00 ZCT');
+    expect(storage.getItem(KEY)).toBeNull(); // only a guess, not remembered
+    hover.destroy();
+    // 17:05 can only be game time (in your time it would be from the future, so 21 hours old).
+    mount(gameChat('17:00', '17:05'));
+    over(document.querySelectorAll('.msg-time')[0]);
+    expect(tip().textContent).toBe('13:00 your time');
     hover.destroy();
     mount(gameChat('09:00', '10:00'), memoryStorage({ [KEY]: 'game' }));
     over(document.querySelectorAll('.msg-time')[0]);
     expect(tip().textContent).toBe('05:00 your time');
+  });
+
+  it('works in the Faction chat too', () => {
+    mount(`<div class="chat-container faction-chat"><div class="msg-cont"><span class="sender-name">A</span><span class="msg-time">14:00</span></div><div class="msg-cont"><span class="msg-time">14:29</span></div></div>`);
+    over(document.querySelector('.faction-chat .msg-time'));
+    expect(tip().textContent).toBe('18:00 ZCT');
   });
 });
