@@ -347,4 +347,19 @@ describe('app', () => {
     expect(api.getChatMessages.mock.calls.map((c) => c[0])).toEqual([5]);
     expect(app.store.get().threads[5].unread).toBe(0);
   });
+
+  it('checks enemies\' presence as soon as the page switches from Friends to Enemies', async () => {
+    vi.useFakeTimers();
+    document.body.insertAdjacentHTML('beforeend', PAGE_404_HTML);
+    window.history.replaceState({}, '', '/friends');
+    const storage = storageWith({ friends: friends(5) });
+    storage.setItem(`zcf:v1:${ME}:enemies`, JSON.stringify({ v: 1, enemies: { 9: { id: 9, username: 'Grim' } } }));
+    const api = fakeApi();
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.getProfile.mock.calls.map((c) => c[0])).toEqual([5]);
+    window.history.pushState({}, '', '/enemies');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.getProfile.mock.calls.map((c) => c[0])).toEqual([5, 9]);
+  });
 });

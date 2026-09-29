@@ -32,6 +32,12 @@ export function createPmWindow(services, { doc = document } = {}) {
   // Chats: older inbox pages loaded by scrolling, kept for the session. Page 1 always comes from the poll.
   const older = [];
   let olderState = 'more'; // more | loading | error | done
+  // Every thread seen on page 1 this session, so one that slides onto page 2 after page 2 was loaded
+  // isn't lost. buildChatRows keeps the newest copy of each player's thread.
+  const seenOnPage1 = new Map();
+  function rememberPage1() {
+    for (const t of inbox.threads()) seenOnPage1.set(t.userId, t);
+  }
   // Faction and Blocked are loaded while their tab shows.
   let faction = { status: 'idle', data: null }; // idle | loading | ok | none | error
   let blocked = { status: 'idle', pages: [], total: 0, loading: false, done: false };
@@ -265,7 +271,8 @@ export function createPmWindow(services, { doc = document } = {}) {
   const onDot = (p) => (p ? !!p.online : undefined);
 
   function chatItems(s, now) {
-    const rows = buildChatRows({ page1: inbox.threads(), older, threads: s.threads });
+    rememberPage1();
+    const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads });
     const items = rows.map((t) => {
       const p = presence.get(t.userId);
       const muted = isMuted(t.userId);
@@ -451,6 +458,7 @@ export function createPmWindow(services, { doc = document } = {}) {
 
   // The minimized tab's green count: unread chats from friends and the Chats list, muted ones left out.
   function syncBadge() {
+    rememberPage1(); // runs on every inbox change, open or not
     const s = store.get();
     setBadge(unreadBadge, chatsUnreadTotal(s, inbox.threads(), settings.get().muted), !s.dock.friendsOpen);
   }

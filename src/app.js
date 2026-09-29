@@ -369,11 +369,16 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     page.scheduleRender();
     marks.refresh();
   });
+  // The presence poller keeps running from /friends to /enemies, so a switch of list needs its own sweep.
+  let listKind = null;
   router.onChange((path) => {
     profileButton.onRoute(path);
     enemyButton.onRoute(path);
     page.onRoute(path);
     syncPollers();
+    const kind = page.active ? page.kind : null;
+    if (kind && kind !== listKind) presencePoller.poke();
+    listKind = kind;
     resumeIfLoggedIn();
   });
   // Entering the phone layout (rotation, resize): keep only the most recently used of our windows open,

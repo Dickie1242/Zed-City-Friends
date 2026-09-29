@@ -17,9 +17,13 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
   const styleEl = doc.createElement('style');
   styleEl.id = STYLE_ID;
   const records = new Map(); // key -> { el, controls }
-  const all = doc.getElementsByClassName('chat-container'); // live, so a chat coming or going changes its length
   let chats = [];
-  let seenCount = -1;
+  // The dock and our root inside it, with their child counts at the last refresh: a chat coming or going
+  // changes one of them, which the keeper can check without scanning the document.
+  let dockEl = null;
+  let dockCount = -1;
+  let rootEl = null;
+  let rootCount = -1;
   let live = null; // { key, entry } while a drag or resize is under way
   let unkeep = null;
   let unsubscribe = null;
@@ -88,7 +92,10 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
 
   function refresh() {
     chats = findChats(doc);
-    seenCount = all.length;
+    dockEl = doc.querySelector('.chat-containers');
+    rootEl = dockEl && dockEl.querySelector(':scope > .zcf-root');
+    dockCount = dockEl ? dockEl.childElementCount : -1;
+    rootCount = rootEl ? rootEl.childElementCount : -1;
     const small = isSmall();
     const keep = new Set();
     for (const c of chats) {
@@ -126,12 +133,15 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     }
   }
 
-  // O(chats) check for the keeper: a chat came or went, opened or closed, or lost our controls.
+  // O(chats) check for the keeper: a chat came or went, opened or closed, had its header replaced, or lost
+  // our controls.
   function attached() {
-    if (all.length !== seenCount) return false;
+    if (!dockEl || !dockEl.isConnected || dockEl.childElementCount !== dockCount) return false;
+    if (rootEl && (rootEl.parentNode !== dockEl || rootEl.childElementCount !== rootCount)) return false;
     const small = isSmall();
     for (const c of chats) {
       if (!c.el.isConnected || c.minimized !== c.el.classList.contains('chat-minimized')) return false;
+      if (c.header ? c.header.parentNode !== c.el : c.el.querySelector(':scope > .chat-header')) return false;
       const rec = records.get(c.key);
       if (!small && c.header && (!rec || rec.controls.el.parentNode !== c.header)) return false;
     }
@@ -160,7 +170,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     win,
     enabled: () => !isSmall(),
     hit(target) {
-      if (!target || !target.closest || target.closest('.zcf-grip, .zcf-cmenu')) return null;
+      if (!target || !target.closest || !target.closest('.chat-containers') || target.closest('.zcf-grip, .zcf-cmenu')) return null;
       const c = findChats(doc).find((x) => x.el.contains(target));
       if (!c) return null;
       if (c.minimized) return { key: c.key, el: c.el };

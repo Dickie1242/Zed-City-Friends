@@ -209,4 +209,24 @@ describe('chat customization', () => {
       expect([...el.attributes].map((a) => a.name)).toEqual(['class']);
     }
   });
+
+  it('puts the controls into a header the game replaced wholesale', async () => {
+    const { general } = setup();
+    const fresh = document.createElement('div');
+    fresh.className = 'chat-header';
+    fresh.innerHTML = '<div class="chat-title"><span>Chat</span></div><div class="chat-toggle"></div>';
+    general.querySelector(':scope > .chat-header').replaceWith(fresh);
+    await flush();
+    await flush();
+    expect(fresh.querySelector('.zcf-cc-lock')).not.toBeNull();
+  });
+
+  it('gives a game chat that appears later its controls', async () => {
+    setup();
+    document.querySelector('.chat-containers').insertAdjacentHTML('beforeend',
+      '<div class="chat-container activity-chat"><div class="chat-header"><div class="chat-title"></div></div><div class="chat-content"></div></div>');
+    await flush();
+    await flush();
+    expect(document.querySelector('.activity-chat .zcf-cc-lock')).not.toBeNull();
+  });
 });

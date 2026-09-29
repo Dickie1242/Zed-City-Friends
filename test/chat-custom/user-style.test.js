@@ -60,4 +60,10 @@ describe('user stylesheet', () => {
       }
     }
   });
+
+  it('keeps a saved size within the viewport, so the header stays reachable', () => {
+    const css = buildUserCss({ chats: { 'game:general': { w: 900, h: 1500 } }, vw: 800, vh: 700 });
+    expect(css).toContain('width:800px');
+    expect(css).toContain('height:640px');
+  });
 });

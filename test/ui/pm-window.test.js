@@ -358,4 +358,17 @@ describe('private messages window', () => {
     expect(row9.querySelector('.zcf-muted-mark')).not.toBeNull();
     expect(row9.querySelector('.zcf-pill').classList.contains('zcf-pill-dim')).toBe(true);
   });
+
+  it('keeps a conversation that slid off page 1 after older pages were loaded', async () => {
+    const threads = [thread(1, { lastReply: NOW - 1000 }), thread(2, { lastReply: NOW - 2000 })];
+    const { w, el } = mount({ threads, olderPages: [[thread(3, { lastReply: NOW - 9000 })]] });
+    el.querySelector('.zcf-pm-more').click();
+    await flush();
+    expect(rowNames(el)).toEqual(['U1', 'U2', 'U3']);
+    threads.splice(0, threads.length, thread(4, { lastReply: NOW - 500 }), thread(1, { lastReply: NOW - 1000 }));
+    w.syncBadge(); // the app calls this on every inbox change
+    w.scheduleList();
+    await flush();
+    expect(rowNames(el)).toEqual(['U4', 'U1', 'U2', 'U3']);
+  });
 });
