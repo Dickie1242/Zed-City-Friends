@@ -244,7 +244,7 @@ A new DM starts with default settings. Settings for a closed DM are kept, so reo
   - **Position:** `x`/`y` are present only when the chat is moved. They are the viewport coordinates of the top-left.
   - **Validation:** numbers are clamped to their ranges (w 270–900, h 200–2000, text 80–200 in steps of 10, x/y ≥ 0). Keys must be `game:general|faction|activity`, `pm`, `settings` or `dm:<positive int>`, and anything else is dropped. An entry that ends up equal to the defaults is deleted.
   - **Corrupt documents** fall back to defaults.
-  - **Part D adds** `muted: [userId…]` (§D.1) and `seenVersion` (§D.2) to this document.
+  - **Part D adds** `muted: [userId…]` (§D.1) to this document.
 - **Other tabs:** open tabs follow along live, as in Chat+.
 
 ## B.6 Architecture (Part B)
@@ -427,9 +427,7 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
   - **0.3.x:** emoji picker; DM windows no longer cut off
   - **0.2.x:** GIFs and the install link
   - **0.1.x:** friends, DM windows, Add Friend on profiles
-- **Nudge:** after an update (and on first install), the **cog tab shows a small green dot** until you next open Chat settings.
-  - This works by keeping `seenVersion` in the settings document and comparing it with the build version.
-  - It is the only nudge. The user prefers a quiet UI, so there are no pop-ups and no notes elsewhere.
+- **No nudge.** The user doesn't want dots or badges pulling attention to release notes ("no dot pulling attention for dev stuff"). What's new is only there for whoever opens settings, so `seenVersion` isn't needed.
 
 ## D.3 Four fixes (logged by the 0.4.0 review)
 
@@ -454,7 +452,7 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
   - the Chats row shows its icon
 - **What's new:**
   - renders from the data module, and expands and collapses
-  - the dot shows when `seenVersion` is older than the build, and clears when settings opens
+  - the cog tab never shows a dot or badge
   - text only
 - **Fixes:** one regression test each. Leaving `/friends` keeps the page until `.fixed-center` is gone (or 1s passes); a pinned row survives a tab filter change; the ⋯ menu keyboard behavior; a stale `profileAt` triggers `getProfile` while `set()` keeps status fresh.
 
