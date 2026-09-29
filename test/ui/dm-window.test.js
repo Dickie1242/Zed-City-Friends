@@ -93,7 +93,7 @@ describe('dm window', () => {
   });
 
   it('lays the DM body out as a flex column with a definite height, so the composer is never clipped', () => {
-    expect(CSS).toContain('.zcf-dm .chat-content{display:flex;flex-direction:column}');
+    expect(CSS).toContain('.zcf.chat-container .chat-content{display:flex;flex-direction:column}');
     expect(CSS).toContain('.zcf-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 8px}');
     expect(CSS).toContain('.zcf-notice{background:#f2c0371a;color:#f2c037;font-size:11.5px;padding:6px 12px;border-bottom:1px solid #f2c03733;flex:none}');
     expect(CSS).toContain('.zcf-composer{display:flex;gap:6px;align-items:flex-end;border-top:1px solid #ffffff14;padding:8px;flex:none}');

@@ -1,4 +1,6 @@
 // Only what the game's own (global) chat-dock CSS doesn't already provide. Colors come from the game's palette.
+// The game's dock stylesheet is loaded lazily and can land after ours, so a rule that overrides one of its rules
+// must use a more specific selector; never rely on source order (test/ui/styles.test.js checks this).
 export const CSS = `
 .zcf-root{display:contents}
 .zcf [hidden]{display:none!important}
@@ -13,8 +15,8 @@ export const CSS = `
 .zcf .chat-toggle{margin-left:0}
 .zcf.chat-minimized .zcf-badge{position:absolute;top:-6px;right:2px;min-height:12px;padding:0 3px;font-size:8px;line-height:12px}
 .zcf.chat-minimized .chat-title{justify-content:center;position:relative}
-.zcf-body{display:flex;flex-direction:column;height:420px;position:relative;font-size:13px}
-.zcf-dm .chat-content{display:flex;flex-direction:column}
+.zcf-body{position:relative;font-size:13px}
+.zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
 .zcf-toolbar{display:flex;gap:6px;align-items:center;background:#ffffff05;border-bottom:1px solid #ffffff1a;min-height:42px;padding:7px 8px}
 .zcf-search{flex:1;display:flex;align-items:center;gap:6px;background:#14171a;border:1px solid #ffffff14;border-radius:3px;padding:0 7px}
@@ -123,12 +125,11 @@ export const CSS = `
 @media (min-width:600px){
   .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
   .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
-  .chat-containers .zcf-dm.chat-minimized .chat-title{justify-content:flex-start;gap:6px}
+  .chat-containers .zcf-dm.chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
   .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
 }
 @media (max-width:599.98px){
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
-  .zcf-body{height:min(420px,60vh)}
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
 }
 `;
