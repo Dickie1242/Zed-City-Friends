@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Zed City Friends preview (phone)</title>
+  <style>html, body { margin: 0; background: #000; } iframe { border: 0; display: block; }</style>
+</head>
+<body>
+  <!-- Headless Edge won't size its window below ~480px, so the phone layout runs in a 375px frame. -->
+  <iframe id="f" width="375" height="740"></iframe>
+  <script>document.getElementById('f').src = `harness.html${location.hash}`;</script>
+</body>
+</html>

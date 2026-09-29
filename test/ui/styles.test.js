@@ -143,6 +143,17 @@ describe('styles against the game dock CSS', () => {
     for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#3d8b40');
   });
 
+  it('hides the cog on phones while a window is open, so the open one keeps its room', () => {
+    renderDock({ friendsOpen: true, settingsOpen: false, dms: [[5, false]] });
+    const cog = document.querySelector('.zcf-settings');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      expect(winner(cog, 'display', 400, sheets).value).toBe('none');
+      expect(winner(cog, 'display', 1280, sheets).value).not.toBe('none');
+    }
+    renderDock({ friendsOpen: false, settingsOpen: false, dms: [[5, false]] });
+    expect(winner(document.querySelector('.zcf-settings'), 'display', 400, OURS_LAST).value).not.toBe('none');
+  });
+
   it('parses specificity the way browsers count it', () => {
     expect(specificity('.chat-container .chat-content')).toEqual([0, 2, 0]);
     expect(specificity('.zcf-dm:not(.chat-minimized)')).toEqual([0, 2, 0]);

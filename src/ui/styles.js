@@ -275,6 +275,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 }
 @media (max-width:599.98px){
   .zcf-cc,.zcf-grip{display:none!important}
+  .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}

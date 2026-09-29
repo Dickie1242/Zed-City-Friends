@@ -1,3 +1,5 @@
 .superpowers/
 node_modules/
 .worktrees/
+tools/preview/game-css/
+tools/preview/out/
