@@ -7,6 +7,7 @@ import { chatLabel, describeChat, isLocked, dmKey, dmIdOf } from '../chat-custom
 import { SOUNDS } from '../settings.js';
 import { WHATS_NEW } from '../whats-new.js';
 import { VERSION, DEV_PROFILE_ID } from '../version.js';
+import { zoneName } from '../time.js';
 
 const SOUND_LABELS = { off: 'Off', chirp: 'Chirp', ping: 'Ping', bell: 'Bell' };
 const ORDER = (key) => (key.startsWith('game:') ? 0 : key === 'pm' ? 1 : key === 'settings' ? 2 : 3);
@@ -44,7 +45,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
   const titleBox = checkbox('Unread count in the browser tab', 'title-count', (on) => actions.setTitleCount(on));
   const note = h('div', { class: 'zcf-set-note' });
   const timeSelect = h('select', { class: 'zcf-set-select', 'aria-label': 'Chat times', 'data-zcf-focus': 'times' },
-    h('option', { value: 'game' }, 'Zed City time (ZCT)'), h('option', { value: 'local' }, 'Your time'));
+    h('option', { value: 'game' }, 'Zed City time (ZCT)'), h('option', { value: 'local' }, `Your time (${zoneName()})`));
   timeSelect.addEventListener('change', () => actions.setLocalTime(timeSelect.value === 'local'));
 
   // What the browser allows, in words, or '' when notifications can simply be switched on.

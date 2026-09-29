@@ -1066,6 +1066,25 @@
     const [y, m, d] = parts(ts, local);
     return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
   }
+  var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function zoneName(ts = Date.now()) {
+    try {
+      const part = new Intl.DateTimeFormat(void 0, { timeZoneName: "short" }).formatToParts(new Date(ts)).find((p) => p.type === "timeZoneName");
+      if (part && part.value) return part.value;
+    } catch {
+    }
+    const off = -new Date(ts).getTimezoneOffset();
+    const abs = Math.abs(off);
+    return `GMT${off < 0 ? "-" : "+"}${Math.floor(abs / 60)}${abs % 60 ? `:${pad(abs % 60)}` : ""}`;
+  }
+  function formatWeekday(ts, local = false) {
+    const d = new Date(ts);
+    const [, m, day] = parts(ts, local);
+    return `${WEEKDAYS[local ? d.getDay() : d.getUTCDay()]}, ${MONTHS[m].slice(0, 3)} ${day}`;
+  }
+  function formatStamp(ts, local = false) {
+    return `${formatWeekday(ts, local)}, ${formatClock(ts, local)} ${local ? zoneName(ts) : "ZCT"}`;
+  }
   function formatDayLabel(ts, local = false) {
     const [y, m, d] = parts(ts, local);
     return `${MONTHS[m]} ${d}, ${y}`;
@@ -5706,7 +5725,7 @@ sandfish		/items/sandfish.webp`;
       "select",
       { class: "zcf-set-select", "aria-label": "Chat times", "data-zcf-focus": "times" },
       h("option", { value: "game" }, "Zed City time (ZCT)"),
-      h("option", { value: "local" }, "Your time")
+      h("option", { value: "local" }, `Your time (${zoneName()})`)
     );
     timeSelect.addEventListener("change", () => actions.setLocalTime(timeSelect.value === "local"));
     function permissionNote() {
@@ -7668,20 +7687,15 @@ sandfish		/items/sandfish.webp`;
     let tip = null;
     let shownFor = null;
     let hideTimer = 0;
-    const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
-    const label = (local) => local ? "your time" : "ZCT";
     function textFor(el) {
-      if (sameClocks()) return el.matches(OURS) && !el.classList.contains("zcf-time") ? formatMessageTime(Number(el.getAttribute("data-zcf-ts")), now()) : "";
       const other = !isLocal();
-      if (el.matches(OURS)) {
-        const ts2 = Number(el.getAttribute("data-zcf-ts"));
-        if (!Number.isFinite(ts2) || ts2 <= 0) return "";
-        const otherText = `${formatMessageTime(ts2, now(), other)} ${label(other)}`;
-        if (el.classList.contains("zcf-time")) return otherText;
-        return `${formatMessageTime(ts2, now(), !other)} ${label(!other)} · ${otherText}`;
-      }
-      const ts = gameClock ? gameClock.momentOf(el) : null;
-      return ts === null ? "" : `${formatClock(ts, other)} ${label(other)}`;
+      const ts = el.matches(OURS) ? Number(el.getAttribute("data-zcf-ts")) : gameClock ? gameClock.momentOf(el) : null;
+      if (!Number.isFinite(ts) || ts <= 0) return "";
+      const otherText = formatStamp(ts, other);
+      if (!el.matches(OURS) || el.classList.contains("zcf-time")) return otherText;
+      const zone = other ? zoneName(ts) : "ZCT";
+      const sameDay = formatWeekday(ts, other) === formatWeekday(ts, !other);
+      return `${formatStamp(ts, !other)} · ${sameDay ? `${formatClock(ts, other)} ${zone}` : otherText}`;
     }
     function hide() {
       clearTimeout(hideTimer);

@@ -157,7 +157,7 @@ describe('chat settings window', () => {
     const { services, el } = mount();
     const select = el.querySelector('select[aria-label="Chat times"]');
     expect(select.value).toBe('game');
-    expect([...select.options].map((o) => o.textContent)).toEqual(['Zed City time (ZCT)', 'Your time']);
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Zed City time (ZCT)', 'Your time (EDT)']);
     select.value = 'local';
     select.dispatchEvent(new Event('change'));
     expect(services.actions.setLocalTime).toHaveBeenCalledWith(true);

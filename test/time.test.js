@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { formatStamp, zoneName } from '../src/time.js';
 import { parseSentAt, formatMessageTime, formatDayLabel, timeAgo, statusText, utcDayKey, dayKey, formatClock } from '../src/time.js';
 
 const T = Date.UTC(2026, 8, 28, 14, 3, 11); // 2026-09-28 14:03:11 UTC
@@ -28,6 +29,13 @@ describe('time', () => {
     // New York springs forward on March 8, 2026: half past midnight on the 9th is 23 hours after the 8th began.
     const now = new Date(2026, 2, 9, 0, 30).getTime();
     expect(formatMessageTime(new Date(2026, 2, 8, 12, 0).getTime(), now, true)).toBe('Yesterday at 12:00');
+  });
+
+  it('stamps a moment with its day and zone, in game time or yours', () => {
+    const ts = Date.UTC(2026, 8, 29, 18, 27);
+    expect(formatStamp(ts)).toBe('Tue, Sep 29, 18:27 ZCT');
+    expect(formatStamp(ts, true)).toBe('Tue, Sep 29, 14:27 EDT');
+    expect(zoneName(Date.UTC(2026, 0, 15))).toBe('EST');
   });
 
   it('formats day dividers and day keys', () => {

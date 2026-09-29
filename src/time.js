@@ -71,6 +71,33 @@ export function formatMessageTime(ts, now = Date.now(), local = false) {
   return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// The player's time zone as their browser names it: "EDT", "BST", "GMT+2".
+export function zoneName(ts = Date.now()) {
+  try {
+    const part = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(new Date(ts)).find((p) => p.type === 'timeZoneName');
+    if (part && part.value) return part.value;
+  } catch {
+    // no Intl time zone names: fall through to the offset
+  }
+  const off = -new Date(ts).getTimezoneOffset();
+  const abs = Math.abs(off);
+  return `GMT${off < 0 ? '-' : '+'}${Math.floor(abs / 60)}${abs % 60 ? `:${pad(abs % 60)}` : ''}`;
+}
+
+// "Tue, Sep 29"
+export function formatWeekday(ts, local = false) {
+  const d = new Date(ts);
+  const [, m, day] = parts(ts, local);
+  return `${WEEKDAYS[local ? d.getDay() : d.getUTCDay()]}, ${MONTHS[m].slice(0, 3)} ${day}`;
+}
+
+// "Tue, Sep 29, 18:27 ZCT" or, with `local`, "Tue, Sep 29, 14:27 EDT".
+export function formatStamp(ts, local = false) {
+  return `${formatWeekday(ts, local)}, ${formatClock(ts, local)} ${local ? zoneName(ts) : 'ZCT'}`;
+}
+
 export function formatDayLabel(ts, local = false) {
   const [y, m, d] = parts(ts, local);
   return `${MONTHS[m]} ${d}, ${y}`;

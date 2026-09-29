@@ -1,7 +1,7 @@
 // Hover (or tap) any chat time to see it in the other clock. Every time in the dock, in our DMs and in the
 // game's own chats, shows the clock picked in Chat settings (Zed City time by default, see game-clock.js);
 // the tooltip shows the other one.
-import { formatClock, formatMessageTime } from '../time.js';
+import { formatClock, formatStamp, formatWeekday, zoneName } from '../time.js';
 import { TIME } from './game-clock.js';
 
 const TAP_MS = 2500;
@@ -14,22 +14,18 @@ export function createTimeHover({ doc = document, win = window, now = () => Date
   let shownFor = null;
   let hideTimer = 0;
 
-  const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
-  const label = (local) => (local ? 'your time' : 'ZCT');
-
+  // The other clock, with its day and zone: "Tue, Sep 29, 14:27 EDT" or "Tue, Sep 29, 18:27 ZCT".
   function textFor(el) {
-    if (sameClocks()) return el.matches(OURS) && !el.classList.contains('zcf-time') ? formatMessageTime(Number(el.getAttribute('data-zcf-ts')), now()) : '';
     const other = !isLocal();
-    if (el.matches(OURS)) {
-      const ts = Number(el.getAttribute('data-zcf-ts'));
-      if (!Number.isFinite(ts) || ts <= 0) return '';
-      const otherText = `${formatMessageTime(ts, now(), other)} ${label(other)}`;
-      // A grouped message has no time of its own on screen, so it gets both, the shown clock first.
-      if (el.classList.contains('zcf-time')) return otherText;
-      return `${formatMessageTime(ts, now(), !other)} ${label(!other)} · ${otherText}`;
-    }
-    const ts = gameClock ? gameClock.momentOf(el) : null;
-    return ts === null ? '' : `${formatClock(ts, other)} ${label(other)}`;
+    const ts = el.matches(OURS) ? Number(el.getAttribute('data-zcf-ts')) : gameClock ? gameClock.momentOf(el) : null;
+    if (!Number.isFinite(ts) || ts <= 0) return '';
+    const otherText = formatStamp(ts, other);
+    // A grouped DM message has no time of its own on screen, so it gets both, the shown clock first (its
+    // day only when the two clocks are on different days).
+    if (!el.matches(OURS) || el.classList.contains('zcf-time')) return otherText;
+    const zone = other ? zoneName(ts) : 'ZCT';
+    const sameDay = formatWeekday(ts, other) === formatWeekday(ts, !other);
+    return `${formatStamp(ts, !other)} · ${sameDay ? `${formatClock(ts, other)} ${zone}` : otherText}`;
   }
 
   function hide() {
