@@ -1,5 +1,5 @@
 import { toId } from './util.js';
-import { addFriend, setFriendNote, MAX_NOTE } from './state.js';
+import { addFriend, setFriendNote, normalizeNote } from './state.js';
 
 export function exportFriends(state, playerId) {
   const friends = Object.values(state.friends).map((f) => (f.note ? { id: f.id, username: f.username, note: f.note } : { id: f.id, username: f.username }));
@@ -27,7 +27,7 @@ export function parseImport(text, playerId) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const username = (typeof f.username === 'string' ? f.username.slice(0, 32) : '') || `#${id}`;
-    const note = typeof f.note === 'string' ? f.note.trim().slice(0, MAX_NOTE).trim() : '';
+    const note = normalizeNote(f.note);
     friends.push(note ? { id, username, note } : { id, username });
   }
   return { ok: true, friends };

@@ -249,4 +249,61 @@ describe('friends page', () => {
     expect(hideGame404Early(document, window)).toBe(false);
     expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(false);
   });
+  it('clicking a button in the row being edited saves the note and still does the click', async () => {
+    const { services } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    row(2).querySelector('.zcf-note').click();
+    const input = row(2).querySelector('.zcf-note-input');
+    input.value = 'sells ammo';
+    const msg = row(2).querySelector('.zcf-act-msg');
+    msg.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    input.blur(); // pressing the mouse moves focus off the editor
+    await flush(); // redraw frames pass while the button is still held
+    await flush();
+    expect(msg.isConnected).toBe(true);
+    msg.click();
+    expect(services.actions.openDm).toHaveBeenCalledWith(2, expect.objectContaining({ expand: true }));
+    expect(services.store.get().friends[2].note).toBe('sells ammo');
+    document.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    await flush();
+    await flush();
+    expect(row(2).querySelector('.zcf-note-input')).toBeNull();
+    expect(row(2).querySelector('.zcf-note').textContent).toBe('sells ammo');
+  });
+
+  it('tabbing out of the note editor saves it and keeps focus where Tab went', async () => {
+    const { services } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    row(2).querySelector('.zcf-note').click();
+    row(2).querySelector('.zcf-note-input').value = 'sells ammo';
+    row(2).querySelector('.zcf-act-msg').focus(); // where Tab goes next in this row
+    await flush();
+    await flush();
+    expect(services.store.get().friends[2].note).toBe('sells ammo');
+    expect(row(2).querySelector('.zcf-note-input')).toBeNull();
+    expect(document.activeElement).toBe(row(2).querySelector('.zcf-act-msg'));
+  });
+
+  it('keeps the add-friend results in place through redraws, until the friends list changes', async () => {
+    const { page, services } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    services.players.search.mockResolvedValue({ ok: true, data: [{ id: 50, username: 'Grackle' }] });
+    document.querySelector('.zcf-page-add').click();
+    const input = document.querySelector('.zcf-page .zcf-pop input');
+    input.value = 'gra';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 350));
+    const result = document.querySelector('.zcf-page .zcf-result');
+    expect(result).not.toBeNull();
+    page.render();
+    expect(result.isConnected).toBe(true);
+    services.actions.addFriend({ id: 50, username: 'Grackle' });
+    page.render();
+    expect(document.querySelector('.zcf-page .zcf-result .zcf-done')).not.toBeNull();
+  });
+
+  it('does not save a note that was left unchanged', () => {
+    const { services } = mount({ friends: FRIENDS, presence: presenceFixture() });
+    row(1).querySelector('.zcf-note').click();
+    row(1).querySelector('.zcf-note-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(services.actions.setFriendNote).not.toHaveBeenCalled();
+    expect(row(1).querySelector('.zcf-note-input')).toBeNull();
+  });
 });

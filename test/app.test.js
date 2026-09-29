@@ -265,4 +265,19 @@ describe('app', () => {
     await flush();
     expect(document.querySelector('main.zcf-page')).toBeNull();
   });
+  it('does not let friends whose profile fails to load starve the background sweep', async () => {
+    vi.useFakeTimers();
+    let t = 1000000;
+    const ids = Array.from({ length: 12 }, (_, i) => 400 + i);
+    const api = fakeApi({ getProfile: vi.fn(async (id) => (id < 405 ? { ok: false, kind: 'other' } : { ok: true, data: { online: true } })) });
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(...ids) }), now: () => t });
+    await vi.advanceTimersByTimeAsync(10000);
+    api.getProfile.mockClear();
+    for (let i = 0; i < 8; i += 1) {
+      t += INTERVALS.presence;
+      await vi.advanceTimersByTimeAsync(INTERVALS.presence);
+    }
+    const checked = new Set(api.getProfile.mock.calls.map((c) => c[0]));
+    for (const id of ids.slice(5)) expect(checked.has(id)).toBe(true);
+  });
 });

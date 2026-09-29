@@ -72,7 +72,7 @@ We find the group from the mail link: `a.q-btn[href="/mail"]` → wrapper `div` 
   - The icon class is swapped to `fa-user-friends` (still `fal`), and `href="/friends"`.
   - The game's `q-badge` is removed from the clone and replaced by our own badge with the same Quasar classes, `bg-positive` (`#3d8b40`).
   - The badge shows the count of friends currently known to be online and is hidden at 0. The button is `text-grey-4` when the count is ≥ 1, otherwise `text-grey-7`, the same rule as mail.
-  - It gets `title="Friends"` and `aria-label="Friends"`. The game's tooltips are Quasar components we can't create, so we use a plain title.
+  - It gets a plain `title` and `aria-label` of `Friends (N online)`. The game's tooltips are Quasar components we can't create.
 - **Click:** `preventDefault()`, then `router.navigate('/friends')`. The clone has no Vue handler, and a plain `<a href>` click would reload the whole page. Middle-click or Ctrl-click keeps the browser default (a new tab).
 - **Keeping it mounted:** the header is Vue-rendered and can be rebuilt. The button is re-inserted by the shared mount keeper (§6.1). Finding it still attached is an O(1) check.
 - **Phones:** if the four icons don't fit on one line at 360px, our wrapper's own spacing shrinks under `@media (max-width:599.98px)`, using only our class. Verify on a narrow phone layout (§10).

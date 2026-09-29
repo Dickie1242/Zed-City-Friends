@@ -137,7 +137,7 @@ export const CSS = `
 .zcf-page-add:hover,.zcf-page-add.zcf-page-add-on{background:#ffffff14}
 .zcf-page-add i{font-size:10px}
 .zcf-page-add-short{display:none}
-.zcf-page .zcf-pop{top:calc(100% + 6px);right:0}
+.zcf-page .zcf-pop{top:calc(100% + 6px);right:0;max-width:calc(100vw - 32px)}
 .zcf-page-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .zcf-page-tabs{display:flex;gap:4px}
 .zcf-page-tab{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;background:#121417f5;border:1px solid #000;border-radius:4px;color:#9e9e9e;font-family:Oswald,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}

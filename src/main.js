@@ -31,6 +31,7 @@ export async function boot({ win = window, doc = document, api = createApi() } =
     injectStyles(doc);
     return createApp({ api, playerId: player.id, playerName: player.username, doc, win });
   } catch (e) {
+    doc.documentElement.classList.remove(PAGE_CLASS);
     warnOnce('boot', e);
     return null;
   }

@@ -145,7 +145,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       const full = fullSweepPending || listOpen();
       fullSweepPending = false;
       const maxAge = full ? undefined : PRESENCE_BACKGROUND_STALE_MS;
-      const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
+      const age = (id) => presence.lastTried(id);
       const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id, maxAge));
       presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, full ? PRESENCE_PER_SWEEP : PRESENCE_BACKGROUND_PER_SWEEP));
       return { ok: true };

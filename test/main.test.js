@@ -61,4 +61,12 @@ describe('main', () => {
     expect(document.documentElement.classList.contains('zcf-on-friends')).toBe(false);
     window.history.replaceState({}, '', '/');
   });
+  it('shows the game page again if the app fails to start on /friends', async () => {
+    window.history.replaceState({}, '', '/friends');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const win = { location: window.location, get localStorage() { throw new Error('storage blocked'); } };
+    expect(await boot({ api: fakeApi(), win })).toBeNull();
+    expect(document.documentElement.classList.contains('zcf-on-friends')).toBe(false);
+    window.history.replaceState({}, '', '/');
+  });
 });

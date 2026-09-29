@@ -3,7 +3,7 @@
 import { h, clear, append, icon, avatar, highlightMatch } from './dom.js';
 import { createAddFriendPopover } from './add-friend-popover.js';
 import { buildFriendsTable, nextSort, DEFAULT_SORT } from '../friends-table.js';
-import { isFriend, MAX_NOTE } from '../state.js';
+import { isFriend, normalizeNote, MAX_NOTE } from '../state.js';
 import { longStatusText } from '../time.js';
 import { safe, warnOnce } from '../util.js';
 
@@ -54,6 +54,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   let menuId = null;
   let rendering = false;
   let frame = 0;
+  let holdRender = false; // a pointer is down in the page: a redraw now could swallow the click
+  let renderWanted = false;
+  let popFriendsSig = '';
   let headSig = null;
   let currentIds = [];
   let unkeep = null;
@@ -112,6 +115,20 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   const empty = h('div', { class: 'zcf-page-empty', hidden: true });
   const el = h('main', { class: 'q-page q-layout-padding zcf zcf-page' }, title, bar, h('div', { class: 'zcf-page-panel' }, table, empty));
 
+  el.addEventListener('pointerdown', () => {
+    holdRender = true;
+  }, true);
+  // Waits until the click that follows this pointerup has been dispatched, then draws what was held back.
+  function onPointerRelease() {
+    if (!holdRender) return;
+    win.setTimeout(() => {
+      holdRender = false;
+      if (!renderWanted) return;
+      renderWanted = false;
+      safe('friends-page-render', render)();
+    }, 0);
+  }
+
   search.addEventListener('input', () => {
     query = search.value;
     render();
@@ -165,9 +182,11 @@ export function createFriendsPage(services, { doc = document, win = window, keep
         cancelEdit();
       }
     });
-    // Clicking away saves. A blur caused by our own redraw moving the row doesn't.
+    // Clicking or tabbing away saves. The redraw waits a frame, so focus has already landed wherever
+    // Tab or the click sent it and can be handed back to the rebuilt row. A blur caused by our own
+    // redraw moving the row doesn't save.
     editInput.addEventListener('blur', () => {
-      if (!rendering) commitEdit();
+      if (!rendering) commitEdit({ later: true });
     });
     render();
     editInput.focus();
@@ -175,13 +194,18 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     editInput.setSelectionRange(end, end);
   }
 
-  function commitEdit({ refocus = false } = {}) {
+  function commitEdit({ refocus = false, later = false } = {}) {
     if (editId === null) return;
     const id = editId;
     const text = editInput.value;
     editId = null;
     editInput = null;
-    actions.setFriendNote(id, text);
+    const f = store.get().friends[id];
+    if (f && (f.note || '') !== normalizeNote(text)) actions.setFriendNote(id, text);
+    if (later) {
+      scheduleRender();
+      return;
+    }
     render();
     if (refocus) focusKey(`edit:${id}`, `more:${id}`);
   }
@@ -406,7 +430,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
       else if (q) empty.textContent = `No friends match "${q}".`;
       else empty.textContent = tab === 'online' ? 'No friends online right now.' : 'No offline friends.';
     }
-    if (pop.isOpen) pop.refresh();
+    const friendsSig = Object.keys(s.friends).join(',');
+    if (pop.isOpen && friendsSig !== popFriendsSig) pop.refresh();
+    popFriendsSig = friendsSig;
 
     if (editSel && editInput && doc.activeElement !== editInput) {
       editInput.focus();
@@ -421,6 +447,10 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     if (frame || !active) return;
     frame = win.requestAnimationFrame(() => {
       frame = 0;
+      if (holdRender) {
+        renderWanted = true;
+        return;
+      }
       safe('friends-page-render', render)();
     });
   }
@@ -437,6 +467,8 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     active = true;
     doc.documentElement.classList.add(PAGE_CLASS);
     doc.addEventListener('mousedown', onDocMousedown);
+    doc.addEventListener('pointerup', onPointerRelease, true);
+    doc.addEventListener('pointercancel', onPointerRelease, true);
     ensure();
     render();
     clearTimeout(warnTimer);
@@ -460,6 +492,10 @@ export function createFriendsPage(services, { doc = document, win = window, keep
       frame = 0;
     }
     doc.removeEventListener('mousedown', onDocMousedown);
+    doc.removeEventListener('pointerup', onPointerRelease, true);
+    doc.removeEventListener('pointercancel', onPointerRelease, true);
+    holdRender = false;
+    renderWanted = false;
     doc.documentElement.classList.remove(PAGE_CLASS);
     el.remove();
   }

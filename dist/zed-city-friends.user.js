@@ -206,10 +206,11 @@
     return changed;
   }
   var MAX_NOTE = 200;
+  var normalizeNote = (note) => typeof note === "string" ? note.trim().slice(0, MAX_NOTE).trim() : "";
   function setFriendNote(state, id, note) {
     const f = state.friends[id];
     if (!f) return false;
-    const text2 = typeof note === "string" ? note.trim().slice(0, MAX_NOTE).trim() : "";
+    const text2 = normalizeNote(note);
     if ((f.note || "") === text2) return false;
     if (text2) f.note = text2;
     else delete f.note;
@@ -637,6 +638,7 @@
     now = () => Date.now()
   }) {
     const cache = /* @__PURE__ */ new Map();
+    const failedAt = /* @__PURE__ */ new Map();
     const queue = [];
     const queued = /* @__PURE__ */ new Set();
     const subs = /* @__PURE__ */ new Set();
@@ -666,8 +668,13 @@
       store(id, info, now());
     }
     function isStale(id, maxAgeMs = staleMs) {
+      if (failedAt.has(id) && now() - failedAt.get(id) < maxAgeMs) return false;
       const c = cache.get(id);
       return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
+    }
+    function lastTried(id) {
+      const c = cache.get(id);
+      return Math.max(c ? c.fetchedAt : 0, failedAt.get(id) || 0);
     }
     function pause() {
       pausedUntil = now() + pauseMs;
@@ -683,12 +690,17 @@
         inFlight += 1;
         Promise.resolve().then(() => fetchProfile(id)).then((r) => {
           if (r && r.ok && r.data) {
+            failedAt.delete(id);
             store(id, r.data, queuedAt, profileDetails(r.data));
             if (onProfile) onProfile(id, r.data);
-          } else if (r && !r.ok && (r.kind === "rate" || r.kind === "auth")) {
-            pause();
+            return;
           }
-        }).catch((e) => warnOnce("presence-fetch", e)).finally(() => {
+          if (r && !r.ok && (r.kind === "rate" || r.kind === "auth")) pause();
+          else failedAt.set(id, queuedAt);
+        }).catch((e) => {
+          failedAt.set(id, queuedAt);
+          warnOnce("presence-fetch", e);
+        }).finally(() => {
           queued.delete(id);
           setTimeout(() => {
             inFlight -= 1;
@@ -713,6 +725,7 @@
       set,
       refresh,
       isStale,
+      lastTried,
       subscribe(fn) {
         subs.add(fn);
         return () => subs.delete(fn);
@@ -3502,7 +3515,7 @@ sandfish		/items/sandfish.webp`;
       if (!id || seen.has(id)) continue;
       seen.add(id);
       const username = (typeof f.username === "string" ? f.username.slice(0, 32) : "") || `#${id}`;
-      const note = typeof f.note === "string" ? f.note.trim().slice(0, MAX_NOTE).trim() : "";
+      const note = normalizeNote(f.note);
       friends.push(note ? { id, username, note } : { id, username });
     }
     return { ok: true, friends };
@@ -4959,6 +4972,9 @@ sandfish		/items/sandfish.webp`;
     let menuId = null;
     let rendering = false;
     let frame = 0;
+    let holdRender = false;
+    let renderWanted = false;
+    let popFriendsSig = "";
     let headSig = null;
     let currentIds = [];
     let unkeep = null;
@@ -5024,6 +5040,18 @@ sandfish		/items/sandfish.webp`;
     const table = h("table", { class: "zcf-page-table" }, h("thead", null, headRow), tbody);
     const empty = h("div", { class: "zcf-page-empty", hidden: true });
     const el = h("main", { class: "q-page q-layout-padding zcf zcf-page" }, title, bar, h("div", { class: "zcf-page-panel" }, table, empty));
+    el.addEventListener("pointerdown", () => {
+      holdRender = true;
+    }, true);
+    function onPointerRelease() {
+      if (!holdRender) return;
+      win.setTimeout(() => {
+        holdRender = false;
+        if (!renderWanted) return;
+        renderWanted = false;
+        safe("friends-page-render", render)();
+      }, 0);
+    }
     search.addEventListener("input", () => {
       query = search.value;
       render();
@@ -5073,20 +5101,25 @@ sandfish		/items/sandfish.webp`;
         }
       });
       editInput.addEventListener("blur", () => {
-        if (!rendering) commitEdit();
+        if (!rendering) commitEdit({ later: true });
       });
       render();
       editInput.focus();
       const end = editInput.value.length;
       editInput.setSelectionRange(end, end);
     }
-    function commitEdit({ refocus = false } = {}) {
+    function commitEdit({ refocus = false, later = false } = {}) {
       if (editId === null) return;
       const id = editId;
       const text2 = editInput.value;
       editId = null;
       editInput = null;
-      actions.setFriendNote(id, text2);
+      const f = store.get().friends[id];
+      if (f && (f.note || "") !== normalizeNote(text2)) actions.setFriendNote(id, text2);
+      if (later) {
+        scheduleRender();
+        return;
+      }
       render();
       if (refocus) focusKey(`edit:${id}`, `more:${id}`);
     }
@@ -5323,7 +5356,9 @@ sandfish		/items/sandfish.webp`;
         else if (q) empty.textContent = `No friends match "${q}".`;
         else empty.textContent = tab === "online" ? "No friends online right now." : "No offline friends.";
       }
-      if (pop.isOpen) pop.refresh();
+      const friendsSig = Object.keys(s.friends).join(",");
+      if (pop.isOpen && friendsSig !== popFriendsSig) pop.refresh();
+      popFriendsSig = friendsSig;
       if (editSel && editInput && doc.activeElement !== editInput) {
         editInput.focus();
         editInput.setSelectionRange(editSel[0], editSel[1]);
@@ -5335,6 +5370,10 @@ sandfish		/items/sandfish.webp`;
       if (frame || !active) return;
       frame = win.requestAnimationFrame(() => {
         frame = 0;
+        if (holdRender) {
+          renderWanted = true;
+          return;
+        }
         safe("friends-page-render", render)();
       });
     }
@@ -5349,6 +5388,8 @@ sandfish		/items/sandfish.webp`;
       active = true;
       doc.documentElement.classList.add(PAGE_CLASS);
       doc.addEventListener("mousedown", onDocMousedown);
+      doc.addEventListener("pointerup", onPointerRelease, true);
+      doc.addEventListener("pointercancel", onPointerRelease, true);
       ensure();
       render();
       clearTimeout(warnTimer);
@@ -5370,6 +5411,10 @@ sandfish		/items/sandfish.webp`;
         frame = 0;
       }
       doc.removeEventListener("mousedown", onDocMousedown);
+      doc.removeEventListener("pointerup", onPointerRelease, true);
+      doc.removeEventListener("pointercancel", onPointerRelease, true);
+      holdRender = false;
+      renderWanted = false;
       doc.documentElement.classList.remove(PAGE_CLASS);
       el.remove();
     }
@@ -5575,7 +5620,7 @@ sandfish		/items/sandfish.webp`;
         const full = fullSweepPending || listOpen();
         fullSweepPending = false;
         const maxAge = full ? void 0 : PRESENCE_BACKGROUND_STALE_MS;
-        const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
+        const age = (id) => presence.lastTried(id);
         const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id, maxAge));
         presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, full ? PRESENCE_PER_SWEEP : PRESENCE_BACKGROUND_PER_SWEEP));
         return { ok: true };
@@ -5886,7 +5931,7 @@ sandfish		/items/sandfish.webp`;
 .zcf-page-add:hover,.zcf-page-add.zcf-page-add-on{background:#ffffff14}
 .zcf-page-add i{font-size:10px}
 .zcf-page-add-short{display:none}
-.zcf-page .zcf-pop{top:calc(100% + 6px);right:0}
+.zcf-page .zcf-pop{top:calc(100% + 6px);right:0;max-width:calc(100vw - 32px)}
 .zcf-page-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .zcf-page-tabs{display:flex;gap:4px}
 .zcf-page-tab{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;background:#121417f5;border:1px solid #000;border-radius:4px;color:#9e9e9e;font-family:Oswald,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
@@ -6002,6 +6047,7 @@ sandfish		/items/sandfish.webp`;
       injectStyles(doc);
       return createApp({ api, playerId: player.id, playerName: player.username, doc, win });
     } catch (e) {
+      doc.documentElement.classList.remove(PAGE_CLASS);
       warnOnce("boot", e);
       return null;
     }

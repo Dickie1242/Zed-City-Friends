@@ -38,6 +38,7 @@ export function createPresence({
   now = () => Date.now(),
 }) {
   const cache = new Map();
+  const failedAt = new Map(); // id -> when its last fetch failed (a deleted player, a bad imported id, ...)
   const queue = [];
   const queued = new Set();
   const subs = new Set();
@@ -77,8 +78,17 @@ export function createPresence({
   // An entry without profile details is stale however fresh it is, so the Friends page's level
   // and faction fill in even for someone whose status so far only came from a DM header.
   function isStale(id, maxAgeMs = staleMs) {
+    // A failed fetch waits out the same interval as a success, so a friend whose profile can't be
+    // loaded can't take a slot in every sweep and starve everyone else.
+    if (failedAt.has(id) && now() - failedAt.get(id) < maxAgeMs) return false;
     const c = cache.get(id);
     return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
+  }
+
+  // When an id was last fetched or tried, for "stalest first" ordering; 0 if never.
+  function lastTried(id) {
+    const c = cache.get(id);
+    return Math.max(c ? c.fetchedAt : 0, failedAt.get(id) || 0);
   }
 
   // Drops everything still waiting its turn and stops new fetches until pauseMs has passed.
@@ -103,13 +113,19 @@ export function createPresence({
         .then(() => fetchProfile(id))
         .then((r) => {
           if (r && r.ok && r.data) {
+            failedAt.delete(id);
             store(id, r.data, queuedAt, profileDetails(r.data));
             if (onProfile) onProfile(id, r.data);
-          } else if (r && !r.ok && (r.kind === 'rate' || r.kind === 'auth')) {
-            pause();
+            return;
           }
+          // Rate limits and logouts pause every fetch instead; the id is retried when the pause ends.
+          if (r && !r.ok && (r.kind === 'rate' || r.kind === 'auth')) pause();
+          else failedAt.set(id, queuedAt);
         })
-        .catch((e) => warnOnce('presence-fetch', e))
+        .catch((e) => {
+          failedAt.set(id, queuedAt);
+          warnOnce('presence-fetch', e);
+        })
         .finally(() => {
           queued.delete(id);
           setTimeout(() => {
@@ -138,6 +154,7 @@ export function createPresence({
     set,
     refresh,
     isStale,
+    lastTried,
     subscribe(fn) {
       subs.add(fn);
       return () => subs.delete(fn);

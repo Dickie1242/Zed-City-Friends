@@ -187,6 +187,9 @@ describe('styles against the game dock CSS', () => {
     topbar.setCount(1);
     expect(document.querySelector('.zcf-page-table th').textContent).toBe('Name');
     expect(hasOurRule('.zcf-page-table th')).toBe(true);
+    // The add-friend pop-out sits in a button-sized positioned box; a % max-width would squash it.
+    document.querySelector('.zcf-page-add').click();
+    expect(winner(document.querySelector('.zcf-page .zcf-pop'), 'max-width', 400, OURS_LAST).value).toBe('calc(100vw - 32px)');
     expect([...orderProblems(document.querySelector('main.zcf-page')), ...orderProblems(document.querySelector('.zcf-topbar'))]).toEqual([]);
     page.destroy();
     topbar.destroy();

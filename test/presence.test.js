@@ -99,38 +99,59 @@ describe('presence', () => {
     expect(fetchProfile).toHaveBeenCalledTimes(2);
   });
 
-  it('frees the slot and leaves the id stale on a network failure, without pausing other ids', async () => {
+  it('frees the slot on a network failure, without pausing other ids, and retries after staleMs', async () => {
+    let t = 0;
     const fetchProfile = vi.fn((id) =>
       Promise.resolve(id === 1 ? { ok: false, kind: 'network', code: 0 } : { ok: true, data: { online: true } }));
-    const p = createPresence({ fetchProfile, concurrency: 1 });
+    const p = createPresence({ fetchProfile, concurrency: 1, now: () => t });
     p.refresh([1, 2, 3]);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 2, 3]);
     expect(p.get(1)).toBeNull();
+    expect(p.isStale(1)).toBe(false); // waits its turn like a success, so it can't hog every sweep
+    t = 60000;
     expect(p.isStale(1)).toBe(true);
     expect(p.get(2)).not.toBeNull();
   });
 
-  it('frees the slot and leaves the id stale when the fetch rejects', async () => {
+  it('sorts a friend whose fetch failed behind the others by when it was last tried', async () => {
+    let t = 1000;
+    const fetchProfile = vi.fn((id) => Promise.resolve(id === 1 ? { ok: false, kind: 'other' } : { ok: true, data: { online: true } }));
+    const p = createPresence({ fetchProfile, now: () => t });
+    expect(p.lastTried(1)).toBe(0);
+    p.refresh([1]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(p.lastTried(1)).toBe(1000);
+    t = 5000;
+    p.refresh([2]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(p.lastTried(2)).toBe(5000);
+  });
+
+  it('frees the slot and retries the id after staleMs when the fetch rejects', async () => {
     const fetchProfile = vi.fn((id) =>
       (id === 1 ? Promise.reject(new Error('boom')) : Promise.resolve({ ok: true, data: { online: true } })));
-    const p = createPresence({ fetchProfile, concurrency: 1 });
+    let t = 0;
+    const p = createPresence({ fetchProfile, concurrency: 1, now: () => t });
     p.refresh([1, 2, 3]);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 2, 3]);
+    t = 60000;
     expect(p.isStale(1)).toBe(true);
     expect(p.get(2)).not.toBeNull();
   });
 
-  it('frees the slot and leaves the id stale when fetchProfile throws synchronously', async () => {
+  it('frees the slot and retries the id after staleMs when fetchProfile throws synchronously', async () => {
     const fetchProfile = vi.fn((id) => {
       if (id === 1) throw new Error('boom');
       return Promise.resolve({ ok: true, data: { online: true } });
     });
-    const p = createPresence({ fetchProfile, concurrency: 1 });
+    let t = 0;
+    const p = createPresence({ fetchProfile, concurrency: 1, now: () => t });
     p.refresh([1, 2, 3]);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 2, 3]);
+    t = 60000;
     expect(p.isStale(1)).toBe(true);
     expect(p.get(2)).not.toBeNull();
   });

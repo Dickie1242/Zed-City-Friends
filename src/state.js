@@ -55,11 +55,13 @@ export function updateFriendInfo(state, id, { username, avatar }) {
 
 export const MAX_NOTE = 200;
 
+export const normalizeNote = (note) => (typeof note === 'string' ? note.trim().slice(0, MAX_NOTE).trim() : '');
+
 // A friend's private note: trimmed and capped; an empty note removes the field. Returns whether it changed.
 export function setFriendNote(state, id, note) {
   const f = state.friends[id];
   if (!f) return false;
-  const text = typeof note === 'string' ? note.trim().slice(0, MAX_NOTE).trim() : '';
+  const text = normalizeNote(note);
   if ((f.note || '') === text) return false;
   if (text) f.note = text;
   else delete f.note;
