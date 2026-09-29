@@ -66,4 +66,12 @@ describe('user stylesheet', () => {
     expect(css).toContain('width:800px');
     expect(css).toContain('height:640px');
   });
+
+  it('scales every chat by the size for every chat, and a chat with its own size on top of that', () => {
+    const css = buildUserCss({ chats: { pm: { text: 100 }, 'dm:5': { w: 400 } }, textAll: 120 });
+    expect(css.split('\n')[0]).toBe('body .chat-containers > .chat-container:is(.general-chat,.faction-chat,.activity-chat) .chat-content,body .chat-containers .zcf[data-zcf-chat] .zcf-zoom{zoom:1.2}');
+    expect(css).toContain('body .chat-containers .zcf[data-zcf-chat="pm"] .zcf-zoom{zoom:1}');
+    expect(css).not.toContain('"dm:5"] .zcf-zoom');
+    expect(buildUserCss({ chats: {}, textAll: 100 })).toBe('');
+  });
 });

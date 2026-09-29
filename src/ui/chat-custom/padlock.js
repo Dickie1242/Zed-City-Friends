@@ -3,7 +3,7 @@
 // header's own nodes and attributes are never touched. Clicks stop here so the game's header toggle
 // doesn't fire.
 import { h } from '../dom.js';
-import { LIMITS, textOf, isLocked, isMoved } from '../../chat-custom/chats.js';
+import { LIMITS, DEFAULT_TEXT, textOf, isLocked, isMoved } from '../../chat-custom/chats.js';
 
 export const HEADER_CONTROLS_MIN_WIDTH = 400;
 export const TITLE_LOCKED = 'Locked — click to unlock, right-click for options';
@@ -30,8 +30,8 @@ export function createChatControls(key, act) {
   lock.addEventListener('contextmenu', stop(() => act.openMenu(key, lock)));
   const el = h('span', { class: 'zcf-cc', dataset: { zcfCc: key } }, inline, back, lock);
 
-  // width: the chat's width now, for the 400px header controls.
-  function sync(entry, width) {
+  // width: the chat's width now, for the 400px header controls. textAll: the size for every chat.
+  function sync(entry, width, textAll = DEFAULT_TEXT) {
     const locked = isLocked(entry);
     lock.title = locked ? TITLE_LOCKED : TITLE_UNLOCKED;
     lock.setAttribute('aria-label', lock.title);
@@ -39,7 +39,7 @@ export function createChatControls(key, act) {
     lock.classList.toggle('zcf-cc-unlocked', !locked);
     glyph.className = `fas ${locked ? 'fa-lock' : 'fa-lock-open'}`;
     back.hidden = !isMoved(entry);
-    value.textContent = `${textOf(entry)}%`;
+    value.textContent = `${textOf(entry, textAll)}%`;
     inline.hidden = !(width >= HEADER_CONTROLS_MIN_WIDTH);
     reset.disabled = !(entry && (entry.w || entry.h));
   }

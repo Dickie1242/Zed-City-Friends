@@ -36,11 +36,12 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
   const saved = (key) => settings.get().chats[key];
   const entryOf = (key) => (live && live.key === key ? { ...saved(key), ...live.entry } : saved(key));
   const save = (key, patch) => settings.update((s) => updateChat(s, key, patch));
+  const textAll = () => settings.get().textAll;
 
   const menu = createChatMenu({ doc, win });
   const act = {
     toggleLock: (key) => save(key, { locked: isLocked(saved(key)) ? false : null }),
-    stepText: (key, delta) => save(key, { text: clampText(textOf(saved(key)) + delta) }),
+    stepText: (key, delta) => save(key, { text: clampText(textOf(saved(key), textAll()) + delta) }),
     resetSize: (key) => save(key, { w: null, h: null }),
     returnToRow: (key) => save(key, { x: null, y: null }),
     openMenu: (key, anchor) => menu.open(anchor, key, menuModel(key)),
@@ -50,7 +51,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     const entry = saved(key);
     const id = dmIdOf(key);
     const btn = (label, onclick, extra = {}) => h('button', { class: 'zcf-cc-btn', type: 'button', onclick, ...extra }, label);
-    const text = textOf(entry);
+    const text = textOf(entry, textAll());
     const rows = [
       {
         label: 'Message size',
@@ -84,7 +85,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
       const m = measure(c);
       if (m) sizes[c.key] = m;
     }
-    const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
+    const css = buildUserCss({ chats: settings.get().chats, textAll: textAll(), live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
     if (styleEl.textContent !== css) styleEl.textContent = css;
     if (!styleEl.isConnected) (doc.head || doc.documentElement).appendChild(styleEl);
   }
@@ -99,7 +100,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     const rec = records.get(key);
     if (!c || !rec) return;
     const entry = entryOf(key);
-    rec.controls.sync(entry, (entry && entry.w) || c.el.getBoundingClientRect().width);
+    rec.controls.sync(entry, (entry && entry.w) || c.el.getBoundingClientRect().width, textAll());
   }
 
   function refresh() {
@@ -128,7 +129,7 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
         else c.header.appendChild(rec.controls.el);
       }
       const entry = entryOf(c.key);
-      rec.controls.sync(entry, (!c.minimized && entry && entry.w) || c.el.getBoundingClientRect().width);
+      rec.controls.sync(entry, (!c.minimized && entry && entry.w) || c.el.getBoundingClientRect().width, textAll());
       const { key, el } = c;
       const dirs = c.minimized ? [] : gripsFor({ locked: isLocked(entry), moved: isMoved(entry) });
       syncGrips(el, dirs, (dir, e) => resize.start(key, el, dir, isMoved(saved(key)), e));

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createChatCustom } from '../../src/ui/chat-custom/index.js';
 import { createKeeper } from '../../src/ui/keeper.js';
 import { createSettingsStore } from '../../src/store.js';
-import { updateChat } from '../../src/settings.js';
+import { updateChat, setTextAll } from '../../src/settings.js';
 import { DOCK_HTML, wireGameHeaders } from '../fixtures/game-dom.js';
 import { memoryStorage, flush } from '../helpers.js';
 
@@ -251,5 +251,17 @@ describe('chat customization', () => {
     expect(document.querySelector('.zcf-cmenu').contains(document.activeElement)).toBe(true);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(document.activeElement).toBe(lock);
+  });
+
+  it('shows and steps a chat\'s text from the size for every chat', () => {
+    const { settings, general } = setup();
+    general.getBoundingClientRect = () => rect(600, 300, 450, 450); // wide enough for the header controls
+    settings.update((s) => setTextAll(s, 120));
+    const value = general.querySelector('.zcf-cc-value');
+    expect(value.textContent).toBe('120%');
+    click(general.querySelector('.zcf-cc-step[aria-label="Larger messages"]'));
+    expect(chat('game:general')).toEqual({ text: 130 });
+    expect(userCss()).toContain('zoom:1.2}');
+    expect(userCss()).toContain('.general-chat .chat-content{zoom:1.3}');
   });
 });
