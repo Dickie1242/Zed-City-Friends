@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.4.1
+// @version      0.5.0
 // @description  Friends list and Torn-style DM windows in Zed City's chat dock.
 // @match        https://www.zed.city/*
 // @grant        none
@@ -108,7 +108,10 @@
       getNewMessages: (userId, lastMessageId) => request("GET", "getNewMessages", { params: { user_id: userId, last_message_id: lastMessageId } }),
       sendMail: (userId, message) => request("POST", "sendMail", { body: { message, user_id: userId } }),
       getProfile: (userId) => request("GET", "getProfile", { params: { user: userId } }),
-      findPlayer: (q) => request("GET", "findPlayer", { params: { q } })
+      findPlayer: (q) => request("GET", "findPlayer", { params: { q } }),
+      getFactionMembers: () => request("GET", "getFactionMembers"),
+      blockList: (page = 1) => request("GET", "blockList", { params: { page } }),
+      unblockUser: (userId) => request("POST", "unblockUser", { body: { user_id: userId } })
     };
   }
 
@@ -164,7 +167,7 @@
   // src/state.js
   var MAX_DMS = 4;
   function emptyState() {
-    return { v: 1, friends: {}, threads: {}, dock: { friendsOpen: false, dms: [] } };
+    return { v: 1, friends: {}, threads: {}, dock: { friendsOpen: false, settingsOpen: false, dms: [] } };
   }
   var isObj = (o) => !!o && typeof o === "object" && !Array.isArray(o);
   function normalizeState(doc) {
@@ -176,6 +179,7 @@
       threads: isObj(doc.threads) ? doc.threads : {},
       dock: {
         friendsOpen: !!dock.friendsOpen,
+        settingsOpen: !!dock.settingsOpen,
         dms: Array.isArray(dock.dms) ? dock.dms.filter((d) => isObj(d) && toId(d.id)) : []
       }
     };
@@ -183,39 +187,43 @@
   function isFriend(state, id) {
     return !!state.friends[id];
   }
-  function addFriend(state, { id, username, avatar: avatar2 }, now) {
-    if (state.friends[id]) return false;
-    state.friends[id] = { id, username: username || `#${id}`, avatar: avatar2 || null, addedAt: now };
+  var MAX_NOTE = 200;
+  var normalizeNote = (note) => typeof note === "string" ? note.trim().slice(0, MAX_NOTE).trim() : "";
+  function addPerson(map, { id, username, avatar: avatar2 }, now) {
+    if (map[id]) return false;
+    map[id] = { id, username: username || `#${id}`, avatar: avatar2 || null, addedAt: now };
     return true;
   }
-  function removeFriend(state, id) {
-    delete state.friends[id];
+  function removePerson(map, id) {
+    delete map[id];
   }
-  function updateFriendInfo(state, id, { username, avatar: avatar2 }) {
-    const f = state.friends[id];
-    if (!f) return false;
+  function updatePersonInfo(map, id, { username, avatar: avatar2 }) {
+    const p = map[id];
+    if (!p) return false;
     let changed = false;
-    if (typeof username === "string" && username && username !== f.username) {
-      f.username = username;
+    if (typeof username === "string" && username && username !== p.username) {
+      p.username = username;
       changed = true;
     }
-    if (typeof avatar2 === "string" && avatar2 && avatar2 !== f.avatar) {
-      f.avatar = avatar2;
+    if (typeof avatar2 === "string" && avatar2 && avatar2 !== p.avatar) {
+      p.avatar = avatar2;
       changed = true;
     }
     return changed;
   }
-  var MAX_NOTE = 200;
-  var normalizeNote = (note) => typeof note === "string" ? note.trim().slice(0, MAX_NOTE).trim() : "";
-  function setFriendNote(state, id, note) {
-    const f = state.friends[id];
-    if (!f) return false;
+  function setPersonNote(map, id, note) {
+    const p = map[id];
+    if (!p) return false;
     const text2 = normalizeNote(note);
-    if ((f.note || "") === text2) return false;
-    if (text2) f.note = text2;
-    else delete f.note;
+    if ((p.note || "") === text2) return false;
+    if (text2) p.note = text2;
+    else delete p.note;
     return true;
   }
+  var addFriend = (state, p, now) => addPerson(state.friends, p, now);
+  var removeFriend = (state, id) => removePerson(state.friends, id);
+  var updateFriendInfo = (state, id, info2) => updatePersonInfo(state.friends, id, info2);
+  var setFriendNote = (state, id, note) => setPersonNote(state.friends, id, note);
   function threadEntry(state, id) {
     if (!state.threads[id]) state.threads[id] = { lastSeenReply: 0, lastNotifiedReply: 0, unread: 0 };
     return state.threads[id];
@@ -228,6 +236,7 @@
   function collapseOthers(state, keep) {
     for (const d of state.dock.dms) if (d !== keep) d.open = false;
     state.dock.friendsOpen = false;
+    state.dock.settingsOpen = false;
   }
   function openDm(state, id, opts = {}) {
     const { expand = false, exclusive = false, now = 0, max = MAX_DMS, username, avatar: avatar2 } = opts;
@@ -268,25 +277,187 @@
   }
   function setFriendsOpen(state, open, { exclusive = false } = {}) {
     state.dock.friendsOpen = !!open;
-    if (open && exclusive) for (const d of state.dock.dms) d.open = false;
+    if (open && exclusive) {
+      for (const d of state.dock.dms) d.open = false;
+      state.dock.settingsOpen = false;
+    }
+  }
+  function setSettingsOpen(state, open, { exclusive = false } = {}) {
+    state.dock.settingsOpen = !!open;
+    if (open && exclusive) {
+      for (const d of state.dock.dms) d.open = false;
+      state.dock.friendsOpen = false;
+    }
   }
   function collapseAll(state) {
     state.dock.friendsOpen = false;
+    state.dock.settingsOpen = false;
     for (const d of state.dock.dms) d.open = false;
   }
-  function chatsUnreadTotal(state, inboxThreads) {
+  function closeAllDms(state) {
+    state.dock.dms = [];
+  }
+  function chatsUnreadIds(state, inboxThreads, muted = []) {
     const ids = new Set(Object.keys(state.friends).map(Number));
     for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
-    let n = 0;
-    for (const id of ids) {
-      const t = state.threads[id];
-      if (t && t.unread > 0) n += t.unread;
-    }
-    return n;
+    const skip = new Set(muted);
+    return [...ids].filter((id) => !skip.has(id) && state.threads[id] && state.threads[id].unread > 0);
   }
+  function chatsUnreadTotal(state, inboxThreads, muted = []) {
+    return chatsUnreadIds(state, inboxThreads, muted).reduce((n, id) => n + state.threads[id].unread, 0);
+  }
+
+  // src/chat-custom/chats.js
+  var GAME_CHATS = [
+    { key: "game:general", cls: "general-chat", label: "Global" },
+    { key: "game:faction", cls: "faction-chat", label: "Faction" },
+    { key: "game:activity", cls: "activity-chat", label: "Activity" }
+  ];
+  var LIMITS = { minW: 270, maxW: 900, minH: 200, maxH: 2e3, minText: 80, maxText: 200, textStep: 10 };
+  var DEFAULT_TEXT = 100;
+  var KEY_RE = /^(?:game:(?:general|faction|activity)|pm|settings|dm:[1-9]\d{0,15})$/;
+  var isChatKey = (key) => typeof key === "string" && KEY_RE.test(key);
+  var dmKey = (id) => `dm:${id}`;
+  var dmIdOf = (key) => typeof key === "string" && /^dm:\d+$/.test(key) ? Number(key.slice(3)) : null;
+  var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  var num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+  var clampText = (v) => clamp(Math.round(v / LIMITS.textStep) * LIMITS.textStep, LIMITS.minText, LIMITS.maxText);
+  function normalizeChatEntry(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    if (raw.locked === false) out.locked = false;
+    const x = num(raw.x);
+    const y = num(raw.y);
+    if (x !== null && y !== null) {
+      out.x = Math.max(0, Math.round(x));
+      out.y = Math.max(0, Math.round(y));
+    }
+    const w = num(raw.w);
+    if (w !== null) out.w = clamp(Math.round(w), LIMITS.minW, LIMITS.maxW);
+    const h2 = num(raw.h);
+    if (h2 !== null) out.h = clamp(Math.round(h2), LIMITS.minH, LIMITS.maxH);
+    const t = num(raw.text);
+    if (t !== null && clampText(t) !== DEFAULT_TEXT) out.text = clampText(t);
+    return out;
+  }
+  function normalizeChats(chats) {
+    const out = {};
+    if (!chats || typeof chats !== "object" || Array.isArray(chats)) return out;
+    for (const [key, raw] of Object.entries(chats)) {
+      if (!isChatKey(key)) continue;
+      const entry = normalizeChatEntry(raw);
+      if (Object.keys(entry).length) out[key] = entry;
+    }
+    return out;
+  }
+  var textOf = (entry) => entry && entry.text || DEFAULT_TEXT;
+  var isLocked = (entry) => !(entry && entry.locked === false);
+  var isMoved = (entry) => !!(entry && typeof entry.x === "number" && typeof entry.y === "number");
+  function chatLabel(key, dmName) {
+    const game = GAME_CHATS.find((g) => g.key === key);
+    if (game) return game.label;
+    if (key === "pm") return "Private Messages";
+    if (key === "settings") return "Chat settings";
+    const id = dmIdOf(key);
+    return id ? dmName || `#${id}` : String(key);
+  }
+  function describeChat(entry) {
+    const size = entry && (entry.w || entry.h) ? `${entry.w || "auto"}×${entry.h || "auto"}` : "default size";
+    return [isMoved(entry) ? "moved" : "docked", size, `text ${textOf(entry)}%`].join(" · ");
+  }
+
+  // src/settings.js
+  var PM_TABS = ["chats", "friends", "faction", "blocked"];
+  var SOUNDS = ["off", "chirp", "ping", "bell"];
+  var MAX_MUTED = 500;
+  function defaultSettings() {
+    return { v: 1, pmTab: "chats", sound: "off", chats: {}, muted: [] };
+  }
+  var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
+  function normalizeMuted(list) {
+    const out = [];
+    for (const v of Array.isArray(list) ? list : []) {
+      if (out.length >= MAX_MUTED) break;
+      const id = toId(v);
+      if (id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
+  function normalizeSettings(doc) {
+    if (!isObj2(doc) || doc.v !== 1) throw new Error("Unsupported settings document");
+    return {
+      v: 1,
+      pmTab: PM_TABS.includes(doc.pmTab) ? doc.pmTab : "chats",
+      sound: SOUNDS.includes(doc.sound) ? doc.sound : "off",
+      chats: normalizeChats(doc.chats),
+      muted: normalizeMuted(doc.muted)
+    };
+  }
+  function setPmTab(s, tab) {
+    if (PM_TABS.includes(tab)) s.pmTab = tab;
+  }
+  function setSound(s, sound) {
+    if (SOUNDS.includes(sound)) s.sound = sound;
+  }
+  var isMuted = (s, id) => s.muted.includes(Number(id));
+  function setMuted(s, id, on) {
+    const n = toId(id);
+    if (!n) return;
+    const rest = s.muted.filter((x) => x !== n);
+    s.muted = normalizeMuted(on ? [n, ...rest] : rest);
+  }
+  function updateChat(s, key, patch) {
+    if (!isChatKey(key)) return;
+    const next = { ...s.chats[key] || {} };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === void 0) delete next[k];
+      else next[k] = v;
+    }
+    const entry = normalizeChatEntry(next);
+    if (Object.keys(entry).length) s.chats[key] = entry;
+    else delete s.chats[key];
+  }
+  function resetChat(s, key) {
+    delete s.chats[key];
+  }
+  function resetAllChats(s) {
+    s.chats = {};
+  }
+
+  // src/enemies.js
+  function emptyEnemies() {
+    return { v: 1, enemies: {} };
+  }
+  var isObj3 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
+  function normalizeEnemies(doc) {
+    if (!isObj3(doc) || doc.v !== 1) throw new Error("Unsupported enemies document");
+    const enemies = {};
+    for (const e of Object.values(isObj3(doc.enemies) ? doc.enemies : {})) {
+      const id = toId(e && e.id);
+      if (!id) continue;
+      const entry = {
+        id,
+        username: typeof e.username === "string" && e.username ? e.username : `#${id}`,
+        avatar: typeof e.avatar === "string" && e.avatar ? e.avatar : null,
+        addedAt: Number.isFinite(e.addedAt) ? e.addedAt : 0
+      };
+      const note = normalizeNote(e.note);
+      if (note) entry.note = note;
+      enemies[id] = entry;
+    }
+    return { v: 1, enemies };
+  }
+  var isEnemy = (doc, id) => !!doc.enemies[id];
+  var addEnemy = (doc, p, now) => addPerson(doc.enemies, p, now);
+  var removeEnemy = (doc, id) => removePerson(doc.enemies, id);
+  var setEnemyNote = (doc, id, note) => setPersonNote(doc.enemies, id, note);
+  var updateEnemyInfo = (doc, id, info2) => updatePersonInfo(doc.enemies, id, info2);
+  var enemyNames = (doc) => new Set(Object.values(doc.enemies).map((e) => e.username.toLowerCase()));
 
   // src/store.js
   var storageKey = (playerId) => `zcf:v1:${playerId}`;
+  var settingsKey = (playerId) => `zcf:v1:${playerId}:settings`;
+  var enemiesKey = (playerId) => `zcf:v1:${playerId}:enemies`;
   var RECENT_EMOJI_KEY = "zed-ui.recent-emojis";
   var RECENT_EMOJI_MAX = 18;
   function defaultStorage(storage) {
@@ -415,6 +586,171 @@
         subs.clear();
       }
     };
+  }
+  function createDocStore({ key, empty, normalize, storage = window.localStorage, win = window, now = () => Date.now() }) {
+    const subs = /* @__PURE__ */ new Set();
+    let saved = true;
+    function read({ repair } = {}) {
+      let text2 = null;
+      try {
+        text2 = storage.getItem(key);
+      } catch (e) {
+        warnOnce(`docstore-read:${key}`, e);
+        return { doc: null, ok: false };
+      }
+      if (!text2) return { doc: empty(), ok: true };
+      try {
+        const parsed = JSON.parse(text2);
+        if (parsed && typeof parsed === "object" && typeof parsed.v === "number" && parsed.v > 1) {
+          warnOnce(`docstore-newer:${key}`, parsed.v);
+          return { doc: null, ok: false };
+        }
+        return { doc: normalize(parsed), ok: true };
+      } catch (e) {
+        warnOnce(`docstore-corrupt:${key}`, e);
+        if (!repair) return { doc: null, ok: false };
+        try {
+          storage.setItem(`${key}:corrupt:${now()}`, text2);
+          storage.removeItem(key);
+        } catch {
+          return { doc: null, ok: false };
+        }
+        return { doc: empty(), ok: true, repaired: true };
+      }
+    }
+    const initial = read({ repair: true });
+    let doc = initial.ok ? initial.doc : empty();
+    function emit() {
+      for (const fn of [...subs]) {
+        try {
+          fn(doc);
+        } catch (e) {
+          warnOnce(`docstore-subscriber:${key}`, e);
+        }
+      }
+    }
+    function update(mutate) {
+      const r = read({ repair: true });
+      const draft = r.ok && saved && !r.repaired ? r.doc : JSON.parse(JSON.stringify(doc));
+      const result = mutate(draft);
+      doc = normalize(draft);
+      if (r.ok) {
+        try {
+          storage.setItem(key, JSON.stringify(doc));
+          saved = true;
+        } catch (e) {
+          saved = false;
+          warnOnce(`docstore-write:${key}`, e);
+        }
+      }
+      emit();
+      return result;
+    }
+    function onStorage(e) {
+      if (e.key !== key && e.key !== null) return;
+      const r = read({ repair: false });
+      if (!r.ok) return;
+      doc = r.doc;
+      saved = true;
+      emit();
+    }
+    win.addEventListener("storage", onStorage);
+    return {
+      key,
+      get: () => doc,
+      update,
+      subscribe(fn) {
+        subs.add(fn);
+        return () => subs.delete(fn);
+      },
+      destroy() {
+        win.removeEventListener("storage", onStorage);
+        subs.clear();
+      }
+    };
+  }
+  function createSettingsStore({ playerId, ...opts }) {
+    return createDocStore({ key: settingsKey(playerId), empty: defaultSettings, normalize: normalizeSettings, ...opts });
+  }
+  function createEnemiesStore({ playerId, ...opts }) {
+    return createDocStore({ key: enemiesKey(playerId), empty: emptyEnemies, normalize: normalizeEnemies, ...opts });
+  }
+
+  // src/sound.js
+  var TONES = {
+    chirp: [{ f: 1800, to: 2700, at: 0, dur: 0.07 }, { f: 2200, to: 3100, at: 0.09, dur: 0.07 }],
+    ping: [{ f: 1320, at: 0, dur: 0.28 }],
+    bell: [{ f: 880, at: 0, dur: 0.7 }, { f: 1760, at: 0, dur: 0.45, gain: 0.08 }]
+  };
+  function createSound({ win = window } = {}) {
+    let ctx = null;
+    function context() {
+      if (!ctx) {
+        const AC = win.AudioContext || win.webkitAudioContext;
+        if (!AC) return null;
+        try {
+          ctx = new AC();
+        } catch {
+          return null;
+        }
+      }
+      if (ctx.state === "suspended" && typeof ctx.resume === "function") ctx.resume().catch(() => {
+      });
+      return ctx;
+    }
+    function play(name) {
+      const tones = TONES[name];
+      if (!tones) return false;
+      const ac = context();
+      if (!ac) return false;
+      const t0 = ac.currentTime;
+      for (const tone of tones) {
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        const start = t0 + tone.at;
+        const end = start + tone.dur;
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(tone.f, start);
+        if (tone.to) osc.frequency.exponentialRampToValueAtTime(tone.to, end);
+        gain.gain.setValueAtTime(1e-4, start);
+        gain.gain.exponentialRampToValueAtTime(tone.gain || 0.18, start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(1e-4, end);
+        osc.connect(gain);
+        gain.connect(ac.destination);
+        osc.start(start);
+        osc.stop(end + 0.02);
+      }
+      return true;
+    }
+    return {
+      play,
+      unlock() {
+        context();
+      }
+    };
+  }
+
+  // src/mark-read.js
+  var MARK_ALL_MAX = 20;
+  async function markAllRead({ ids, api, markSeen: markSeen2, onProgress = () => {
+  }, toast, max = MARK_ALL_MAX }) {
+    const todo = ids.slice(0, max);
+    let marked = 0;
+    onProgress(0, todo.length);
+    for (let i = 0; i < todo.length; i += 1) {
+      const r = await api.getChatMessages(todo[i], 1, 10);
+      if (!r.ok && (r.kind === "auth" || r.kind === "busy")) {
+        toast(r.kind === "auth" ? "Log in again to mark chats as read." : "Mail is unavailable right now. Try again later.", { error: true });
+        return marked;
+      }
+      if (r.ok) {
+        markSeen2(todo[i]);
+        marked += 1;
+      }
+      onProgress(i + 1, todo.length);
+    }
+    toast(`Marked ${marked} chat${marked === 1 ? "" : "s"} as read`);
+    return marked;
   }
 
   // src/router.js
@@ -583,10 +919,10 @@
     if (h2 < 24) return `${h2}h ago`;
     return `${Math.floor(h2 / 24)}d ago`;
   }
-  function statusText(info, now = Date.now()) {
-    if (!info) return "";
-    if (info.online) return "Online";
-    if (info.active) return `Active ${timeAgo(info.active, now)}`;
+  function statusText(info2, now = Date.now()) {
+    if (!info2) return "";
+    if (info2.online) return "Online";
+    if (info2.active) return `Active ${timeAgo(info2.active, now)}`;
     return "Offline";
   }
   function longAgo(ts, now = Date.now()) {
@@ -602,10 +938,10 @@
     if (d < 365) return unit(Math.floor(d / 30), "month");
     return unit(Math.floor(d / 365), "year");
   }
-  function longStatusText(info, now = Date.now()) {
-    if (!info) return "";
-    if (info.online) return "Online";
-    if (info.active) return `Active ${longAgo(info.active, now)}`;
+  function longStatusText(info2, now = Date.now()) {
+    if (!info2) return "";
+    if (info2.online) return "Online";
+    if (info2.active) return `Active ${longAgo(info2.active, now)}`;
     return "Offline";
   }
 
@@ -634,6 +970,7 @@
     fetchProfile,
     onProfile,
     staleMs = 6e4,
+    profileStaleMs = 3e5,
     concurrency = 2,
     gapMs = 250,
     pauseMs = 3e5,
@@ -655,28 +992,32 @@
         }
       }
     }
-    function store(id, info, at, profile) {
-      if (!info || typeof info !== "object") return;
+    function store(id, info2, at, profile) {
+      if (!info2 || typeof info2 !== "object") return;
       const prev = cache.get(id);
       cache.set(id, {
-        online: !!info.online,
-        active: lastActive(info.active, now()),
+        online: !!info2.online,
+        active: lastActive(info2.active, now()),
         fetchedAt: at,
-        profile: profile || prev && prev.profile || null
+        profile: profile || prev && prev.profile || null,
+        // When level, faction and the icons were last fetched. A getChatInfo set() refreshes the online
+        // status only, so fetchedAt alone can't tell whether these have gone stale (spec §D.3 #4).
+        profileAt: profile ? at : prev && prev.profileAt || 0
       });
       emit(id);
     }
-    function set(id, info) {
-      store(id, info, now());
+    function set(id, info2) {
+      store(id, info2, now());
     }
     function isStale(id, maxAgeMs = staleMs) {
       if (failedAt.has(id) && now() - failedAt.get(id) < maxAgeMs) return false;
       const c = cache.get(id);
-      return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
+      if (!c || !c.profile) return true;
+      return now() - c.fetchedAt >= maxAgeMs || now() - c.profileAt >= Math.max(maxAgeMs, profileStaleMs);
     }
     function lastTried(id) {
       const c = cache.get(id);
-      return Math.max(c ? c.fetchedAt : 0, failedAt.get(id) || 0);
+      return Math.max(c ? c.profileAt : 0, failedAt.get(id) || 0);
     }
     function pause() {
       pausedUntil = now() + pauseMs;
@@ -3194,13 +3535,13 @@ sandfish		/items/sandfish.webp`;
         return r;
       }
       let changed = false;
-      const info = r.data && (r.data[userId] || r.data[String(userId)]);
-      if (info && typeof info === "object") {
+      const info2 = r.data && (r.data[userId] || r.data[String(userId)]);
+      if (info2 && typeof info2 === "object") {
         state.info = {
-          username: typeof info.username === "string" ? info.username : null,
-          avatar: typeof info.avatar === "string" ? info.avatar : null,
-          online: !!info.online,
-          active: info.active
+          username: typeof info2.username === "string" ? info2.username : null,
+          avatar: typeof info2.avatar === "string" ? info2.avatar : null,
+          online: !!info2.online,
+          active: info2.active
         };
         onInfo(state.info);
         changed = true;
@@ -3284,7 +3625,7 @@ sandfish		/items/sandfish.webp`;
             userId,
             myId,
             onActivity: () => onActivity(userId),
-            onInfo: (info) => onInfo(userId, info)
+            onInfo: (info2) => onInfo(userId, info2)
           });
           c.subscribe(() => onChange(userId));
           map.set(userId, c);
@@ -3302,6 +3643,7 @@ sandfish		/items/sandfish.webp`;
   }
   function createInbox({ api, store, myId, now = () => Date.now(), onActivity = () => {
   }, onThreadChanged = () => {
+  }, isMuted: isMuted2 = () => false, onNewMail = () => {
   } }) {
     let threads = [];
     let previous = null;
@@ -3328,7 +3670,7 @@ sandfish		/items/sandfish.webp`;
       const changes = [];
       for (const t of sortedFresh) {
         const seen = state.threads[t.userId] || {};
-        const pop = !!state.friends[t.userId] && (t.lastReply || 0) > (seen.lastNotifiedReply || 0);
+        const pop = !!state.friends[t.userId] && !isMuted2(t.userId) && (t.lastReply || 0) > (seen.lastNotifiedReply || 0);
         if (seen.unread !== t.newMail || pop) changes.push({ t, pop });
       }
       const cleared = Object.keys(state.threads).map(Number).filter((id) => state.threads[id].unread > 0 && !freshIds.has(id) && byId.has(id));
@@ -3349,6 +3691,14 @@ sandfish		/items/sandfish.webp`;
       const prevBaseline = previous;
       previous = new Map(threads.map((t) => [t.userId, t.lastReply]));
       if (prevBaseline) {
+        const arrived = fresh.filter((t) => !isMuted2(t.userId) && prevBaseline.get(t.userId) !== t.lastReply);
+        if (arrived.length) {
+          try {
+            onNewMail(arrived);
+          } catch (e) {
+            warnOnce("inbox-callback", e);
+          }
+        }
         let chatting = false;
         for (const t of threads) {
           if (prevBaseline.has(t.userId) && prevBaseline.get(t.userId) === t.lastReply) continue;
@@ -3380,6 +3730,13 @@ sandfish		/items/sandfish.webp`;
       lastReply(userId) {
         const t = threads.find((x) => x.userId === userId);
         return t ? t.lastReply : null;
+      },
+      // An older page of the thread list, for the Private Messages window's Chats tab. Nothing else
+      // (badges, pop-ups, change signals) looks at these; page 1 stays the poll's job.
+      async fetchPage(page) {
+        const r = await api.getChats(page);
+        if (!r.ok) return r;
+        return { ok: true, threads: normalizeThreads(r.data) };
       },
       subscribe(fn) {
         subs.add(fn);
@@ -3493,9 +3850,25 @@ sandfish		/items/sandfish.webp`;
   }
 
   // src/backup.js
-  function exportFriends(state, playerId) {
-    const friends = Object.values(state.friends).map((f) => f.note ? { id: f.id, username: f.username, note: f.note } : { id: f.id, username: f.username });
-    return JSON.stringify({ v: 1, playerId, friends }, null, 2);
+  var pick = (p) => p.note ? { id: p.id, username: p.username, note: p.note } : { id: p.id, username: p.username };
+  function exportFriends(state, playerId, enemiesDoc) {
+    const doc = { v: 1, playerId, friends: Object.values(state.friends).map(pick) };
+    const enemies = enemiesDoc ? Object.values(enemiesDoc.enemies).map(pick) : [];
+    if (enemies.length) doc.enemies = enemies;
+    return JSON.stringify(doc, null, 2);
+  }
+  function parsePeople(list) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const p of list) {
+      const id = toId(p && p.id);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const username = (typeof p.username === "string" ? p.username.slice(0, 32) : "") || `#${id}`;
+      const note = normalizeNote(p.note);
+      out.push(note ? { id, username, note } : { id, username });
+    }
+    return out;
   }
   function parseImport(text2, playerId) {
     let doc;
@@ -3510,30 +3883,26 @@ sandfish		/items/sandfish.webp`;
     if (toId(doc.playerId) !== toId(playerId)) {
       return { ok: false, error: "That export belongs to a different player." };
     }
-    const friends = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const f of doc.friends) {
-      const id = toId(f && f.id);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      const username = (typeof f.username === "string" ? f.username.slice(0, 32) : "") || `#${id}`;
-      const note = normalizeNote(f.note);
-      friends.push(note ? { id, username, note } : { id, username });
-    }
-    return { ok: true, friends };
+    return { ok: true, friends: parsePeople(doc.friends), enemies: parsePeople(Array.isArray(doc.enemies) ? doc.enemies : []) };
   }
-  function mergeImport(state, friends, now) {
+  function mergeInto(map, people, now) {
     let added = 0;
     let notes = 0;
-    for (const f of friends) {
-      if (addFriend(state, f, now)) added += 1;
-      if (f.note && !state.friends[f.id].note && setFriendNote(state, f.id, f.note)) notes += 1;
+    for (const p of people) {
+      if (addPerson(map, p, now)) added += 1;
+      if (p.note && !map[p.id].note && setPersonNote(map, p.id, p.note)) notes += 1;
     }
     return { added, notes };
   }
-  function importMessage({ added, notes = 0 }) {
-    const friends = `${added} new friend${added === 1 ? "" : "s"}`;
-    return notes ? `Imported ${friends} and ${notes} note${notes === 1 ? "" : "s"}.` : `Imported ${friends}.`;
+  var mergeImport = (state, friends, now) => mergeInto(state.friends, friends, now);
+  var mergeEnemiesImport = (doc, enemies, now) => mergeInto(doc.enemies, enemies, now);
+  function importMessage({ added, enemiesAdded = 0, notes = 0 }) {
+    const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const parts = [count(added, "new friend", "new friends")];
+    if (enemiesAdded) parts.push(count(enemiesAdded, "new enemy", "new enemies"));
+    if (notes) parts.push(count(notes, "note", "notes"));
+    const last = parts.pop();
+    return `Imported ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
   }
 
   // src/ui/dom.js
@@ -3617,6 +3986,23 @@ sandfish		/items/sandfish.webp`;
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  }
+  function wireMenuKeys(menu, { onEscape }) {
+    menu.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onEscape();
+        return;
+      }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const items = [...menu.querySelectorAll("button")].filter((b) => !b.hidden && !b.disabled);
+      if (!items.length) return;
+      e.preventDefault();
+      const i = items.indexOf(menu.ownerDocument.activeElement);
+      const next = e.key === "ArrowDown" ? (i + 1) % items.length : i <= 0 ? items.length - 1 : i - 1;
+      items[next].focus();
+    }, true);
   }
 
   // src/ui/keeper.js
@@ -3753,46 +4139,12 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
-  // src/ui/add-friend-popover.js
+  // src/ui/player-search.js
   var MAX_RESULTS = 8;
-  function createAddFriendPopover({ players, isFriend: isFriend2, onAdd, onClose }) {
+  var SEARCH_MS = 300;
+  function createPlayerSearch({ players, onState }) {
     let seq = 0;
-    let results = [];
-    const input = h("input", { class: "zcf-input", type: "text", placeholder: "Name or player ID", "aria-label": "Find a player" });
-    const list = h("div", { class: "zcf-results" });
-    const el = h("div", { class: "zcf-pop", hidden: true }, h("div", { class: "zcf-pop-title" }, "Add friend"), input, list);
-    function message(text2) {
-      clear(list);
-      if (text2) list.appendChild(h("div", { class: "zcf-empty" }, text2));
-    }
-    function row(p) {
-      const action = isFriend2(p.id) ? h("span", { class: "zcf-done" }, "✓ Friend") : h("button", {
-        class: "zcf-add",
-        type: "button",
-        onclick: (e) => {
-          e.stopPropagation();
-          onAdd(p);
-          render();
-          input.focus();
-        }
-      }, "Add");
-      return h(
-        "div",
-        { class: "zcf-result" },
-        avatar({ avatar: p.avatar, size: 22 }),
-        h("div", { class: "zcf-row-main" }, h("div", { class: "zcf-name" }, p.username), h("div", { class: "zcf-status" }, `#${p.id}`)),
-        action
-      );
-    }
-    function render() {
-      if (!results.length) {
-        message("No players found.");
-        return;
-      }
-      clear(list);
-      for (const p of results) list.appendChild(row(p));
-    }
-    const search = debounce(async (mine, q) => {
+    const run = debounce(async (mine, q) => {
       let r;
       try {
         r = await players.search(q);
@@ -3800,150 +4152,230 @@ sandfish		/items/sandfish.webp`;
         r = { ok: false };
       }
       if (mine !== seq) return;
-      if (!r.ok) {
-        message("Search failed. Try again.");
-        return;
-      }
-      results = r.data.slice(0, MAX_RESULTS);
-      render();
-    }, 300);
-    input.addEventListener("input", () => {
-      const q = input.value.trim();
-      seq += 1;
-      const mine = seq;
-      if (q.length >= 2 || /^\d+$/.test(q)) {
-        message("Searching…");
-        search(mine, q);
-      } else {
-        search.cancel();
-        results = [];
-        message(q ? "Keep typing…" : "");
-      }
-    });
-    el.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        close();
-      }
-    }, true);
-    function open() {
-      el.hidden = false;
-      input.value = "";
-      results = [];
-      message("");
-      input.focus();
-    }
-    function close() {
-      el.hidden = true;
-      search.cancel();
-      seq += 1;
-      if (onClose) onClose();
-    }
+      if (!r.ok) onState({ kind: "error", text: "Search failed. Try again." });
+      else onState({ kind: "results", results: r.data.slice(0, MAX_RESULTS) });
+    }, SEARCH_MS);
     return {
-      el,
-      input,
-      open,
-      close,
-      get isOpen() {
-        return !el.hidden;
+      set(value) {
+        const q = String(value || "").trim();
+        seq += 1;
+        const mine = seq;
+        if (q.length >= 2 || /^\d+$/.test(q)) {
+          onState({ kind: "searching" });
+          run(mine, q);
+        } else {
+          run.cancel();
+          onState({ kind: q ? "short" : "idle" });
+        }
       },
-      // Re-draw "Add" / "✓ Friend" after the friends list changes elsewhere.
-      refresh() {
-        if (!el.hidden && results.length) render();
+      cancel() {
+        run.cancel();
+        seq += 1;
       }
     };
   }
 
-  // src/friends-view.js
+  // src/ui/marks.js
+  var enemyMark = () => h("i", { class: "fas fa-skull zcf-enemy-mark", role: "img", title: "Enemy", "aria-label": "Enemy" });
+  var mutedMark = () => h("i", { class: "fas fa-bell-slash zcf-muted-mark", role: "img", title: "Muted", "aria-label": "Muted" });
+
+  // src/pm-view.js
   var byName = (a, b) => a.username.localeCompare(b.username, void 0, { sensitivity: "base" });
-  function buildFriendSections({ friends, presence, threads, filter }) {
-    const q = String(filter || "").trim().toLowerCase();
-    const matches = (name) => !q || String(name).toLowerCase().includes(q);
-    const online = [];
-    const offline = [];
-    let onlineCount = 0;
-    const all = Object.values(friends);
-    for (const f of all) {
-      const p = presence(f.id);
-      if (p && p.online) onlineCount += 1;
-      if (!matches(f.username)) continue;
-      const row = { id: f.id, username: f.username, avatar: f.avatar, presence: p };
-      (p && p.online ? online : offline).push(row);
+  var str = (v) => typeof v === "string" && v ? v : null;
+  var truthy = (v) => v === true || Number(v) > 0;
+  function buildChatRows({ page1 = [], older = [], threads = {} }) {
+    const best = /* @__PURE__ */ new Map();
+    for (const t of [...page1, ...older.flat()]) {
+      if (!t || t.isSystem) continue;
+      const prev = best.get(t.userId);
+      if (!prev || (t.lastReply || 0) > (prev.lastReply || 0)) best.set(t.userId, t);
     }
-    online.sort(byName);
-    offline.sort((a, b) => (b.presence && b.presence.active || 0) - (a.presence && a.presence.active || 0) || byName(a, b));
-    const recent = threads.filter((t) => !t.isSystem && !friends[t.userId] && matches(t.username)).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0));
-    return { online, offline, recent, onlineCount, total: all.length };
+    return [...best.values()].map((t) => ({ ...t, unread: threads[t.userId] && threads[t.userId].unread || 0 })).sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0) || a.userId - b.userId);
+  }
+  function previewLine(t, myId) {
+    if (!t.preview) return "";
+    return `${t.senderId === myId ? "You" : t.username}: ${t.preview}`;
+  }
+  function buildFactionRows(data, { myId, now = Date.now() } = {}) {
+    const rows = [];
+    for (const m of asArray(data && data.members)) {
+      const id = toId(m && m.id);
+      if (!id || id === myId) continue;
+      const level = Number(m.level);
+      rows.push({
+        id,
+        username: str(m.username) || `#${id}`,
+        avatar: str(m.avatar),
+        online: truthy(m.online),
+        active: lastActive(m.active, now),
+        level: Number.isFinite(level) && level > 0 ? level : null
+      });
+    }
+    return rows.sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      if (a.online) return byName(a, b);
+      return (b.active || 0) - (a.active || 0) || byName(a, b);
+    });
+  }
+  function buildBlockedRows(pages) {
+    const seen = /* @__PURE__ */ new Map();
+    for (const u of pages.flat()) {
+      const id = toId(u && u.id);
+      if (!id || seen.has(id)) continue;
+      seen.set(id, { id, username: str(u.username) || `#${id}`, avatar: str(u.avatar) });
+    }
+    return [...seen.values()].sort(byName);
   }
 
-  // src/ui/friends-window.js
+  // src/friends-table.js
+  var DEFAULT_SORT = { key: "status", dir: "asc" };
+  var FIRST_DIR = { name: "asc", level: "desc", status: "asc", faction: "asc" };
+  var text = (a, b) => a.localeCompare(b, void 0, { sensitivity: "base" });
+  var byName2 = (a, b) => text(a.username, b.username);
+  var statusRank = (p) => p.online ? 0 : p.active ? 1 : 2;
+  var SORTS = {
+    name: { has: () => true, cmp: byName2 },
+    level: { has: (r) => !!(r.profile && r.profile.level), cmp: (a, b) => a.profile.level - b.profile.level },
+    faction: { has: (r) => !!(r.profile && r.profile.faction), cmp: (a, b) => text(a.profile.faction.name, b.profile.faction.name) },
+    status: {
+      has: (r) => !!r.presence,
+      // Online first (A-Z via the tie-break), then offline by most recently active, then offline with no time.
+      cmp: (a, b) => {
+        const d = statusRank(a.presence) - statusRank(b.presence);
+        if (d || statusRank(a.presence) !== 1) return d;
+        return b.presence.active - a.presence.active;
+      }
+    }
+  };
+  function sortRows(rows, sort = DEFAULT_SORT) {
+    const { has, cmp } = SORTS[sort.key] || SORTS.status;
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return rows.slice().sort((a, b) => {
+      const ha = has(a);
+      const hb = has(b);
+      if (ha !== hb) return ha ? -1 : 1;
+      return (ha ? sign * cmp(a, b) : 0) || byName2(a, b);
+    });
+  }
+  function nextSort(sort, key) {
+    if (sort.key === key) return { key, dir: sort.dir === "asc" ? "desc" : "asc" };
+    return { key, dir: FIRST_DIR[key] || "asc" };
+  }
+  function buildFriendsTable({ list, friends, presence, threads = {}, tab = "all", query = "", sort = DEFAULT_SORT, pinned = [] }) {
+    const q = String(query || "").trim().toLowerCase();
+    const all = Object.values(list || friends || {}).map((f) => {
+      const p = presence(f.id);
+      return {
+        id: f.id,
+        username: f.username,
+        avatar: f.avatar || null,
+        note: f.note || "",
+        presence: p ? { online: !!p.online, active: p.active || null } : null,
+        profile: p && p.profile || null,
+        unread: threads[f.id] && threads[f.id].unread || 0
+      };
+    });
+    const isOnline = (r) => !!(r.presence && r.presence.online);
+    const online = all.filter(isOnline).length;
+    const counts = { all: all.length, online, offline: all.length - online };
+    const keep = new Set(pinned);
+    const inTab = all.filter((r) => tab === "all" || tab === "online" === isOnline(r) || keep.has(r.id));
+    const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
+    return { rows: sortRows(inTab.filter(matches), sort), counts };
+  }
+
+  // src/ui/pm-window.js
   var MAX_IMPORT_BYTES = 1024 * 1024;
-  function createFriendsWindow(services, { doc = document } = {}) {
-    const { store, actions, presence, inbox, players, router, toast, playerId } = services;
-    let filter = "";
-    let confirmId = null;
+  var FACTION_MS = 6e4;
+  var LOAD_MORE_PX = 80;
+  var TABS = [["chats", "Chats"], ["friends", "Friends"], ["faction", "Faction"], ["blocked", "Blocked"]];
+  var SEARCH_TEXT = { short: "Keep typing…", searching: "Searching…" };
+  function createPmWindow(services, { doc = document } = {}) {
+    const { store, settings, actions, presence, inbox, players, router, toast, playerId, myId, api } = services;
+    const isEnemy2 = services.isEnemy || (() => false);
+    const isMuted2 = services.isMuted || (() => false);
+    let wasOpen = false;
     let frame = 0;
     let lastSig = null;
-    const titleText = h("span", null, "Friends & Chats");
-    const count = h("span", { class: "zcf-count" });
+    let lastView = null;
+    let holdRender = false;
+    let renderWanted = false;
+    let found = { kind: "idle" };
+    const older = [];
+    let olderState = "more";
+    const seenOnPage1 = /* @__PURE__ */ new Map();
+    function rememberPage1() {
+      for (const t of inbox.threads()) seenOnPage1.set(t.userId, t);
+    }
+    let faction = { status: "idle", data: null };
+    let blocked = { status: "idle", pages: [], total: 0, loading: false, done: false };
+    let blockedShowing = false;
+    let unblockId = null;
+    let unblockBusy = false;
+    const tab = () => settings.get().pmTab;
+    const searching = () => found.kind !== "idle";
+    const isOpen = () => !!store.get().dock.friendsOpen;
+    const titleText = h("span", null, "Private Messages");
     const unreadBadge = badge();
     unreadBadge.classList.replace("bg-red-5", "bg-positive");
-    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-user-friends chat-icon", "aria-hidden": "true" }), titleText, count, unreadBadge);
-    const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More" }, icon("ellipsis-h"));
+    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-envelope chat-icon", "aria-hidden": "true" }), titleText, unreadBadge);
+    const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More", "aria-haspopup": "menu", "aria-expanded": "false" }, icon("ellipsis-h"));
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
-    const header = h("div", { class: "chat-header", onclick: () => actions.toggleFriends() }, title, menuBtn, toggle);
-    const filterInput = h("input", { class: "zcf-input", type: "text", placeholder: "Search friends…", "aria-label": "Search friends" });
-    const addBtn = h("button", { class: "zcf-iconbtn", type: "button", title: "Add friend", "aria-label": "Add friend", "aria-expanded": "false" }, icon("user-plus"));
-    const toolbar = h("div", { class: "zcf-toolbar" }, h("label", { class: "zcf-search" }, icon("search"), filterInput), addBtn);
-    const list = h("div", { class: "zcf-list" });
-    function syncAddBtn() {
-      addBtn.classList.toggle("zcf-active", pop.isOpen);
-      addBtn.setAttribute("aria-expanded", String(pop.isOpen));
+    const header = h("div", { class: "chat-header", onclick: () => actions.togglePm() }, title, menuBtn, toggle);
+    const tabBtns = /* @__PURE__ */ new Map();
+    const tabBar = h("div", { class: "zcf-pm-tabs", role: "tablist" });
+    for (const [key, label] of TABS) {
+      const b = h("button", { class: "zcf-pm-tab", type: "button", role: "tab", "aria-selected": "false", onclick: () => selectTab(key) }, label);
+      tabBtns.set(key, b);
+      tabBar.appendChild(b);
     }
-    const pop = createAddFriendPopover({
-      players,
-      isFriend: (id) => isFriend(store.get(), id),
-      onAdd: (p) => {
-        actions.addFriend(p);
-        toast(`${p.username} added to friends`);
-      },
-      onClose: syncAddBtn
+    const searchInput = h("input", {
+      class: "zcf-input",
+      type: "text",
+      placeholder: "Search by player name to start a new chat",
+      "aria-label": "Search by player name to start a new chat"
     });
+    const list = h("div", { class: "zcf-list zcf-pm-list" });
+    const main = h(
+      "div",
+      { class: "zcf-pm-main zcf-zoom" },
+      tabBar,
+      h("div", { class: "zcf-toolbar" }, h("label", { class: "zcf-search zcf-pm-search" }, icon("search"), searchInput)),
+      list
+    );
     const fileInput = h("input", { type: "file", accept: "application/json,.json", hidden: true });
     const menu = h(
       "div",
-      { class: "zcf-menu", hidden: true },
+      { class: "zcf-menu", role: "menu", hidden: true },
       h("div", { class: "zcf-menu-title" }, "Friends list"),
-      h("button", { type: "button", onclick: onExport }, "Export friends"),
-      h("button", { type: "button", onclick: () => {
-        menu.hidden = true;
-        fileInput.click();
-      } }, "Import friends")
+      h("button", { type: "button", role: "menuitem", onclick: onExport }, "Export friends"),
+      h("button", {
+        type: "button",
+        role: "menuitem",
+        onclick: () => {
+          closeMenu();
+          fileInput.click();
+        }
+      }, "Import friends")
     );
-    const body = h("div", { class: "chat-content zcf-body" }, toolbar, list, pop.el, menu, fileInput);
-    const el = h("div", { class: "chat-container zcf zcf-friends" }, header, body);
-    filterInput.addEventListener("input", () => {
-      filter = filterInput.value;
-      renderList();
-    });
-    addBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (pop.isOpen) pop.close();
-      else pop.open();
-      syncAddBtn();
-    });
+    const body = h("div", { class: "chat-content zcf-body" }, main, menu, fileInput);
+    const el = h("div", { class: "chat-container zcf zcf-pm", dataset: { zcfChat: "pm" } }, header, body);
+    function closeMenu({ focusButton = false } = {}) {
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+      if (focusButton) menuBtn.focus();
+    }
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      menu.hidden = !menu.hidden;
-      if (!menu.hidden) menu.querySelector("button").focus();
-    });
-    menu.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        menu.hidden = true;
-        menuBtn.focus();
+      if (!menu.hidden) {
+        closeMenu();
+        return;
       }
-    }, true);
+      menu.hidden = false;
+      menuBtn.setAttribute("aria-expanded", "true");
+      menu.querySelector("button").focus();
+    });
+    wireMenuKeys(menu, { onEscape: () => closeMenu({ focusButton: true }) });
     fileInput.addEventListener("change", safe("friends-import", async () => {
       const file = fileInput.files && fileInput.files[0];
       fileInput.value = "";
@@ -3962,153 +4394,280 @@ sandfish		/items/sandfish.webp`;
       const res = actions.importFriends(text2);
       toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
     }));
-    function onDocMousedown(e) {
-      if (pop.isOpen && !pop.el.contains(e.target) && !addBtn.contains(e.target)) pop.close();
-      if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) menu.hidden = true;
-    }
-    doc.addEventListener("mousedown", onDocMousedown);
     function onExport() {
-      menu.hidden = true;
-      const s = store.get();
-      const n = Object.keys(s.friends).length;
+      closeMenu();
+      const n = Object.keys(store.get().friends).length;
       downloadText(`zed-city-friends-${playerId}.json`, actions.exportFriends(), doc);
       toast(`Exported ${n} friend${n === 1 ? "" : "s"}.`);
     }
-    function section(label, rows, render, emptyText) {
-      list.appendChild(h("div", { class: "zcf-sec" }, `${label} — ${rows.length}`));
-      if (!rows.length) list.appendChild(h("div", { class: "zcf-empty" }, emptyText));
-      for (const r of rows) list.appendChild(render(r));
+    function onDocMousedown(e) {
+      if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
     }
-    function friendRow(r, s, now) {
-      if (confirmId === r.id) {
-        return h(
-          "div",
-          { class: "zcf-row" },
-          h("div", { class: "zcf-row-main" }, `Remove ${r.username} from friends?`),
-          h("button", { class: "zcf-mini zcf-danger", type: "button", onclick: (e) => {
-            e.stopPropagation();
-            confirmId = null;
-            actions.removeFriend(r.id);
-          } }, "Remove"),
-          h("button", {
-            class: "zcf-mini",
-            type: "button",
-            "data-zcf-focus": `cancel:${r.id}`,
-            onclick: (e) => {
-              e.stopPropagation();
-              confirmId = null;
-              renderList();
-            }
-          }, "Cancel")
-        );
+    doc.addEventListener("mousedown", onDocMousedown);
+    el.addEventListener("pointerdown", () => {
+      holdRender = true;
+    }, true);
+    function onPointerRelease() {
+      if (!holdRender) return;
+      setTimeout(() => {
+        holdRender = false;
+        if (!renderWanted) return;
+        renderWanted = false;
+        safe("pm-render", renderList)();
+      }, 0);
+    }
+    doc.addEventListener("pointerup", onPointerRelease, true);
+    doc.addEventListener("pointercancel", onPointerRelease, true);
+    const search = createPlayerSearch({
+      players,
+      onState(st) {
+        found = st;
+        renderList();
       }
-      const online = !!(r.presence && r.presence.online);
-      const unread = s.threads[r.id] && s.threads[r.id].unread || 0;
-      const openRow = () => actions.openDm(r.id, { expand: true, username: r.username, avatar: r.avatar });
-      return h(
-        "div",
-        {
-          class: "zcf-row",
-          tabindex: 0,
-          "data-zcf-focus": `row:${r.id}`,
-          onclick: openRow,
-          onkeydown: (e) => {
-            if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
-              e.preventDefault();
-              openRow();
-            }
+    });
+    searchInput.addEventListener("input", () => search.set(searchInput.value));
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !searchInput.value) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearSearch();
+    });
+    function clearSearch() {
+      searchInput.value = "";
+      search.set("");
+    }
+    function selectTab(key) {
+      if (tab() !== key) actions.setPmTab(key);
+      if (searching()) clearSearch();
+    }
+    list.addEventListener("scroll", () => {
+      if (searching() || list.scrollHeight - list.scrollTop - list.clientHeight >= LOAD_MORE_PX) return;
+      if (tab() === "chats") loadOlder();
+      else if (tab() === "blocked" && blocked.status === "ok" && !blocked.done) loadBlocked({ more: true });
+    });
+    async function loadOlder() {
+      if (olderState !== "more" && olderState !== "error") return;
+      olderState = "loading";
+      renderList();
+      const r = await inbox.fetchPage(older.length + 2);
+      if (r.ok && !r.threads.length) olderState = "done";
+      else if (r.ok) {
+        older.push(r.threads);
+        olderState = "more";
+      } else olderState = r.kind === "auth" ? "done" : "error";
+      renderList();
+    }
+    async function loadFaction() {
+      if (!faction.data) faction = { status: "loading", data: null };
+      renderList();
+      const r = await api.getFactionMembers();
+      if (r.ok) faction = r.data && r.data.faction ? { status: "ok", data: r.data } : { status: "none", data: null };
+      else if (r.kind === "network" || r.kind === "rate") faction = faction.data ? faction : { status: "error", data: null };
+      else if (r.kind !== "auth") faction = { status: "none", data: null };
+      renderList();
+      return r;
+    }
+    const factionPoller = makePoller({ run: loadFaction, interval: FACTION_MS, doc });
+    async function loadBlocked({ more = false } = {}) {
+      if (blocked.loading) return;
+      const page = more ? blocked.pages.length + 1 : 1;
+      blocked = { ...blocked, loading: true, status: more || blocked.status === "ok" ? blocked.status : "loading" };
+      renderList();
+      const r = await api.blockList(page);
+      if (r.ok) {
+        const rows = asArray(r.data && r.data.list);
+        const pages = more ? [...blocked.pages, rows] : [rows];
+        const total = Number(r.data && r.data.total) || 0;
+        blocked = { status: "ok", pages, total, loading: false, done: !rows.length || pages.flat().length >= total };
+      } else {
+        blocked = { ...blocked, loading: false, status: blocked.status === "ok" ? "ok" : "error" };
+      }
+      renderList();
+    }
+    async function unblock(u) {
+      unblockBusy = true;
+      renderList();
+      const r = await api.unblockUser(u.id);
+      unblockBusy = false;
+      unblockId = null;
+      if (r.ok && !(r.data && r.data.success === false)) {
+        toast(`${u.username} unblocked`);
+        loadBlocked();
+      } else {
+        toast(`Failed to unblock ${u.username}`, { error: true });
+        renderList();
+      }
+    }
+    const item = (sig, build) => ({ sig, build });
+    const note = (text2) => item(["note", text2], () => h("div", { class: "zcf-empty" }, text2));
+    const knownName = (id, name) => name === `#${id}` ? void 0 : name;
+    const openChat = (id, username, av) => actions.openDm(id, { expand: true, username: knownName(id, username), avatar: av });
+    function rowEl(focusKey2, onOpen, children) {
+      return h("div", {
+        class: "zcf-row",
+        tabindex: 0,
+        "data-zcf-focus": focusKey2,
+        onclick: onOpen,
+        onkeydown: (e) => {
+          if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+            e.preventDefault();
+            onOpen();
           }
-        },
-        avatar({ avatar: r.avatar, online: r.presence ? online : void 0 }),
-        h(
+        }
+      }, children);
+    }
+    const nameEl = (id, username, after) => h("div", { class: "zcf-name" }, isEnemy2(id) ? enemyMark() : null, username, after || null);
+    const pill = (n, dim) => n > 0 ? h("span", { class: `zcf-pill zcf-pill-green${dim ? " zcf-pill-dim" : ""}` }, String(n)) : null;
+    const onDot = (p) => p ? !!p.online : void 0;
+    function chatItems(s, now) {
+      rememberPage1();
+      const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads });
+      const items = rows.map((t) => {
+        const p = presence.get(t.userId);
+        const muted = isMuted2(t.userId);
+        const when = t.lastReply ? longAgo(t.lastReply, now) : "";
+        const line = previewLine(t, myId);
+        return item(["chat", t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy2(t.userId), muted], () => rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
+          avatar({ avatar: t.avatar, online: onDot(p), size: 30 }),
+          h(
+            "div",
+            { class: "zcf-row-main" },
+            h("div", { class: "zcf-pm-line" }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h("span", { class: "zcf-pm-time" }, when)),
+            h("div", { class: `zcf-status zcf-pm-preview${t.unread > 0 ? " zcf-unread" : ""}` }, line || " ")
+          )
+        ]));
+      });
+      if (!rows.length && olderState === "done") items.push(note("No conversations yet."));
+      if (olderState !== "done") {
+        const label = olderState === "loading" ? "Loading…" : olderState === "error" ? "Couldn't load. Retry" : "Load older chats";
+        items.push(item(["older", olderState], () => h("button", {
+          class: "zcf-pm-more",
+          type: "button",
+          "data-zcf-focus": "older",
+          disabled: olderState === "loading",
+          onclick: () => loadOlder()
+        }, label)));
+      }
+      return items;
+    }
+    function friendItems(s, now) {
+      const rows = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads }).rows;
+      const items = rows.map((r) => {
+        const online = !!(r.presence && r.presence.online);
+        const status = longStatusText(r.presence, now);
+        return item(["friend", r.id, r.username, r.avatar, !!r.presence, online, status, r.unread, isEnemy2(r.id)], () => rowEl(`row:${r.id}`, () => openChat(r.id, r.username, r.avatar), [
+          avatar({ avatar: r.avatar, online: r.presence ? online : void 0, size: 30 }),
+          h(
+            "div",
+            { class: "zcf-row-main" },
+            h("div", { class: "zcf-pm-line" }, nameEl(r.id, r.username), pill(r.unread, false)),
+            h("div", { class: `zcf-status${online ? " zcf-status-on" : ""}` }, status || " ")
+          )
+        ]));
+      });
+      if (!rows.length) items.push(note("No friends yet. Add them on a profile or on the Friends page."));
+      items.push(item(["manage"], () => h("button", { class: "zcf-pm-foot", type: "button", "data-zcf-focus": "manage", onclick: () => router.navigate("/friends") }, "Manage friends →")));
+      return items;
+    }
+    function retryItem(onRetry) {
+      return item(["retry"], () => h(
+        "div",
+        { class: "zcf-empty" },
+        "Couldn't load. ",
+        h("button", { class: "zcf-link zcf-pm-retry", type: "button", "data-zcf-focus": "retry", onclick: onRetry }, "Retry")
+      ));
+    }
+    function factionItems(now) {
+      if (faction.status === "idle" || faction.status === "loading") return [note("Loading…")];
+      if (faction.status === "none") return [note("You're not in a faction.")];
+      if (faction.status === "error") return [retryItem(() => factionPoller.poke())];
+      const rows = buildFactionRows(faction.data, { myId, now });
+      if (!rows.length) return [note("No other members.")];
+      return rows.map((m) => {
+        const status = longStatusText({ online: m.online, active: m.active }, now);
+        return item(["member", m.id, m.username, m.avatar, m.online, status, m.level, isEnemy2(m.id)], () => rowEl(`row:${m.id}`, () => openChat(m.id, m.username, m.avatar), [
+          avatar({ avatar: m.avatar, online: m.online, size: 30 }),
+          h(
+            "div",
+            { class: "zcf-row-main" },
+            h("div", { class: "zcf-pm-line" }, nameEl(m.id, m.username), h("span", { class: "zcf-pm-time" }, m.level ? `Lv ${m.level}` : "")),
+            h("div", { class: `zcf-status${m.online ? " zcf-status-on" : ""}` }, status || " ")
+          )
+        ]));
+      });
+    }
+    function blockedItems() {
+      if (blocked.status === "idle" || blocked.status === "loading") return [note("Loading…")];
+      if (blocked.status === "error") return [retryItem(() => loadBlocked())];
+      const rows = buildBlockedRows(blocked.pages);
+      if (!rows.length) return [note("No blocked players.")];
+      const items = rows.map((u) => {
+        if (unblockId === u.id) {
+          return item(["confirm", u.id, u.username, unblockBusy], () => h(
+            "div",
+            { class: "zcf-row zcf-pm-confirm" },
+            h("div", { class: "zcf-row-main" }, `Unblock ${u.username}?`),
+            h("button", { class: "zcf-add", type: "button", "data-zcf-focus": `unblock-yes:${u.id}`, disabled: unblockBusy, onclick: () => unblock(u) }, "Unblock"),
+            h("button", {
+              class: "zcf-mini",
+              type: "button",
+              "data-zcf-focus": `unblock-no:${u.id}`,
+              onclick: () => {
+                unblockId = null;
+                renderList();
+                focusKey(`unblock:${u.id}`);
+              }
+            }, "Cancel")
+          ));
+        }
+        return item(["blocked", u.id, u.username, u.avatar], () => h(
           "div",
-          { class: "zcf-row-main" },
-          h("div", { class: "zcf-name" }, highlightMatch(r.username, filter)),
-          h("div", { class: `zcf-status${online ? " zcf-status-on" : ""}` }, statusText(r.presence, now) || " ")
-        ),
-        unread > 0 ? h("span", { class: "zcf-pill" }, String(unread)) : null,
-        h(
-          "div",
-          { class: "zcf-row-actions" },
-          h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": `profile:${r.id}`, onclick: (e) => {
-            e.stopPropagation();
-            router.navigate(`/profile/${r.id}`);
-          } }, "Profile"),
+          { class: "zcf-row zcf-pm-blocked" },
+          avatar({ avatar: u.avatar, size: 30 }),
+          h("div", { class: "zcf-row-main" }, h("div", { class: "zcf-name" }, u.username)),
           h("button", {
             class: "zcf-mini",
             type: "button",
-            "data-zcf-focus": `remove:${r.id}`,
+            "data-zcf-focus": `unblock:${u.id}`,
+            onclick: () => {
+              unblockId = u.id;
+              renderList();
+              focusKey(`unblock-no:${u.id}`);
+            }
+          }, "Unblock")
+        ));
+      });
+      if (blocked.loading) items.push(note("Loading…"));
+      return items;
+    }
+    function searchItems(s) {
+      if (found.kind !== "results") return [note(found.kind === "error" ? found.text : SEARCH_TEXT[found.kind])];
+      if (!found.results.length) return [note("No players found.")];
+      return found.results.map((p) => {
+        const friend = isFriend(s, p.id);
+        return item(["result", p.id, p.username, p.avatar, friend, isEnemy2(p.id)], () => rowEl(`result:${p.id}`, () => {
+          openChat(p.id, p.username, p.avatar);
+          clearSearch();
+        }, [
+          avatar({ avatar: p.avatar, size: 30 }),
+          h("div", { class: "zcf-row-main" }, nameEl(p.id, p.username), h("div", { class: "zcf-status" }, `#${p.id}`)),
+          friend ? h("span", { class: "zcf-done" }, "✓ Friend") : h("button", {
+            class: "zcf-add zcf-add-outline",
+            type: "button",
+            "data-zcf-focus": `add:${p.id}`,
             onclick: (e) => {
               e.stopPropagation();
-              confirmId = r.id;
-              renderList();
-              const cancel = list.querySelector(`[data-zcf-focus="cancel:${r.id}"]`);
-              if (cancel) cancel.focus();
+              if (e.detail > 1) return;
+              actions.addFriend(p);
+              toast(`${p.username} added to friends`);
             }
-          }, "Remove")
-        )
-      );
+          }, "+ Friend")
+        ]));
+      });
     }
-    function recentRow(t, s) {
-      const unread = s.threads[t.userId] && s.threads[t.userId].unread || 0;
-      const knownUsername = t.username === `#${t.userId}` ? void 0 : t.username;
-      const openRow = () => actions.openDm(t.userId, { expand: true, username: knownUsername, avatar: t.avatar });
-      return h(
-        "div",
-        {
-          class: "zcf-row",
-          tabindex: 0,
-          "data-zcf-focus": `row:${t.userId}`,
-          onclick: openRow,
-          onkeydown: (e) => {
-            if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
-              e.preventDefault();
-              openRow();
-            }
-          }
-        },
-        avatar({ avatar: t.avatar }),
-        h(
-          "div",
-          { class: "zcf-row-main" },
-          h("div", { class: "zcf-name" }, highlightMatch(t.username, filter)),
-          h("div", { class: "zcf-status" }, t.preview || " ")
-        ),
-        unread > 0 ? h("span", { class: "zcf-pill" }, String(unread)) : null,
-        h("button", {
-          class: "zcf-add zcf-add-outline",
-          type: "button",
-          "data-zcf-focus": `addfriend:${t.userId}`,
-          onclick: (e) => {
-            e.stopPropagation();
-            if (e.detail > 1) return;
-            actions.addFriend({ id: t.userId, username: t.username, avatar: t.avatar });
-            toast(`${t.username} added to friends`);
-          }
-        }, "+ Friend")
-      );
-    }
-    function rowSig(r, s, now) {
-      const unread = s.threads[r.id] && s.threads[r.id].unread || 0;
-      return [r.id, r.username, r.avatar, !!r.presence, !!(r.presence && r.presence.online), statusText(r.presence, now), unread];
-    }
-    function recentSig(t, s) {
-      const unread = s.threads[t.userId] && s.threads[t.userId].unread || 0;
-      return [t.userId, t.username, t.avatar, unread, t.preview || ""];
-    }
-    function listSignature(sec, s, now, q) {
-      return JSON.stringify([
-        q,
-        confirmId,
-        sec.online.length,
-        sec.offline.length,
-        sec.recent.length,
-        sec.total,
-        sec.onlineCount,
-        sec.online.map((r) => rowSig(r, s, now)),
-        sec.offline.map((r) => rowSig(r, s, now)),
-        sec.recent.map((t) => recentSig(t, s))
-      ]);
+    function focusKey(k) {
+      const target = el.querySelector(`[data-zcf-focus="${k}"]`);
+      if (target) target.focus();
     }
     function renderList() {
       if (frame) {
@@ -4117,68 +4676,83 @@ sandfish		/items/sandfish.webp`;
       }
       const s = store.get();
       const now = Date.now();
-      const q = filter.trim();
-      const sec = buildFriendSections({ friends: s.friends, presence: presence.get, threads: inbox.threads(), filter });
-      count.textContent = `${sec.onlineCount} / ${sec.total} online`;
-      const sig = listSignature(sec, s, now, q);
+      const t = tab();
+      for (const [k, b] of tabBtns) {
+        b.classList.toggle("zcf-pm-tab-on", k === t);
+        b.setAttribute("aria-selected", String(k === t));
+      }
+      let items;
+      if (searching()) items = searchItems(s);
+      else if (t === "friends") items = friendItems(s, now);
+      else if (t === "faction") items = factionItems(now);
+      else if (t === "blocked") items = blockedItems();
+      else items = chatItems(s, now);
+      const view = searching() ? "search" : t;
+      const sig = JSON.stringify([view, items.map((i) => i.sig)]);
       if (sig === lastSig) return;
       lastSig = sig;
       const activeKey = list.contains(doc.activeElement) ? doc.activeElement.dataset.zcfFocus : void 0;
-      const scrollTop = list.scrollTop;
+      const scrollTop = view === lastView ? list.scrollTop : 0;
+      lastView = view;
       clear(list);
-      const none = q ? "No matches" : "None";
-      if (!sec.total && !q) {
-        list.appendChild(h("div", { class: "zcf-empty" }, 'No friends yet. Use the person-plus button above, or "Add Friend" on a profile.'));
-      } else {
-        section("Online", sec.online, (r) => friendRow(r, s, now), none);
-        section("Offline", sec.offline, (r) => friendRow(r, s, now), none);
-      }
-      if (sec.recent.length) section("Recent — not friends", sec.recent, (t) => recentRow(t, s), none);
+      for (const i of items) list.appendChild(i.build());
       list.scrollTop = scrollTop;
-      if (activeKey) {
-        const match = list.querySelector(`[data-zcf-focus="${activeKey}"]`);
-        if (match) match.focus();
-      }
+      if (activeKey) focusKey(activeKey);
+    }
+    function syncLoaders() {
+      const open = isOpen();
+      const t = tab();
+      if (open && t === "faction") factionPoller.start();
+      else factionPoller.stop();
+      const showBlocked = open && t === "blocked";
+      if (showBlocked && !blockedShowing) loadBlocked();
+      blockedShowing = showBlocked;
     }
     function syncBadge() {
+      rememberPage1();
       const s = store.get();
-      setBadge(unreadBadge, chatsUnreadTotal(s, inbox.threads()), !s.dock.friendsOpen);
+      setBadge(unreadBadge, chatsUnreadTotal(s, inbox.threads(), settings.get().muted), !s.dock.friendsOpen);
     }
     function update() {
-      const s = store.get();
-      const open = !!s.dock.friendsOpen;
+      const open = isOpen();
       el.classList.toggle("chat-minimized", !open);
       el.classList.toggle("zcf-open", open);
       body.hidden = !open;
       titleText.hidden = !open;
-      count.hidden = !open;
       menuBtn.hidden = !open;
       toggle.hidden = !open;
       syncBadge();
-      if (open) {
-        renderList();
-        pop.refresh();
-      } else {
-        pop.close();
-        menu.hidden = true;
-        confirmId = null;
+      if (open) renderList();
+      else {
+        closeMenu();
+        unblockId = null;
+        if (wasOpen) clearSearch();
       }
+      wasOpen = open;
+      syncLoaders();
     }
     function scheduleList() {
-      if (frame || !store.get().dock.friendsOpen) return;
+      if (frame || !isOpen()) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        renderList();
+        if (holdRender) {
+          renderWanted = true;
+          return;
+        }
+        safe("pm-render", renderList)();
       });
     }
     function destroy() {
       doc.removeEventListener("mousedown", onDocMousedown);
+      doc.removeEventListener("pointerup", onPointerRelease, true);
+      doc.removeEventListener("pointercancel", onPointerRelease, true);
       if (frame) {
         cancelAnimationFrame(frame);
         frame = 0;
       }
-      pop.close();
-      menu.hidden = true;
+      factionPoller.destroy();
+      search.cancel();
+      closeMenu();
     }
     return { el, update, scheduleList, syncBadge, destroy };
   }
@@ -4442,6 +5016,8 @@ sandfish		/items/sandfish.webp`;
   };
   function createDmWindow(services, userId) {
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
+    const isEnemy2 = services.isEnemy || (() => false);
+    const isMuted2 = services.isMuted || (() => false);
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -4450,16 +5026,20 @@ sandfish		/items/sandfish.webp`;
     const nameEl = h("span", { class: "zcf-dm-name" });
     const statusEl = h("span", { class: "zcf-dm-status" });
     const unreadBadge = badge();
-    const title = h("div", { class: "chat-title" }, avatarSlot, nameEl, statusEl, unreadBadge);
+    const headMark = enemyMark();
+    headMark.hidden = true;
+    const title = h("div", { class: "chat-title" }, avatarSlot, headMark, nameEl, statusEl, unreadBadge);
     const inboxBtn = h("button", { class: "zcf-hbtn", type: "button", title: "Open in inbox", "aria-label": "Open in inbox" }, icon("external-link-alt"));
     const minBtn = h("button", { class: "zcf-hbtn", type: "button", title: "Minimize", "aria-label": "Minimize" }, icon("minus"));
     const closeBtn = h("button", { class: "zcf-hbtn zcf-close", type: "button", title: "Close", "aria-label": "Close" }, icon("times"));
-    const header = h("div", { class: "chat-header", onclick: () => actions.toggleDm(userId) }, title, inboxBtn, minBtn, closeBtn);
+    const bellIcon = h("i", { class: "fas fa-bell", "aria-hidden": "true" });
+    const bellBtn = h("button", { class: "zcf-hbtn zcf-bell", type: "button" }, bellIcon);
+    const header = h("div", { class: "chat-header", onclick: () => actions.toggleDm(userId) }, title, bellBtn, inboxBtn, minBtn, closeBtn);
     const notice = h("div", { class: "zcf-notice", hidden: true });
     const loader = h("div", { class: "zcf-loader", hidden: true }, "Loading…");
     const log = h("div", { class: "zcf-log" });
     const pendingEl = h("div", { class: "zcf-pending" });
-    const scroller = h("div", { class: "zcf-scroll" }, loader, log, pendingEl);
+    const scroller = h("div", { class: "zcf-scroll zcf-zoom" }, loader, log, pendingEl);
     const newChip = h("button", { class: "zcf-newchip", type: "button", hidden: true }, "New messages ↓");
     const input = h("textarea", { class: "zcf-input zcf-compose", rows: 1, placeholder: "Message…", "aria-label": "Message" });
     const emojiBtn = h("button", { class: "zcf-emojibtn", type: "button", title: "Insert an emoji", "aria-label": "Insert an emoji", "aria-expanded": "false" }, h("i", { class: "far fa-smile", "aria-hidden": "true" }));
@@ -4483,9 +5063,9 @@ sandfish		/items/sandfish.webp`;
         insertAtCaret(picked.src ? `:${picked.name}:` : picked.emoji);
       }
     });
-    const composer = h("div", { class: "zcf-composer" }, input, emojiBtn, gifBtn, sendBtn);
+    const composer = h("div", { class: "zcf-composer zcf-zoom" }, input, emojiBtn, gifBtn, sendBtn);
     const body = h("div", { class: "chat-content zcf-body zcf-dm-body" }, notice, scroller, newChip, emojiPicker.el, gifPicker.el, composer);
-    const el = h("div", { class: "chat-container zcf zcf-dm", dataset: { zcfDm: String(userId) } }, header, body);
+    const el = h("div", { class: "chat-container zcf zcf-dm", dataset: { zcfDm: String(userId), zcfChat: `dm:${userId}` } }, header, body);
     const syncGifBtn = () => gifBtn.setAttribute("aria-expanded", String(!gifPicker.el.hidden));
     const gifObserver = new MutationObserver(syncGifBtn);
     gifObserver.observe(gifPicker.el, { attributes: true, attributeFilter: ["hidden"] });
@@ -4510,6 +5090,7 @@ sandfish		/items/sandfish.webp`;
       e.stopPropagation();
       router.navigate(`/profile/${userId}`);
     });
+    bellBtn.addEventListener("click", stop(() => actions.toggleMute(userId)));
     inboxBtn.addEventListener("click", stop(() => router.navigate(`/mail/${userId}`)));
     minBtn.addEventListener("click", stop(() => actions.minimizeDm(userId)));
     closeBtn.addEventListener("click", stop(() => actions.closeDm(userId)));
@@ -4594,7 +5175,7 @@ sandfish		/items/sandfish.webp`;
       const time = m.ts ? formatMessageTime(m.ts) : "";
       if (item.grouped) return h("div", { class: cls, title: time }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
-      const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, displayName());
+      const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
       return h("div", { class: cls }, sender, h("span", { class: "zcf-time" }, time), h("div", { class: "zcf-text" }, ...renderText(m.text)));
     }
     function renderPending() {
@@ -4655,10 +5236,19 @@ sandfish		/items/sandfish.webp`;
       statusEl.hidden = !open;
       inboxBtn.hidden = !open;
       minBtn.hidden = !open;
+      bellBtn.hidden = !open;
       const p = presence.get(userId);
       clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : void 0, size: open ? 18 : 24 }));
       nameEl.textContent = displayName();
       nameEl.title = displayName();
+      const enemy = isEnemy2(userId);
+      headMark.hidden = !enemy;
+      el.classList.toggle("zcf-enemy", enemy);
+      const muted = isMuted2(userId);
+      bellIcon.className = `fas ${muted ? "fa-bell-slash" : "fa-bell"}`;
+      bellBtn.title = `${muted ? "Unmute" : "Mute"} ${displayName()}`;
+      bellBtn.setAttribute("aria-label", bellBtn.title);
+      bellBtn.setAttribute("aria-pressed", String(muted));
       statusEl.textContent = statusText(p);
       statusEl.classList.toggle("zcf-status-on", !!(p && p.online));
       el.title = open ? "" : displayName();
@@ -4691,6 +5281,258 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
+  // src/ui/chat-custom/registry.js
+  var info = (key, el) => ({
+    key,
+    el,
+    header: el.querySelector(":scope > .chat-header"),
+    minimized: el.classList.contains("chat-minimized")
+  });
+  function findChats(doc = document) {
+    const dock = doc.querySelector(".chat-containers");
+    if (!dock) return [];
+    const out = [];
+    for (const g of GAME_CHATS) {
+      const el = dock.querySelector(`:scope > .chat-container.${g.cls}`);
+      if (el) out.push(info(g.key, el));
+    }
+    for (const el of dock.querySelectorAll(".chat-container[data-zcf-chat]")) out.push(info(el.dataset.zcfChat, el));
+    return out;
+  }
+
+  // src/whats-new.js
+  var WHATS_NEW = [
+    {
+      version: "0.5.0",
+      date: "2026-09-29",
+      features: [
+        {
+          title: "Private Messages",
+          points: [
+            "The dock window is now Private Messages, with Chats, Friends, Faction and Blocked tabs.",
+            "Search any player by name to start a chat. Older chats load as you scroll."
+          ]
+        },
+        {
+          title: "Enemies",
+          points: [
+            "An Enemies list beside Friends, with private notes, and Add Enemy on profiles.",
+            "A red skull marks enemies in chats, including the game's Global, Faction and Activity."
+          ]
+        },
+        {
+          title: "Customize any chat",
+          points: [
+            "Unlock a chat with its padlock to drag it anywhere, resize it from its edges, then lock it there.",
+            "Each chat keeps its own size, message size and spot. Right-click a padlock for its menu."
+          ]
+        },
+        {
+          title: "Chat settings and sounds",
+          points: [
+            "The cog in the corner: mark all as read, close all private chats, and reset any chat.",
+            "An optional sound for new private messages."
+          ]
+        },
+        {
+          title: "Mute a conversation",
+          points: ["The bell in a DM header stops its pop-ups, sound and green count."]
+        }
+      ]
+    },
+    {
+      version: "0.4.x",
+      date: "2026-09-29",
+      features: [
+        { title: "Friends page", points: ["A full Friends page from the top-bar icon, with level, status and faction.", "Private notes on friends."] },
+        { title: "Quieter dock", points: ["A plain top-bar icon, and a green unread count on the minimized window."] }
+      ]
+    },
+    {
+      version: "0.3.x",
+      date: "2026-09-28",
+      features: [
+        { title: "Emoji picker", points: ["Pick emoji in DMs, Zed City ones included."] },
+        { title: "Fixes", points: ["DM windows are no longer cut off at the bottom."] }
+      ]
+    },
+    {
+      version: "0.2.x",
+      date: "2026-09-28",
+      features: [
+        { title: "GIFs", points: ["Send and see GIFs in DMs."] },
+        { title: "Install link", points: ["One install link, with automatic updates."] }
+      ]
+    },
+    {
+      version: "0.1.x",
+      date: "2026-09-28",
+      features: [
+        { title: "Friends and DMs", points: ["A friends list, DM windows in the chat dock, and Add Friend on profiles."] }
+      ]
+    }
+  ];
+
+  // src/version.js
+  var VERSION = true ? "0.5.0" : "dev";
+
+  // src/ui/settings-window.js
+  var SOUND_LABELS = { off: "Off", chirp: "Chirp", ping: "Ping", bell: "Bell" };
+  var ORDER = (key) => key.startsWith("game:") ? 0 : key === "pm" ? 1 : key === "settings" ? 2 : 3;
+  function createSettingsWindow(services, { doc = document } = {}) {
+    const { store, settings, actions, sound } = services;
+    let marking = null;
+    let showNews = false;
+    let showOlder = false;
+    let lastSig = null;
+    const titleText = h("span", null, "Chat settings");
+    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-cog chat-icon", "aria-hidden": "true" }), titleText);
+    const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
+    const header = h("div", { class: "chat-header", onclick: () => actions.toggleSettings() }, title, toggle);
+    const content = h("div", { class: "zcf-set zcf-zoom" });
+    const body = h("div", { class: "chat-content zcf-body" }, content);
+    const el = h("div", { class: "chat-container zcf zcf-settings", dataset: { zcfChat: "settings" } }, header, body);
+    const select = h(
+      "select",
+      { class: "zcf-set-select", "aria-label": "New private message sound" },
+      SOUNDS.map((k) => h("option", { value: k }, SOUND_LABELS[k]))
+    );
+    const play = h("button", { class: "zcf-mini zcf-set-play", type: "button", title: "Play it", "aria-label": "Play the sound" }, "▶");
+    select.addEventListener("change", () => actions.setSound(select.value));
+    play.addEventListener("click", () => sound.play(select.value));
+    function dmName(id) {
+      const s = store.get();
+      const d = s.dock.dms.find((x) => x.id === id);
+      return d && d.username || s.friends[id] && s.friends[id].username || null;
+    }
+    function chatRows() {
+      const saved = settings.get().chats;
+      const keys = /* @__PURE__ */ new Set(["pm", "settings"]);
+      for (const c of findChats(doc)) keys.add(c.key);
+      for (const d of store.get().dock.dms) keys.add(dmKey(d.id));
+      for (const k of Object.keys(saved)) keys.add(k);
+      return [...keys].sort((a, b) => ORDER(a) - ORDER(b) || a.localeCompare(b)).map((key) => {
+        const id = dmIdOf(key);
+        return { key, name: chatLabel(key, id ? dmName(id) : null), entry: saved[key] };
+      });
+    }
+    const section = (label, ...children) => h("div", { class: "zcf-set-sec" }, h("div", { class: "zcf-set-h" }, label), children);
+    const disclosure = (label, open, focusKey, onToggle) => h("button", {
+      class: "zcf-news-toggle",
+      type: "button",
+      "aria-expanded": String(open),
+      "data-zcf-focus": focusKey,
+      onclick: onToggle
+    }, label, " ", open ? "▾" : "▸");
+    const versionBlock = (v) => h(
+      "div",
+      { class: "zcf-news-ver" },
+      h("div", { class: "zcf-news-vh" }, `v${v.version}`, h("span", { class: "zcf-news-date" }, v.date)),
+      v.features.map((f) => h("div", { class: "zcf-news-f" }, h("div", { class: "zcf-news-ft" }, f.title), h("ul", null, f.points.map((p) => h("li", null, p)))))
+    );
+    function whatsNew() {
+      const [latest, ...older] = WHATS_NEW;
+      return h(
+        "div",
+        { class: "zcf-news" },
+        disclosure(`What's new in v${latest.version}`, showNews, "news", () => {
+          showNews = !showNews;
+          render();
+        }),
+        showNews ? versionBlock(latest) : null,
+        showNews && older.length ? disclosure("Earlier versions", showOlder, "older", () => {
+          showOlder = !showOlder;
+          render();
+        }) : null,
+        showNews && showOlder ? older.map(versionBlock) : null
+      );
+    }
+    async function markAll() {
+      if (marking) return;
+      marking = { done: 0, total: 0 };
+      render();
+      try {
+        await actions.markAllRead((done, total) => {
+          marking = { done, total };
+          render();
+        });
+      } finally {
+        marking = null;
+        render();
+      }
+    }
+    function build(rows) {
+      const s = settings.get();
+      return [
+        section("Utilities", h(
+          "div",
+          { class: "zcf-set-btns" },
+          h(
+            "button",
+            { class: "zcf-page-btn", type: "button", "data-zcf-focus": "mark", disabled: !!marking, onclick: markAll },
+            marking ? `Marking… ${marking.done}/${marking.total}` : "Mark all as read"
+          ),
+          h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "closeall", onclick: () => actions.closeAllDms() }, "Close all private chats")
+        )),
+        section(
+          "Your chats",
+          rows.map((r) => h(
+            "div",
+            { class: "zcf-set-chat" },
+            h("i", {
+              class: `fas ${isLocked(r.entry) ? "fa-lock" : "fa-lock-open"} zcf-set-lock`,
+              role: "img",
+              title: isLocked(r.entry) ? "Locked" : "Unlocked",
+              "aria-label": isLocked(r.entry) ? "Locked" : "Unlocked"
+            }),
+            h("div", { class: "zcf-row-main" }, h("div", { class: "zcf-name" }, r.name), h("div", { class: "zcf-status" }, describeChat(r.entry))),
+            h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": `reset:${r.key}`, disabled: !r.entry, onclick: () => actions.resetChat(r.key) }, "Reset")
+          )),
+          h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, "Reset all chats")
+        ),
+        section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
+        section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew())
+      ];
+    }
+    function render() {
+      if (!store.get().dock.settingsOpen) return;
+      const s = settings.get();
+      select.value = s.sound;
+      play.disabled = s.sound === "off";
+      const rows = chatRows();
+      const sig = JSON.stringify([rows, marking, showNews, showOlder, Object.keys(s.chats).length]);
+      if (sig === lastSig) return;
+      lastSig = sig;
+      const focusKey = content.contains(doc.activeElement) && doc.activeElement.dataset ? doc.activeElement.dataset.zcfFocus : void 0;
+      const scrollTop = body.scrollTop;
+      clear(content);
+      for (const node of build(rows)) content.appendChild(node);
+      body.scrollTop = scrollTop;
+      if (focusKey) {
+        const target = content.querySelector(`[data-zcf-focus="${focusKey}"]`);
+        if (target) target.focus();
+      }
+    }
+    function update() {
+      const open = !!store.get().dock.settingsOpen;
+      el.classList.toggle("chat-minimized", !open);
+      el.classList.toggle("zcf-open", open);
+      body.hidden = !open;
+      titleText.hidden = !open;
+      toggle.hidden = !open;
+      el.title = open ? "" : "Chat settings";
+      if (open) render();
+      else lastSig = null;
+    }
+    return {
+      el,
+      update,
+      destroy() {
+        clear(content);
+      }
+    };
+  }
+
   // src/ui/dock-view.js
   var SMALL_MAX_DMS = 2;
   function visibleDms(dms, small) {
@@ -4703,7 +5545,8 @@ sandfish		/items/sandfish.webp`;
     return dms.filter((d) => keep.has(d.id));
   }
   function createDockView({ root, services }) {
-    const friends = createFriendsWindow(services);
+    const pm = createPmWindow(services);
+    const settingsWin = createSettingsWindow(services);
     const dms = /* @__PURE__ */ new Map();
     function render() {
       const s = services.store.get();
@@ -4717,16 +5560,18 @@ sandfish		/items/sandfish.webp`;
         }
       }
       for (const e of entries) if (!dms.has(e.id)) dms.set(e.id, createDmWindow(services, e.id));
-      const desired = [...entries.map((e) => dms.get(e.id).el), friends.el];
+      const desired = [...entries.map((e) => dms.get(e.id).el), pm.el, settingsWin.el];
       desired.forEach((node, i) => {
         if (root.children[i] !== node) root.insertBefore(node, root.children[i] || null);
       });
       for (const w of dms.values()) w.update();
-      friends.update();
+      pm.update();
+      settingsWin.update();
     }
     return {
       render,
-      friends,
+      pm,
+      settings: settingsWin,
       dmWindow: (id) => dms.get(id) || null
     };
   }
@@ -4748,7 +5593,41 @@ sandfish		/items/sandfish.webp`;
   // src/ui/profile-button.js
   var PROFILE_PATH = /^\/profile\/(\d+)\/?$/;
   var CONFIRM_MS = 4e3;
-  function createProfileButton({ doc = document, win = window, store, actions, players, toast }) {
+  var FRIEND_BUTTON = {
+    key: "friend",
+    label: "Add Friend",
+    onLabel: "Friends",
+    icon: "fa-user-plus",
+    onIcon: "fa-user-check",
+    onClass: "zcf-is-friend",
+    addTitle: "Add to your friends list",
+    removeTitle: "Click to remove from friends",
+    added: (name) => `${name} added to friends`
+  };
+  var ENEMY_BUTTON = {
+    key: "enemy",
+    label: "Add Enemy",
+    onLabel: "Enemy",
+    icon: "fa-skull",
+    onIcon: "fa-skull",
+    onClass: "zcf-is-enemy",
+    addTitle: "Add to your enemies list",
+    removeTitle: "Click to remove from enemies",
+    added: (name) => `${name} added to enemies`
+  };
+  function createProfileButton({
+    doc = document,
+    win = window,
+    spec = FRIEND_BUTTON,
+    store,
+    actions,
+    isOn = (id) => isFriend(store.get(), id),
+    add = (p) => actions.addFriend(p),
+    remove = (id) => actions.removeFriend(id),
+    players,
+    toast,
+    after = null
+  }) {
     let profileId = null;
     let wrap = null;
     let button = null;
@@ -4773,23 +5652,23 @@ sandfish		/items/sandfish.webp`;
     }
     function refresh() {
       if (!button || !button.isConnected || profileId === null) return;
-      const friend = isFriend(store.get(), profileId);
-      setIcon(friend ? "fa-user-check" : "fa-user-plus");
-      label.textContent = friend ? confirming ? "Remove?" : "Friends" : "Add Friend";
-      button.classList.toggle("zcf-is-friend", friend);
-      button.classList.toggle("text-grey-4", !friend);
-      button.title = friend ? "Click to remove from friends" : "Add to your friends list";
+      const on = isOn(profileId);
+      setIcon(on ? spec.onIcon : spec.icon);
+      label.textContent = on ? confirming ? "Remove?" : spec.onLabel : spec.label;
+      button.classList.toggle(spec.onClass, on);
+      button.classList.toggle("text-grey-4", !on);
+      button.title = on ? spec.removeTitle : spec.addTitle;
     }
     async function onClick(e) {
       e.preventDefault();
       e.stopPropagation();
       const id = profileId;
       if (id === null) return;
-      if (isFriend(store.get(), id)) {
+      if (isOn(id)) {
         if (confirming) {
           confirming = false;
           clearTimeout(confirmTimer);
-          actions.removeFriend(id);
+          remove(id);
         } else {
           confirming = true;
           confirmTimer = setTimeout(() => {
@@ -4803,8 +5682,8 @@ sandfish		/items/sandfish.webp`;
       const r = await players.get(id);
       const data = r.ok && r.data ? r.data : {};
       const username = typeof data.username === "string" && data.username ? data.username : `#${id}`;
-      actions.addFriend({ id, username, avatar: typeof data.avatar === "string" ? data.avatar : null });
-      toast(`${username} added to friends`);
+      add({ id, username, avatar: typeof data.avatar === "string" ? data.avatar : null });
+      toast(spec.added(username));
     }
     function tryInsert() {
       if (profileId === null) return true;
@@ -4815,8 +5694,10 @@ sandfish		/items/sandfish.webp`;
       const block = findButton("fa-ban", /^(un)?block$/i);
       const template = mail || block;
       if (!template || !template.parentElement) return false;
+      const prev = after ? after() : null;
+      if (after && !(prev && prev.isConnected)) return false;
       wrap = template.parentElement.cloneNode(true);
-      wrap.classList.add("zcf-profile-btn");
+      wrap.classList.add("zcf-profile-btn", `zcf-profile-btn-${spec.key}`);
       button = wrap.querySelector(".q-btn");
       button.removeAttribute("href");
       button.removeAttribute("to");
@@ -4829,8 +5710,9 @@ sandfish		/items/sandfish.webp`;
         label.className = "block";
         button.querySelector(".q-btn__content").appendChild(label);
       }
-      button.addEventListener("click", safe("profile-button-click", onClick));
-      if (mail && trade) trade.parentElement.after(wrap);
+      button.addEventListener("click", safe(`profile-button-click-${spec.key}`, onClick));
+      if (prev) prev.after(wrap);
+      else if (mail && trade) trade.parentElement.after(wrap);
       else if (mail) mail.parentElement.before(wrap);
       else block.parentElement.after(wrap);
       confirming = false;
@@ -4862,7 +5744,7 @@ sandfish		/items/sandfish.webp`;
       });
       observer.observe(doc.body, { childList: true, subtree: true });
       warnTimer = setTimeout(() => {
-        if (!wrap && !findButton("fa-cog", /^settings$/i)) warnOnce("profile-buttons-not-found", path);
+        if (!wrap && !findButton("fa-cog", /^settings$/i)) warnOnce(`profile-buttons-not-found-${spec.key}`, path);
       }, 1e4);
     }
     function destroy() {
@@ -4873,71 +5755,210 @@ sandfish		/items/sandfish.webp`;
       button = null;
       profileId = null;
     }
-    return { onRoute, refresh, tryInsert, destroy };
+    return {
+      onRoute,
+      refresh,
+      tryInsert,
+      destroy,
+      get wrap() {
+        return wrap;
+      }
+    };
   }
 
-  // src/friends-table.js
-  var DEFAULT_SORT = { key: "status", dir: "asc" };
-  var FIRST_DIR = { name: "asc", level: "desc", status: "asc", faction: "asc" };
-  var text = (a, b) => a.localeCompare(b, void 0, { sensitivity: "base" });
-  var byName2 = (a, b) => text(a.username, b.username);
-  var statusRank = (p) => p.online ? 0 : p.active ? 1 : 2;
-  var SORTS = {
-    name: { has: () => true, cmp: byName2 },
-    level: { has: (r) => !!(r.profile && r.profile.level), cmp: (a, b) => a.profile.level - b.profile.level },
-    faction: { has: (r) => !!(r.profile && r.profile.faction), cmp: (a, b) => text(a.profile.faction.name, b.profile.faction.name) },
-    status: {
-      has: (r) => !!r.presence,
-      // Online first (A-Z via the tie-break), then offline by most recently active, then offline with no time.
-      cmp: (a, b) => {
-        const d = statusRank(a.presence) - statusRank(b.presence);
-        if (d || statusRank(a.presence) !== 1) return d;
-        return b.presence.active - a.presence.active;
+  // src/ui/enemy-marks.js
+  var ROW = ".msg-cont";
+  function createEnemyMarks({ doc = document, win = window, keeper = null, names }) {
+    let dockEl = null;
+    let observer = null;
+    let frame = 0;
+    let pending = [];
+    let handled = /* @__PURE__ */ new WeakSet();
+    let unkeep = null;
+    const isGameRow = (row) => !row.closest(".zcf-root");
+    function markRow(row, set) {
+      const sender = row.querySelector(".sender-name");
+      if (!sender || !sender.parentNode) return;
+      const prev = sender.previousElementSibling;
+      const has = !!(prev && prev.classList.contains("zcf-enemy-mark"));
+      const want = set.has(sender.textContent.trim().toLowerCase());
+      if (want && !has) sender.parentNode.insertBefore(enemyMark(), sender);
+      else if (!want && has) prev.remove();
+    }
+    function rowsIn(node) {
+      if (node.nodeType !== 1) return [];
+      if (node.matches(ROW)) return [node];
+      return [...node.querySelectorAll(ROW)];
+    }
+    function flushPending() {
+      frame = 0;
+      const set = names();
+      const nodes = pending;
+      pending = [];
+      for (const node of nodes) {
+        if (!node.isConnected) continue;
+        for (const row of rowsIn(node)) {
+          if (handled.has(row) || !isGameRow(row)) continue;
+          handled.add(row);
+          markRow(row, set);
+        }
       }
     }
-  };
-  function sortRows(rows, sort = DEFAULT_SORT) {
-    const { has, cmp } = SORTS[sort.key] || SORTS.status;
-    const sign = sort.dir === "desc" ? -1 : 1;
-    return rows.slice().sort((a, b) => {
-      const ha = has(a);
-      const hb = has(b);
-      if (ha !== hb) return ha ? -1 : 1;
-      return (ha ? sign * cmp(a, b) : 0) || byName2(a, b);
-    });
+    function onMutations(records) {
+      for (const r of records) {
+        for (const n of r.addedNodes) {
+          if (n.nodeType === 1 && !n.classList.contains("zcf-enemy-mark")) pending.push(n);
+        }
+      }
+      if (pending.length && !frame) frame = win.requestAnimationFrame(safe("enemy-marks", flushPending));
+    }
+    function refresh() {
+      if (!dockEl) return;
+      const set = names();
+      for (const row of dockEl.querySelectorAll(ROW)) {
+        if (!isGameRow(row)) continue;
+        handled.add(row);
+        markRow(row, set);
+      }
+    }
+    function ensure() {
+      const found = doc.querySelector(".chat-containers");
+      if (found === dockEl) return;
+      if (observer) observer.disconnect();
+      observer = null;
+      dockEl = found;
+      handled = /* @__PURE__ */ new WeakSet();
+      if (!dockEl) return;
+      observer = new win.MutationObserver(safe("enemy-marks-observer", onMutations));
+      observer.observe(dockEl, { childList: true, subtree: true });
+      refresh();
+    }
+    return {
+      start() {
+        ensure();
+        if (keeper && !unkeep) unkeep = keeper.add({ name: "enemy-marks", attached: () => !!(dockEl && dockEl.isConnected), ensure });
+      },
+      refresh,
+      destroy() {
+        if (unkeep) unkeep();
+        unkeep = null;
+        if (observer) observer.disconnect();
+        observer = null;
+        if (frame) win.cancelAnimationFrame(frame);
+        frame = 0;
+        dockEl = null;
+      }
+    };
   }
-  function nextSort(sort, key) {
-    if (sort.key === key) return { key, dir: sort.dir === "asc" ? "desc" : "asc" };
-    return { key, dir: FIRST_DIR[key] || "asc" };
-  }
-  function buildFriendsTable({ friends, presence, threads = {}, tab = "all", query = "", sort = DEFAULT_SORT }) {
-    const q = String(query || "").trim().toLowerCase();
-    const all = Object.values(friends).map((f) => {
-      const p = presence(f.id);
-      return {
-        id: f.id,
-        username: f.username,
-        avatar: f.avatar || null,
-        note: f.note || "",
-        presence: p ? { online: !!p.online, active: p.active || null } : null,
-        profile: p && p.profile || null,
-        unread: threads[f.id] && threads[f.id].unread || 0
-      };
+
+  // src/ui/add-friend-popover.js
+  var MESSAGES = { idle: "", short: "Keep typing…", searching: "Searching…" };
+  function createAddFriendPopover({ players, isAdded, onAdd, onClose, title = "Add friend", doneText = "✓ Friend" }) {
+    let results = [];
+    let done = doneText;
+    const input = h("input", { class: "zcf-input", type: "text", placeholder: "Name or player ID", "aria-label": "Find a player" });
+    const list = h("div", { class: "zcf-results" });
+    const titleEl = h("div", { class: "zcf-pop-title" }, title);
+    const el = h("div", { class: "zcf-pop", hidden: true }, titleEl, input, list);
+    function message(text2) {
+      clear(list);
+      if (text2) list.appendChild(h("div", { class: "zcf-empty" }, text2));
+    }
+    function row(p) {
+      const action = isAdded(p.id) ? h("span", { class: "zcf-done" }, done) : h("button", {
+        class: "zcf-add",
+        type: "button",
+        onclick: (e) => {
+          e.stopPropagation();
+          onAdd(p);
+          render();
+          input.focus();
+        }
+      }, "Add");
+      return h(
+        "div",
+        { class: "zcf-result" },
+        avatar({ avatar: p.avatar, size: 22 }),
+        h("div", { class: "zcf-row-main" }, h("div", { class: "zcf-name" }, p.username), h("div", { class: "zcf-status" }, `#${p.id}`)),
+        action
+      );
+    }
+    function render() {
+      if (!results.length) {
+        message("No players found.");
+        return;
+      }
+      clear(list);
+      for (const p of results) list.appendChild(row(p));
+    }
+    const search = createPlayerSearch({
+      players,
+      onState(st) {
+        if (st.kind === "results") {
+          results = st.results;
+          render();
+          return;
+        }
+        results = [];
+        message(st.kind === "error" ? st.text : MESSAGES[st.kind]);
+      }
     });
-    const isOnline = (r) => !!(r.presence && r.presence.online);
-    const online = all.filter(isOnline).length;
-    const counts = { all: all.length, online, offline: all.length - online };
-    const inTab = all.filter((r) => tab === "all" || tab === "online" === isOnline(r));
-    const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
-    return { rows: sortRows(inTab.filter(matches), sort), counts };
+    input.addEventListener("input", () => search.set(input.value));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    }, true);
+    function open() {
+      el.hidden = false;
+      input.value = "";
+      results = [];
+      message("");
+      input.focus();
+    }
+    function close() {
+      el.hidden = true;
+      search.cancel();
+      if (onClose) onClose();
+    }
+    return {
+      el,
+      input,
+      open,
+      close,
+      get isOpen() {
+        return !el.hidden;
+      },
+      // Re-draw "Add" / "✓ Friend" after the list changes elsewhere.
+      refresh() {
+        if (!el.hidden && results.length) render();
+      },
+      setLabels({ title: t, doneText: d }) {
+        titleEl.textContent = t;
+        done = d;
+        if (!el.hidden && results.length) render();
+      }
+    };
   }
 
   // src/ui/friends-page.js
   var FRIENDS_PATH = "/friends";
+  var ENEMIES_PATH = "/enemies";
   var PAGE_CLASS = "zcf-on-friends";
   var HIDE_404_CSS = `html.${PAGE_CLASS} .q-page-container > .fixed-center{display:none!important}`;
   var WARN_MS = 1e4;
-  var isFriendsPath = (path) => path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`;
+  var LEAVE_MS = 1e3;
+  function pageKind(path) {
+    if (path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`) return "friends";
+    if (path === ENEMIES_PATH || path === `${ENEMIES_PATH}/`) return "enemies";
+    return null;
+  }
+  var isFriendsPath = (path) => pageKind(path) !== null;
+  var LISTS = {
+    friends: { path: FRIENDS_PATH, many: "friends", title: "Friends", add: "Add friend", done: "✓ Friend", profile: "Add Friend" },
+    enemies: { path: ENEMIES_PATH, many: "enemies", title: "Enemies", add: "Add enemy", done: "✓ Enemy", profile: "Add Enemy" }
+  };
   function hideGame404Early(doc = document, win = window) {
     if (!doc.getElementById("zcf-early-styles")) {
       const style = doc.createElement("style");
@@ -4949,7 +5970,7 @@ sandfish		/items/sandfish.webp`;
     doc.documentElement.classList.toggle(PAGE_CLASS, on);
     return on;
   }
-  var TABS = [["all", "All"], ["online", "Online"], ["offline", "Offline"]];
+  var TABS2 = [["all", "All"], ["online", "Online"], ["offline", "Offline"]];
   var COLUMNS = [
     { col: "name", label: "Name", sort: "name" },
     { col: "level", label: "Level", sort: "level" },
@@ -4961,7 +5982,10 @@ sandfish		/items/sandfish.webp`;
   var plainClick = (e) => e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
   function createFriendsPage(services, { doc = document, win = window, keeper = null } = {}) {
     const { store, actions, presence, players, router, toast } = services;
+    const enemies = services.enemies || { get: () => ({ enemies: {} }) };
+    const isEnemy2 = services.isEnemy || (() => false);
     let active = false;
+    let kind = "friends";
     let tab = "all";
     let query = "";
     let sort = DEFAULT_SORT;
@@ -4973,12 +5997,17 @@ sandfish		/items/sandfish.webp`;
     let frame = 0;
     let holdRender = false;
     let renderWanted = false;
-    let popFriendsSig = "";
+    let popSig = "";
     let headSig = null;
     let currentIds = [];
     let unkeep = null;
     let warnTimer = null;
+    let leaveObserver = null;
+    let leaveTimer = null;
     const rowEls = /* @__PURE__ */ new Map();
+    const L = () => LISTS[kind];
+    const listOf = () => kind === "enemies" ? enemies.get().enemies : store.get().friends;
+    const listActions = () => kind === "enemies" ? { add: actions.addEnemy, remove: actions.removeEnemy, setNote: actions.setEnemyNote } : { add: actions.addFriend, remove: actions.removeFriend, setNote: actions.setFriendNote };
     const link = (href, className, children, extra = {}) => h("a", {
       class: className,
       href,
@@ -4990,31 +6019,33 @@ sandfish		/items/sandfish.webp`;
       ...extra
     }, children);
     const subtitle = h("div", { class: "zcf-page-sub" });
+    const addLong = h("span", { class: "zcf-page-add-long" }, LISTS.friends.add);
     const addBtn = h(
       "button",
       { class: "zcf-page-add", type: "button", "aria-expanded": "false" },
       icon("plus"),
-      h("span", { class: "zcf-page-add-long" }, "Add friend"),
+      addLong,
       h("span", { class: "zcf-page-add-short" }, "Add")
     );
     const pop = createAddFriendPopover({
       players,
-      isFriend: (id) => isFriend(store.get(), id),
+      isAdded: (id) => !!listOf()[id],
       onAdd: (p) => {
-        actions.addFriend(p);
-        toast(`${p.username} added to friends`);
+        listActions().add(p);
+        toast(`${p.username} added to ${L().many}`);
       },
       onClose: () => syncAddBtn()
     });
+    const headings = new Map(Object.entries(LISTS).map(([k, l]) => [k, link(l.path, "text-h4 text-uppercase text-no-bg zcf-page-h", l.title)]));
     const title = h(
       "div",
       { class: "zcf-page-title" },
       h("div", { class: "zcf-page-side" }, link("/city", "zcf-page-back", [icon("chevron-left"), "City"])),
-      h("div", { class: "zcf-page-mid" }, h("div", { class: "text-h4 text-uppercase text-no-bg zcf-page-h" }, "Friends"), subtitle),
+      h("div", { class: "zcf-page-mid" }, h("div", { class: "zcf-page-htabs" }, [...headings.values()]), subtitle),
       h("div", { class: "zcf-page-side zcf-page-side-r" }, h("div", { class: "zcf-page-addwrap" }, addBtn, pop.el))
     );
     const tabEls = /* @__PURE__ */ new Map();
-    for (const [key, label] of TABS) {
+    for (const [key, label] of TABS2) {
       const count = h("b");
       const b = h("button", {
         class: "zcf-page-tab",
@@ -5039,6 +6070,17 @@ sandfish		/items/sandfish.webp`;
     const table = h("table", { class: "zcf-page-table" }, h("thead", null, headRow), tbody);
     const empty = h("div", { class: "zcf-page-empty", hidden: true });
     const el = h("main", { class: "q-page q-layout-padding zcf zcf-page" }, title, bar, h("div", { class: "zcf-page-panel" }, table, empty));
+    function syncKind() {
+      for (const [k, a] of headings) {
+        a.classList.toggle("zcf-page-h-on", k === kind);
+        if (k === kind) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      }
+      addLong.textContent = L().add;
+      search.setAttribute("aria-label", `Search ${L().many}`);
+      pop.setLabels({ title: L().add, doneText: L().done });
+    }
+    syncKind();
     el.addEventListener("pointerdown", () => {
       holdRender = true;
     }, true);
@@ -5083,7 +6125,7 @@ sandfish		/items/sandfish.webp`;
     function startEdit(id) {
       if (editId === id) return;
       commitEdit();
-      const f = store.get().friends[id];
+      const f = listOf()[id];
       if (!f) return;
       menuId = null;
       confirmId = null;
@@ -5113,8 +6155,8 @@ sandfish		/items/sandfish.webp`;
       const text2 = editInput.value;
       editId = null;
       editInput = null;
-      const f = store.get().friends[id];
-      if (f && (f.note || "") !== normalizeNote(text2)) actions.setFriendNote(id, text2);
+      const f = listOf()[id];
+      if (f && (f.note || "") !== normalizeNote(text2)) listActions().setNote(id, text2);
       if (later) {
         scheduleRender();
         return;
@@ -5146,9 +6188,19 @@ sandfish		/items/sandfish.webp`;
       const i = currentIds.indexOf(id);
       const next = currentIds[i + 1] ?? currentIds[i - 1];
       confirmId = null;
-      actions.removeFriend(id);
+      listActions().remove(id);
       render();
       if (next !== void 0) focusKey(`name:${next}`);
+    }
+    function toggleMenu(id) {
+      menuId = menuId === id ? null : id;
+      render();
+      if (menuId === id) focusKey(`menu:${id}:0`);
+    }
+    function closeMenu(id) {
+      menuId = null;
+      render();
+      focusKey(`more:${id}`);
     }
     function renderHead() {
       const sig = `${sort.key}:${sort.dir}`;
@@ -5178,9 +6230,9 @@ sandfish		/items/sandfish.webp`;
       }
     }
     function rowSig(r, now) {
-      if (confirmId === r.id) return JSON.stringify(["confirm", r.id, r.username]);
+      if (confirmId === r.id) return JSON.stringify(["confirm", r.id, r.username, kind]);
       if (editId === r.id) return JSON.stringify(["edit", r.id]);
-      return JSON.stringify([r.id, r.username, r.avatar, r.note, r.unread, !!r.presence, longStatusText(r.presence, now), r.profile, menuId === r.id, query.trim()]);
+      return JSON.stringify([r.id, r.username, r.avatar, r.note, r.unread, !!r.presence, longStatusText(r.presence, now), r.profile, menuId === r.id, query.trim(), isEnemy2(r.id)]);
     }
     function confirmRow(r) {
       return h(
@@ -5199,12 +6251,27 @@ sandfish		/items/sandfish.webp`;
                 cancelRemove(r.id);
               }
             },
-            h("span", { class: "zcf-confirm-text" }, `Remove ${r.username} from your friends?`),
+            h("span", { class: "zcf-confirm-text" }, `Remove ${r.username} from your ${L().many}?`),
             h("button", { class: "zcf-page-btn zcf-page-danger", type: "button", "data-zcf-focus": `confirm:${r.id}`, onclick: () => doRemove(r.id) }, "Remove"),
             h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": `cancel:${r.id}`, onclick: () => cancelRemove(r.id) }, "Cancel")
           )
         )
       );
+    }
+    function rowMenu(r) {
+      const item = (i, label, onclick) => h("button", { type: "button", role: "menuitem", "data-zcf-focus": `menu:${r.id}:${i}`, onclick }, label);
+      const menu = h(
+        "div",
+        { class: "zcf-page-menu", role: "menu" },
+        item(0, "Profile", () => {
+          menuId = null;
+          router.navigate(`/profile/${r.id}`);
+        }),
+        item(1, "Edit note", () => startEdit(r.id)),
+        item(2, "Remove", () => askRemove(r.id))
+      );
+      wireMenuKeys(menu, { onEscape: () => closeMenu(r.id) });
+      return menu;
     }
     function buildRow(r, now) {
       if (confirmId === r.id) return confirmRow(r);
@@ -5215,6 +6282,7 @@ sandfish		/items/sandfish.webp`;
       const nameCell = h(
         "td",
         { class: "zcf-col-name" },
+        isEnemy2(r.id) ? enemyMark() : null,
         link(`/profile/${r.id}`, "zcf-chip", [
           avatar({ avatar: r.avatar, online: r.presence ? online : void 0, size: 24 }),
           h("span", { class: "zcf-chip-name" }, highlightMatch(r.username, query))
@@ -5265,25 +6333,9 @@ sandfish		/items/sandfish.webp`;
           "aria-haspopup": "menu",
           "aria-expanded": String(menuId === r.id),
           "data-zcf-focus": `more:${r.id}`,
-          onclick: () => {
-            menuId = menuId === r.id ? null : r.id;
-            render();
-          }
+          onclick: () => toggleMenu(r.id)
         }, icon("ellipsis-h")),
-        menuId === r.id ? h(
-          "div",
-          { class: "zcf-page-menu", role: "menu" },
-          h("button", {
-            type: "button",
-            role: "menuitem",
-            onclick: () => {
-              menuId = null;
-              router.navigate(`/profile/${r.id}`);
-            }
-          }, "Profile"),
-          h("button", { type: "button", role: "menuitem", onclick: () => startEdit(r.id) }, "Edit note"),
-          h("button", { type: "button", role: "menuitem", onclick: () => askRemove(r.id) }, "Remove")
-        ) : null
+        menuId === r.id ? rowMenu(r) : null
       );
       return h(
         "tr",
@@ -5304,7 +6356,8 @@ sandfish		/items/sandfish.webp`;
       if (!active) return;
       const s = store.get();
       const now = Date.now();
-      const { rows, counts } = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads, tab, query, sort });
+      const pinned = [editId, confirmId, menuId].filter((id) => id !== null);
+      const { rows, counts } = buildFriendsTable({ list: listOf(), presence: presence.get, threads: s.threads, tab, query, sort, pinned });
       const ids = rows.map((r) => r.id);
       if (editId !== null && !ids.includes(editId)) {
         commitEdit();
@@ -5327,12 +6380,12 @@ sandfish		/items/sandfish.webp`;
       try {
         const seen = /* @__PURE__ */ new Set();
         rows.forEach((r, i) => {
-          const sig = rowSig(r, now);
+          const sig2 = rowSig(r, now);
           let entry = rowEls.get(r.id);
-          if (!entry || entry.sig !== sig) {
+          if (!entry || entry.sig !== sig2) {
             const fresh = buildRow(r, now);
             if (entry) entry.el.replaceWith(fresh);
-            entry = { sig, el: fresh };
+            entry = { sig: sig2, el: fresh };
             rowEls.set(r.id, entry);
           }
           seen.add(r.id);
@@ -5351,13 +6404,13 @@ sandfish		/items/sandfish.webp`;
       if (!rows.length) {
         clear(empty);
         const q = query.trim();
-        if (!counts.all) append(empty, ["No friends yet. Use ", h("b", null, "Add friend"), " above, or ", h("b", null, "Add Friend"), " on a player's profile."]);
-        else if (q) empty.textContent = `No friends match "${q}".`;
-        else empty.textContent = tab === "online" ? "No friends online right now." : "No offline friends.";
+        if (!counts.all) append(empty, [`No ${L().many} yet. Use `, h("b", null, L().add), " above, or ", h("b", null, L().profile), " on a player's profile."]);
+        else if (q) empty.textContent = `No ${L().many} match "${q}".`;
+        else empty.textContent = tab === "online" ? `No ${L().many} online right now.` : `No offline ${L().many}.`;
       }
-      const friendsSig = Object.keys(s.friends).join(",");
-      if (pop.isOpen && friendsSig !== popFriendsSig) pop.refresh();
-      popFriendsSig = friendsSig;
+      const sig = `${kind}:${Object.keys(listOf()).join(",")}`;
+      if (pop.isOpen && sig !== popSig) pop.refresh();
+      popSig = sig;
       if (editSel && editInput && doc.activeElement !== editInput) {
         editInput.focus();
         editInput.setSelectionRange(editSel[0], editSel[1]);
@@ -5376,6 +6429,21 @@ sandfish		/items/sandfish.webp`;
         safe("friends-page-render", render)();
       });
     }
+    function switchKind(next) {
+      if (next === kind) return;
+      commitEdit();
+      kind = next;
+      query = "";
+      search.value = "";
+      confirmId = null;
+      menuId = null;
+      pop.close();
+      for (const entry of rowEls.values()) entry.el.remove();
+      rowEls.clear();
+      popSig = "";
+      syncKind();
+      render();
+    }
     function ensure() {
       if (!active || el.isConnected) return;
       const slot = doc.querySelector(".q-page-container");
@@ -5383,8 +6451,31 @@ sandfish		/items/sandfish.webp`;
       doc.documentElement.classList.add(PAGE_CLASS);
       slot.appendChild(el);
     }
+    const game404 = () => doc.querySelector(".q-page-container > .fixed-center");
+    const leaving = () => !!(leaveObserver || leaveTimer);
+    function finishLeave() {
+      if (leaveObserver) leaveObserver.disconnect();
+      leaveObserver = null;
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+      if (active) return;
+      doc.documentElement.classList.remove(PAGE_CLASS);
+      el.remove();
+    }
+    function leaveWhenReplaced() {
+      if (!game404()) {
+        finishLeave();
+        return;
+      }
+      leaveObserver = new win.MutationObserver(() => {
+        if (!game404()) finishLeave();
+      });
+      leaveObserver.observe(doc.body, { childList: true, subtree: true });
+      leaveTimer = setTimeout(finishLeave, LEAVE_MS);
+    }
     function show() {
       active = true;
+      finishLeave();
       doc.documentElement.classList.add(PAGE_CLASS);
       doc.addEventListener("mousedown", onDocMousedown);
       doc.addEventListener("pointerup", onPointerRelease, true);
@@ -5414,14 +6505,14 @@ sandfish		/items/sandfish.webp`;
       doc.removeEventListener("pointercancel", onPointerRelease, true);
       holdRender = false;
       renderWanted = false;
-      doc.documentElement.classList.remove(PAGE_CLASS);
-      el.remove();
+      leaveWhenReplaced();
     }
     function onRoute(path) {
-      const want = isFriendsPath(path);
+      const want = pageKind(path);
+      if (want) switchKind(want);
       if (want && !active) show();
       else if (!want && active) hide();
-      else if (!want) doc.documentElement.classList.remove(PAGE_CLASS);
+      else if (!want && !leaving()) doc.documentElement.classList.remove(PAGE_CLASS);
     }
     return {
       el,
@@ -5434,8 +6525,12 @@ sandfish		/items/sandfish.webp`;
       get active() {
         return active;
       },
+      get kind() {
+        return kind;
+      },
       destroy() {
         if (active) hide();
+        if (leaving()) finishLeave();
         if (unkeep) unkeep();
         unkeep = null;
       }
@@ -5497,12 +6592,529 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
+  // src/ui/chat-custom/padlock.js
+  var HEADER_CONTROLS_MIN_WIDTH = 400;
+  var TITLE_LOCKED = "Locked — click to unlock, right-click for options";
+  var TITLE_UNLOCKED = "Unlocked — drag to move, click to lock";
+  function createChatControls(key, act) {
+    const stop = (fn) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fn(e);
+    };
+    const value = h("span", { class: "zcf-cc-value" });
+    const reset = h("button", { class: "zcf-cc-btn", type: "button", title: "Reset this chat's size", onclick: stop(() => act.resetSize(key)) }, "Reset");
+    const inline = h(
+      "span",
+      { class: "zcf-cc-inline" },
+      h("button", { class: "zcf-cc-step", type: "button", "aria-label": "Smaller messages", onclick: stop(() => act.stepText(key, -LIMITS.textStep)) }, "−"),
+      value,
+      h("button", { class: "zcf-cc-step", type: "button", "aria-label": "Larger messages", onclick: stop(() => act.stepText(key, LIMITS.textStep)) }, "+"),
+      reset
+    );
+    const back = h(
+      "button",
+      { class: "zcf-cc-icon zcf-cc-return", type: "button", title: "Return to the row", "aria-label": "Return to the row", onclick: stop(() => act.returnToRow(key)) },
+      h("i", { class: "fas fa-undo-alt", "aria-hidden": "true" })
+    );
+    const glyph = h("i", { class: "fas fa-lock", "aria-hidden": "true" });
+    const lock = h("button", { class: "zcf-cc-icon zcf-cc-lock", type: "button", onclick: stop(() => act.toggleLock(key)) }, glyph);
+    lock.addEventListener("contextmenu", stop(() => act.openMenu(key, lock)));
+    const el = h("span", { class: "zcf-cc", dataset: { zcfCc: key } }, inline, back, lock);
+    function sync(entry, width) {
+      const locked = isLocked(entry);
+      lock.title = locked ? TITLE_LOCKED : TITLE_UNLOCKED;
+      lock.setAttribute("aria-label", lock.title);
+      lock.setAttribute("aria-pressed", String(locked));
+      lock.classList.toggle("zcf-cc-unlocked", !locked);
+      glyph.className = `fas ${locked ? "fa-lock" : "fa-lock-open"}`;
+      back.hidden = !isMoved(entry);
+      value.textContent = `${textOf(entry)}%`;
+      inline.hidden = !(width >= HEADER_CONTROLS_MIN_WIDTH);
+      reset.disabled = !(entry && (entry.w || entry.h));
+    }
+    return { el, sync };
+  }
+
+  // src/ui/chat-custom/menu.js
+  var GAP = 4;
+  function createChatMenu({ doc = document, win = window } = {}) {
+    const el = h("div", { class: "zcf-cmenu", role: "menu", hidden: true });
+    let anchor = null;
+    let key = null;
+    let armed = false;
+    const onDocDown = (e) => {
+      if (el.contains(e.target) || anchor && anchor.contains(e.target)) return;
+      close();
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      close();
+    };
+    function position() {
+      const r = anchor.getBoundingClientRect();
+      const m = el.getBoundingClientRect();
+      const left = Math.max(GAP, Math.min(r.left, win.innerWidth - m.width - GAP));
+      const below = r.bottom + GAP;
+      const top = below + m.height > win.innerHeight ? r.top - GAP - m.height : below;
+      el.style.left = `${Math.round(left)}px`;
+      el.style.top = `${Math.round(Math.max(GAP, top))}px`;
+    }
+    function render(model) {
+      const buttons = [...el.querySelectorAll("button")];
+      const focused = buttons.indexOf(doc.activeElement);
+      clear(el);
+      el.appendChild(h("div", { class: "zcf-cmenu-title" }, model.title));
+      for (const row of model.rows) el.appendChild(h("div", { class: "zcf-cmenu-row" }, h("span", { class: "zcf-cmenu-label" }, row.label), row.controls));
+      const again = el.querySelectorAll("button");
+      if (focused >= 0 && again[Math.min(focused, again.length - 1)]) again[Math.min(focused, again.length - 1)].focus();
+    }
+    function open(anchorEl, chatKey, model) {
+      anchor = anchorEl;
+      key = chatKey;
+      if (!el.isConnected) doc.body.appendChild(el);
+      el.hidden = false;
+      render(model);
+      position();
+      if (!armed) {
+        doc.addEventListener("pointerdown", onDocDown, true);
+        doc.addEventListener("keydown", onKey, true);
+        armed = true;
+      }
+      const first = el.querySelector("button:not(:disabled)");
+      if (first) first.focus();
+    }
+    function close() {
+      if (!armed) return;
+      armed = false;
+      doc.removeEventListener("pointerdown", onDocDown, true);
+      doc.removeEventListener("keydown", onKey, true);
+      el.hidden = true;
+      anchor = null;
+      key = null;
+    }
+    return {
+      el,
+      open,
+      close,
+      // Re-draws the open menu after its chat's settings changed.
+      update(chatKey, model) {
+        if (armed && chatKey === key) render(model);
+      },
+      isOpen: () => armed,
+      get key() {
+        return key;
+      },
+      destroy() {
+        close();
+        el.remove();
+      }
+    };
+  }
+
+  // src/chat-custom/geometry.js
+  var DRAG_THRESHOLD = 6;
+  var VIEWPORT_MARGIN = 60;
+  var pastThreshold = (dx, dy) => Math.hypot(dx, dy) > DRAG_THRESHOLD;
+  function clampAxis(value, size, limit) {
+    const max = limit - size;
+    if (!(max > 0) || !Number.isFinite(value)) return 0;
+    return Math.min(max, Math.max(0, value));
+  }
+  function clampPosition({ x, y, w, h: h2, vw, vh }) {
+    return { x: Math.round(clampAxis(x, w, vw)), y: Math.round(clampAxis(y, h2, vh)) };
+  }
+  var gripsFor = ({ locked, moved }) => locked ? [] : moved ? ["n", "nw", "s", "se"] : ["n", "nw"];
+  function resizeLimits({ dir, start, moved, vw, vh }) {
+    let maxW = LIMITS.maxW;
+    let maxH = vh - VIEWPORT_MARGIN;
+    if (dir.includes("w")) maxW = Math.min(maxW, start.left + start.width);
+    if (dir.includes("e")) maxW = Math.min(maxW, vw - start.left);
+    if (dir.includes("n")) maxH = Math.min(maxH, start.top + start.height);
+    if (moved && dir.includes("s")) maxH = Math.min(maxH, vh - start.top);
+    return { minW: LIMITS.minW, maxW: Math.max(LIMITS.minW, maxW), minH: LIMITS.minH, maxH: Math.max(LIMITS.minH, maxH) };
+  }
+  function resizeRect({ dir, start, dx, dy, limits, moved }) {
+    const clamp2 = (v, lo, hi) => Math.round(Math.min(hi, Math.max(lo, v)));
+    const out = {};
+    if (dir.includes("e")) out.w = clamp2(start.width + dx, limits.minW, limits.maxW);
+    if (dir.includes("w")) out.w = clamp2(start.width - dx, limits.minW, limits.maxW);
+    if (dir.includes("s")) out.h = clamp2(start.height + dy, limits.minH, limits.maxH);
+    if (dir.includes("n")) out.h = clamp2(start.height - dy, limits.minH, limits.maxH);
+    if (moved) {
+      out.x = Math.round(start.left + (dir.includes("w") ? Math.round(start.width) - out.w : 0));
+      out.y = Math.round(start.top + (dir.includes("n") ? Math.round(start.height) - out.h : 0));
+    }
+    return out;
+  }
+
+  // src/ui/chat-custom/drag.js
+  function createDrag({ doc = document, win = window, enabled, hit, onMove, onCommit, onCancel }) {
+    let s = null;
+    let swallow = false;
+    function onDown(e) {
+      swallow = false;
+      if (s || e.button !== 0 || !enabled()) return;
+      const target = hit(e.target);
+      if (!target) return;
+      const r = target.el.getBoundingClientRect();
+      s = { key: target.key, id: e.pointerId, sx: e.clientX, sy: e.clientY, left: r.left, top: r.top, w: r.width, h: r.height, dragging: false, pos: null };
+      doc.addEventListener("pointermove", onMoveEv, true);
+      doc.addEventListener("pointerup", onUp, true);
+      doc.addEventListener("pointercancel", onCancelEv, true);
+    }
+    function onMoveEv(e) {
+      if (!s || e.pointerId !== s.id) return;
+      const dx = e.clientX - s.sx;
+      const dy = e.clientY - s.sy;
+      if (!s.dragging) {
+        if (!pastThreshold(dx, dy)) return;
+        s.dragging = true;
+        doc.documentElement.classList.add("zcf-dragging");
+      }
+      if (e.cancelable) e.preventDefault();
+      s.pos = clampPosition({ x: s.left + dx, y: s.top + dy, w: s.w, h: s.h, vw: win.innerWidth, vh: win.innerHeight });
+      onMove(s.key, s.pos);
+    }
+    function end(commit) {
+      const done = s;
+      s = null;
+      doc.removeEventListener("pointermove", onMoveEv, true);
+      doc.removeEventListener("pointerup", onUp, true);
+      doc.removeEventListener("pointercancel", onCancelEv, true);
+      if (!done.dragging) return;
+      doc.documentElement.classList.remove("zcf-dragging");
+      swallow = true;
+      if (commit) onCommit(done.key, done.pos);
+      else onCancel(done.key);
+    }
+    const onUp = (e) => {
+      if (s && e.pointerId === s.id) end(true);
+    };
+    const onCancelEv = (e) => {
+      if (s && e.pointerId === s.id) end(false);
+    };
+    function onClick(e) {
+      if (!swallow) return;
+      swallow = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    doc.addEventListener("pointerdown", onDown, true);
+    doc.addEventListener("click", onClick, true);
+    return {
+      isDragging: () => !!(s && s.dragging),
+      destroy() {
+        if (s) end(false);
+        doc.removeEventListener("pointerdown", onDown, true);
+        doc.removeEventListener("click", onClick, true);
+      }
+    };
+  }
+
+  // src/ui/chat-custom/resize.js
+  function syncGrips(el, dirs, onPress) {
+    const current = [...el.children].filter((c) => c.classList.contains("zcf-grip"));
+    const have = current.map((g) => g.dataset.zcfGrip);
+    if (have.length === dirs.length && have.every((d, i) => d === dirs[i])) return;
+    for (const g of current) g.remove();
+    for (const dir of dirs) {
+      const grip = h("div", { class: `zcf-grip zcf-grip-${dir}`, dataset: { zcfGrip: dir }, "aria-hidden": "true" });
+      grip.addEventListener("pointerdown", (e) => onPress(dir, e));
+      el.appendChild(grip);
+    }
+  }
+  function createResize({ doc = document, win = window, onMove, onCommit, onCancel }) {
+    let s = null;
+    function start(key, el, dir, moved, e) {
+      if (s || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = el.getBoundingClientRect();
+      const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      s = { key, dir, moved, id: e.pointerId, sx: e.clientX, sy: e.clientY, rect, limits: resizeLimits({ dir, start: rect, moved, vw: win.innerWidth, vh: win.innerHeight }), live: null };
+      doc.addEventListener("pointermove", move, true);
+      doc.addEventListener("pointerup", up, true);
+      doc.addEventListener("pointercancel", cancel, true);
+      doc.documentElement.classList.add("zcf-resizing");
+    }
+    function move(e) {
+      if (!s || e.pointerId !== s.id) return;
+      if (e.cancelable) e.preventDefault();
+      s.live = resizeRect({ dir: s.dir, start: s.rect, dx: e.clientX - s.sx, dy: e.clientY - s.sy, limits: s.limits, moved: s.moved });
+      onMove(s.key, s.live);
+    }
+    function end(commit) {
+      const done = s;
+      s = null;
+      doc.removeEventListener("pointermove", move, true);
+      doc.removeEventListener("pointerup", up, true);
+      doc.removeEventListener("pointercancel", cancel, true);
+      doc.documentElement.classList.remove("zcf-resizing");
+      if (commit && done.live) onCommit(done.key, done.live);
+      else onCancel(done.key);
+    }
+    const up = (e) => {
+      if (s && e.pointerId === s.id) end(true);
+    };
+    const cancel = (e) => {
+      if (s && e.pointerId === s.id) end(false);
+    };
+    return {
+      start,
+      isActive: () => !!s,
+      destroy() {
+        if (s) end(false);
+      }
+    };
+  }
+
+  // src/chat-custom/user-style.js
+  var STYLE_ID = "zcf-user-settings";
+  var FALLBACK = { w: 350, h: 450 };
+  function chatSelector(key) {
+    const game = GAME_CHATS.find((g) => g.key === key);
+    if (game) return `body .chat-containers > .chat-container.${game.cls}`;
+    return `body .chat-containers .zcf[data-zcf-chat="${key}"]`;
+  }
+  var zoomTargets = (key) => key.startsWith("game:") ? [".chat-content"] : [".zcf-zoom"];
+  function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {} }) {
+    const rules = [];
+    const keys = new Set(Object.keys(chats));
+    if (live) keys.add(live.key);
+    for (const key of keys) {
+      const isLive = !!(live && live.key === key);
+      const entry = isLive ? { ...chats[key], ...live.entry } : chats[key];
+      if (!entry) continue;
+      const sel = chatSelector(key);
+      const text2 = textOf(entry);
+      if (text2 !== 100) rules.push(`${zoomTargets(key).map((t) => `${sel} ${t}`).join(",")}{zoom:${text2 / 100}}`);
+      if (small) continue;
+      const sized = [];
+      if (entry.w) sized.push(`width:${Math.min(entry.w, Math.max(LIMITS.minW, vw))}px`, "min-width:0", "max-width:none");
+      if (entry.h) sized.push(`height:${Math.min(entry.h, Math.max(LIMITS.minH, vh - VIEWPORT_MARGIN))}px`, "max-height:none");
+      const box = [];
+      if (isMoved(entry)) {
+        const size = sizes[key] || { w: entry.w || FALLBACK.w, h: entry.h || FALLBACK.h };
+        const p = clampPosition({ x: entry.x, y: entry.y, w: size.w, h: size.h, vw, vh });
+        box.push("position:fixed", `left:${p.x}px`, `top:${p.y}px`, "right:auto", "bottom:auto", "margin:0");
+      } else if (!isLocked(entry)) {
+        box.push("position:relative");
+      }
+      if (sized.length || isMoved(entry) || isLive) box.push("transition:none");
+      if (box.length) rules.push(`${sel}{${box.join(";")}}`);
+      if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(";")};flex:none}`);
+      if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab}`);
+    }
+    return rules.join("\n");
+  }
+
+  // src/ui/chat-custom/index.js
+  function createChatCustom({ doc = document, win = window, keeper = null, settings, isSmall, dm = null }) {
+    const styleEl = doc.createElement("style");
+    styleEl.id = STYLE_ID;
+    const records = /* @__PURE__ */ new Map();
+    let chats = [];
+    let dockEl = null;
+    let dockCount = -1;
+    let rootEl = null;
+    let rootCount = -1;
+    let live = null;
+    let unkeep = null;
+    let unsubscribe = null;
+    let frame = 0;
+    const saved = (key) => settings.get().chats[key];
+    const entryOf = (key) => live && live.key === key ? { ...saved(key), ...live.entry } : saved(key);
+    const save = (key, patch) => settings.update((s) => updateChat(s, key, patch));
+    const menu = createChatMenu({ doc, win });
+    const act = {
+      toggleLock: (key) => save(key, { locked: isLocked(saved(key)) ? false : null }),
+      stepText: (key, delta) => save(key, { text: clampText(textOf(saved(key)) + delta) }),
+      resetSize: (key) => save(key, { w: null, h: null }),
+      returnToRow: (key) => save(key, { x: null, y: null }),
+      openMenu: (key, anchor) => menu.open(anchor, key, menuModel(key))
+    };
+    function menuModel(key) {
+      const entry = saved(key);
+      const id = dmIdOf(key);
+      const btn = (label, onclick, extra = {}) => h("button", { class: "zcf-cc-btn", type: "button", onclick, ...extra }, label);
+      const text2 = textOf(entry);
+      const rows = [
+        {
+          label: "Message size",
+          controls: [
+            btn("−", () => act.stepText(key, -LIMITS.textStep), { "aria-label": "Smaller messages", disabled: text2 <= LIMITS.minText }),
+            h("span", { class: "zcf-cc-value" }, `${text2}%`),
+            btn("+", () => act.stepText(key, LIMITS.textStep), { "aria-label": "Larger messages", disabled: text2 >= LIMITS.maxText })
+          ]
+        },
+        { label: "Chat size", controls: [btn("Reset", () => act.resetSize(key), { disabled: !(entry && (entry.w || entry.h)) })] }
+      ];
+      if (isMoved(entry)) rows.push({ label: "Position", controls: [btn("Return to row", () => act.returnToRow(key))] });
+      if (id && dm) rows.push({ label: "Notifications", controls: [btn(dm.isMuted(id) ? "Unmute" : "Mute", () => dm.toggleMute(id))] });
+      return { title: chatLabel(key, id && dm ? dm.name(id) : null), rows };
+    }
+    function measure(c) {
+      const entry = entryOf(c.key);
+      if (!isMoved(entry)) return null;
+      const r = c.el.getBoundingClientRect();
+      const open = !c.el.classList.contains("chat-minimized");
+      const w = open && entry.w || r.width;
+      const hgt = open && entry.h || r.height;
+      return w && hgt ? { w, h: hgt } : null;
+    }
+    function applyStyle() {
+      const sizes = {};
+      for (const c of chats) {
+        const m = measure(c);
+        if (m) sizes[c.key] = m;
+      }
+      const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes });
+      if (styleEl.textContent !== css) styleEl.textContent = css;
+      if (!styleEl.isConnected) (doc.head || doc.documentElement).appendChild(styleEl);
+    }
+    function drop(rec) {
+      rec.controls.el.remove();
+      syncGrips(rec.el, [], null);
+    }
+    function refresh() {
+      chats = findChats(doc);
+      dockEl = doc.querySelector(".chat-containers");
+      rootEl = dockEl && dockEl.querySelector(":scope > .zcf-root");
+      dockCount = dockEl ? dockEl.childElementCount : -1;
+      rootCount = rootEl ? rootEl.childElementCount : -1;
+      const small = isSmall();
+      const keep = /* @__PURE__ */ new Set();
+      for (const c of chats) {
+        keep.add(c.key);
+        let rec = records.get(c.key);
+        if (!rec || rec.el !== c.el) {
+          if (rec) drop(rec);
+          rec = { el: c.el, controls: createChatControls(c.key, act) };
+          records.set(c.key, rec);
+        }
+        if (small || !c.header) {
+          drop(rec);
+          continue;
+        }
+        if (rec.controls.el.parentNode !== c.header) {
+          const title = c.header.querySelector(":scope > .chat-title");
+          if (title) title.after(rec.controls.el);
+          else c.header.appendChild(rec.controls.el);
+        }
+        const entry = entryOf(c.key);
+        rec.controls.sync(entry, !c.minimized && entry && entry.w || c.el.getBoundingClientRect().width);
+        const { key, el } = c;
+        const dirs = c.minimized ? [] : gripsFor({ locked: isLocked(entry), moved: isMoved(entry) });
+        syncGrips(el, dirs, (dir, e) => resize.start(key, el, dir, isMoved(saved(key)), e));
+      }
+      for (const [key, rec] of records) {
+        if (keep.has(key)) continue;
+        drop(rec);
+        records.delete(key);
+      }
+      applyStyle();
+      if (menu.isOpen()) {
+        if (keep.has(menu.key) && !small) menu.update(menu.key, menuModel(menu.key));
+        else menu.close();
+      }
+    }
+    function attached() {
+      if (!dockEl || !dockEl.isConnected || dockEl.childElementCount !== dockCount) return false;
+      if (rootEl && (rootEl.parentNode !== dockEl || rootEl.childElementCount !== rootCount)) return false;
+      const small = isSmall();
+      for (const c of chats) {
+        if (!c.el.isConnected || c.minimized !== c.el.classList.contains("chat-minimized")) return false;
+        if (c.header ? c.header.parentNode !== c.el : c.el.querySelector(":scope > .chat-header")) return false;
+        const rec = records.get(c.key);
+        if (!small && c.header && (!rec || rec.controls.el.parentNode !== c.header)) return false;
+      }
+      return true;
+    }
+    const resize = createResize({
+      doc,
+      win,
+      onMove(key, rect) {
+        live = { key, entry: rect };
+        refresh();
+      },
+      onCommit(key, rect) {
+        live = null;
+        save(key, rect);
+      },
+      onCancel() {
+        live = null;
+        refresh();
+      }
+    });
+    const drag = createDrag({
+      doc,
+      win,
+      enabled: () => !isSmall(),
+      hit(target) {
+        if (!target || !target.closest || !target.closest(".chat-containers") || target.closest(".zcf-grip, .zcf-cmenu")) return null;
+        const c = findChats(doc).find((x) => x.el.contains(target));
+        if (!c) return null;
+        if (c.minimized) return { key: c.key, el: c.el };
+        if (!c.header || !c.header.contains(target) || isLocked(saved(c.key))) return null;
+        return { key: c.key, el: c.el };
+      },
+      onMove(key, pos) {
+        live = { key, entry: pos };
+        applyStyle();
+      },
+      onCommit(key, pos) {
+        live = null;
+        save(key, pos);
+      },
+      onCancel() {
+        live = null;
+        applyStyle();
+      }
+    });
+    function onViewport() {
+      if (frame) return;
+      frame = win.requestAnimationFrame(() => {
+        frame = 0;
+        refresh();
+      });
+    }
+    return {
+      start() {
+        if (unsubscribe) return;
+        unsubscribe = settings.subscribe(() => refresh());
+        win.addEventListener("resize", onViewport);
+        if (keeper) unkeep = keeper.add({ name: "chat-custom", attached, ensure: refresh });
+        refresh();
+      },
+      refresh,
+      destroy() {
+        if (unsubscribe) unsubscribe();
+        unsubscribe = null;
+        if (unkeep) unkeep();
+        unkeep = null;
+        win.removeEventListener("resize", onViewport);
+        if (frame) win.cancelAnimationFrame(frame);
+        frame = 0;
+        drag.destroy();
+        resize.destroy();
+        menu.destroy();
+        for (const rec of records.values()) drop(rec);
+        records.clear();
+        styleEl.remove();
+      }
+    };
+  }
+
   // src/app.js
   var CHATTING_MS = 5 * 60 * 1e3;
   var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4 };
   var PRESENCE_PER_SWEEP = 20;
-  function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
+  function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }) }) {
     const store = createStore({ playerId, storage, win, now });
+    const settings = createSettingsStore({ playerId, storage, win, now });
+    const enemies = createEnemiesStore({ playerId, storage, win, now });
     const router = createRouter({ win, doc });
     const toast = createToaster(doc);
     const players = createPlayers({ api, now });
@@ -5513,14 +7125,13 @@ sandfish		/items/sandfish.webp`;
     const dmEntry = (id) => store.get().dock.dms.find((d) => d.id === id);
     const isExpanded = (id) => !!(dmEntry(id) && dmEntry(id).open);
     const expandedIds = () => store.get().dock.dms.filter((d) => d.open).map((d) => d.id);
-    function syncFriendInfo(id, info) {
-      const f = store.get().friends[id];
-      if (!f || !info) return;
-      const nameChanged = typeof info.username === "string" && info.username && info.username !== f.username;
-      const avatarChanged = typeof info.avatar === "string" && info.avatar && info.avatar !== f.avatar;
-      if (nameChanged || avatarChanged) store.update((s) => updateFriendInfo(s, id, info));
+    function syncPlayerInfo(id, info2) {
+      if (!info2) return;
+      const stale = (p) => !!p && (typeof info2.username === "string" && info2.username && info2.username !== p.username || typeof info2.avatar === "string" && info2.avatar && info2.avatar !== p.avatar);
+      if (stale(store.get().friends[id])) store.update((s) => updateFriendInfo(s, id, info2));
+      if (stale(enemies.get().enemies[id])) enemies.update((d) => updateEnemyInfo(d, id, info2));
     }
-    const presence = createPresence({ fetchProfile: (id) => api.getProfile(id), onProfile: syncFriendInfo, now });
+    const presence = createPresence({ fetchProfile: (id) => api.getProfile(id), onProfile: syncPlayerInfo, now });
     function markChatting() {
       const was = isChatting();
       chattingUntil = now() + CHATTING_MS;
@@ -5538,9 +7149,9 @@ sandfish		/items/sandfish.webp`;
       api,
       myId: playerId,
       onActivity: () => markChatting(),
-      onInfo: (id, info) => {
-        presence.set(id, info);
-        syncFriendInfo(id, info);
+      onInfo: (id, info2) => {
+        presence.set(id, info2);
+        syncPlayerInfo(id, info2);
       },
       onChange: (id) => markSeenIfNeeded(id)
     });
@@ -5555,6 +7166,12 @@ sandfish		/items/sandfish.webp`;
         if (id === activeDmId || !isExpanded(id)) return;
         const c = conversations.get(id);
         if (c) c.fetchNew();
+      },
+      isMuted: (id) => isMuted(settings.get(), id),
+      // New mail from another player, at most once per poll; silent unless a sound is chosen in Chat settings.
+      onNewMail: () => {
+        const name = settings.get().sound;
+        if (name !== "off") sound.play(name);
       }
     });
     function pickActive() {
@@ -5592,10 +7209,17 @@ sandfish		/items/sandfish.webp`;
       doc
     });
     const listOpen = () => store.get().dock.friendsOpen || page.active;
+    function presenceTargets() {
+      const ids = /* @__PURE__ */ new Set();
+      const onPage = page.active ? page.kind : null;
+      if (store.get().dock.friendsOpen || onPage === "friends") for (const id of Object.keys(store.get().friends)) ids.add(Number(id));
+      if (onPage === "enemies") for (const id of Object.keys(enemies.get().enemies)) ids.add(Number(id));
+      return [...ids];
+    }
     const presencePoller = makePoller({
       run: () => {
         const age = (id) => presence.lastTried(id);
-        const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
+        const stale = presenceTargets().filter((id) => presence.isStale(id));
         presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
         return { ok: true };
       },
@@ -5654,25 +7278,64 @@ sandfish		/items/sandfish.webp`;
         store.update((s) => closeDm(s, id));
         if (activeDmId === id) activeDmId = null;
       },
-      toggleFriends() {
+      togglePm() {
         const open = !store.get().dock.friendsOpen;
         const small = dock.isSmall();
         store.update((s) => setFriendsOpen(s, open, { exclusive: small }));
         if (open && small) dock.minimizeGameChats();
       },
+      setPmTab: (tab) => settings.update((s) => setPmTab(s, tab)),
+      toggleSettings() {
+        const open = !store.get().dock.settingsOpen;
+        const small = dock.isSmall();
+        store.update((s) => setSettingsOpen(s, open, { exclusive: small }));
+        if (open && small) dock.minimizeGameChats();
+      },
+      closeAllDms() {
+        store.update((s) => closeAllDms(s));
+        activeDmId = null;
+      },
+      toggleMute: (id) => settings.update((s) => setMuted(s, id, !isMuted(s, id))),
+      setSound(name) {
+        settings.update((s) => setSound(s, name));
+        sound.unlock();
+      },
+      resetChat: (key) => settings.update((s) => resetChat(s, key)),
+      resetAllChats: () => settings.update((s) => resetAllChats(s)),
+      markAllRead: (onProgress) => markAllRead({
+        ids: chatsUnreadIds(store.get(), inbox.threads(), settings.get().muted),
+        api,
+        markSeen: (id) => store.update((s) => markSeen(s, id, inbox.lastReply(id))),
+        onProgress,
+        toast
+      }),
       setActiveDm(id) {
         if (activeDmId === id) return;
         activeDmId = id;
         activeDmPoller.poke();
       },
-      exportFriends: () => exportFriends(store.get(), playerId),
+      addEnemy(p) {
+        enemies.update((d) => addEnemy(d, p, now()));
+        presence.refresh([p.id]);
+      },
+      removeEnemy: (id) => enemies.update((d) => removeEnemy(d, id)),
+      setEnemyNote: (id, note) => enemies.update((d) => setEnemyNote(d, id, note)),
+      exportFriends: () => exportFriends(store.get(), playerId, enemies.get()),
       importFriends(text2) {
         const r = parseImport(text2, playerId);
         if (!r.ok) return r;
-        return { ok: true, ...store.update((s) => mergeImport(s, r.friends, now())) };
+        const f = store.update((s) => mergeImport(s, r.friends, now()));
+        const e = r.enemies.length ? enemies.update((d) => mergeEnemiesImport(d, r.enemies, now())) : { added: 0, notes: 0 };
+        return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes };
       }
     };
     const services = {
+      api,
+      settings,
+      enemies,
+      isEnemy: (id) => isEnemy(enemies.get(), id),
+      isMuted: (id) => isMuted(settings.get(), id),
+      sound,
       playerId,
       myId: playerId,
       myName: playerName,
@@ -5688,17 +7351,49 @@ sandfish		/items/sandfish.webp`;
       isSmall: dock.isSmall
     };
     const view = createDockView({ root: dock.root, services });
+    const custom = createChatCustom({
+      doc,
+      win,
+      keeper,
+      settings,
+      isSmall: dock.isSmall,
+      dm: {
+        name(id) {
+          const s = store.get();
+          const d = s.dock.dms.find((x) => x.id === id);
+          return d && d.username || s.friends[id] && s.friends[id].username || null;
+        },
+        isMuted: (id) => isMuted(settings.get(), id),
+        toggleMute: (id) => actions.toggleMute(id)
+      }
+    });
+    const renderDock = () => {
+      view.render();
+      custom.refresh();
+    };
     const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+    const enemyButton = createProfileButton({
+      doc,
+      win,
+      spec: ENEMY_BUTTON,
+      isOn: (id) => isEnemy(enemies.get(), id),
+      add: (p) => actions.addEnemy(p),
+      remove: (id) => actions.removeEnemy(id),
+      players,
+      toast,
+      after: () => profileButton.wrap
+    });
+    const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
     const page = createFriendsPage(services, { doc, win, keeper });
     const topbar = createTopbarButton({ doc, keeper, router });
     store.subscribe(() => {
-      view.render();
+      renderDock();
       syncPollers();
       profileButton.refresh();
       page.scheduleRender();
     });
     presence.subscribe(() => {
-      view.friends.scheduleList();
+      view.pm.scheduleList();
       for (const d of store.get().dock.dms) {
         const w = view.dmWindow(d.id);
         if (w) w.update();
@@ -5706,44 +7401,68 @@ sandfish		/items/sandfish.webp`;
       page.scheduleRender();
     });
     inbox.subscribe(() => {
-      view.friends.scheduleList();
-      view.friends.syncBadge();
+      view.pm.scheduleList();
+      view.pm.syncBadge();
     });
+    settings.subscribe(() => renderDock());
+    enemies.subscribe(() => {
+      renderDock();
+      enemyButton.refresh();
+      page.scheduleRender();
+      marks.refresh();
+    });
+    let listKind = null;
     router.onChange((path) => {
       profileButton.onRoute(path);
+      enemyButton.onRoute(path);
       page.onRoute(path);
       syncPollers();
+      const kind = page.active ? page.kind : null;
+      if (kind && kind !== listKind) presencePoller.poke();
+      listKind = kind;
       resumeIfLoggedIn();
     });
     function enforcePhoneRule() {
       const s = store.get();
       const openDms = s.dock.dms.filter((d) => d.open).length;
-      const openCount = openDms + (s.dock.friendsOpen ? 1 : 0);
+      const openCount = openDms + (s.dock.friendsOpen ? 1 : 0) + (s.dock.settingsOpen ? 1 : 0);
       if (!openCount) return;
       if (openCount > 1) {
         const keepId = openDms ? pickActive() : null;
         store.update((st) => {
           for (const d of st.dock.dms) d.open = d.id === keepId;
-          if (keepId !== null) st.dock.friendsOpen = false;
+          if (keepId !== null) {
+            st.dock.friendsOpen = false;
+            st.dock.settingsOpen = false;
+          } else if (st.dock.friendsOpen) st.dock.settingsOpen = false;
         });
       }
       dock.minimizeGameChats();
     }
     dock.onSmallChange((small) => {
       if (small) enforcePhoneRule();
-      view.render();
+      renderDock();
     });
     dock.start();
     page.start();
     topbar.start();
+    marks.start();
+    custom.start();
+    const unlockSound = () => {
+      if (settings.get().sound !== "off") sound.unlock();
+    };
+    doc.addEventListener("pointerdown", unlockSound, { capture: true, once: true });
     if (dock.isSmall()) enforcePhoneRule();
-    view.render();
+    renderDock();
     profileButton.onRoute(router.path);
+    enemyButton.onRoute(router.path);
     page.onRoute(router.path);
     threadsPoller.start();
     syncPollers();
     return {
       store,
+      settings,
+      enemies,
       actions,
       view,
       conversations,
@@ -5753,11 +7472,17 @@ sandfish		/items/sandfish.webp`;
         for (const p of pollers) p.destroy();
         dock.destroy();
         profileButton.destroy();
+        enemyButton.destroy();
+        marks.destroy();
+        custom.destroy();
+        doc.removeEventListener("pointerdown", unlockSound, true);
         page.destroy();
         topbar.destroy();
         keeper.destroy();
         router.destroy();
         store.destroy();
+        settings.destroy();
+        enemies.destroy();
       }
     };
   }
@@ -5769,9 +7494,6 @@ sandfish		/items/sandfish.webp`;
 .zcf .chat-header{background:#090a0b}
 .zcf.chat-container .chat-header{gap:6px}
 .zcf.chat-container .chat-title{min-width:0}
-.zcf-friends .chat-title .chat-icon{color:#3d8b40}
-.chat-containers .zcf-friends{order:2}
-.zcf .zcf-count{text-transform:none;letter-spacing:0;opacity:.6;font-weight:400}
 .zcf .zcf-hbtn{background:none;border:0;padding:0 2px;margin:0;color:#ffffff4d;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center}
 .zcf .zcf-hbtn:hover{color:#ffffffb3}
 .zcf .chat-toggle{margin-left:0}
@@ -5780,15 +7502,81 @@ sandfish		/items/sandfish.webp`;
 .zcf-body{position:relative;font-size:13px}
 .zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
+.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#3d8b40!important}
+.chat-containers .zcf-pm{order:2}
+.zcf-pm:not(.chat-minimized){height:450px}
+.zcf-pm-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.zcf-pm-tabs{display:flex;flex:none;background:#090a0b;border-bottom:1px solid #000}
+.zcf-pm-tab{flex:1 1 0;min-width:0;height:32px;padding:0 4px;background:none;border:0;color:#9e9e9e;font-family:Oswald,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer}
+.zcf-pm-tab:hover{color:#e0e0e0}
+.zcf-pm-tab.zcf-pm-tab-on{background:#0f1114;color:#e6e6e6;box-shadow:inset 0 2px 0 #0a748f}
+.zcf-pm .zcf-toolbar{flex:none}
+.zcf-pm-line{display:flex;align-items:center;gap:6px;min-width:0}
+.zcf-pm-line .zcf-name{min-width:0}
+.zcf-pm-time{margin-left:auto;flex:none;font-size:10.5px;opacity:.45;white-space:nowrap}
+.zcf-pm-preview.zcf-unread{color:#fff;opacity:1;font-weight:500}
+.zcf-pill.zcf-pill-green{background:#3d8b40}
+.zcf-pill.zcf-pill-dim{opacity:.45}
+.zcf-pm-more,.zcf-pm-foot{display:block;width:100%;background:none;border:0;border-top:1px solid #ffffff0d;color:#6fb3c8;font:inherit;font-size:11.5px;padding:8px 10px;text-align:center;cursor:pointer}
+.zcf-pm-more:hover,.zcf-pm-foot:hover{background:#ffffff08}
+.zcf-pm-more:disabled{opacity:.5;cursor:default}
+.zcf-pm-retry{color:#6fb3c8}
+.zcf-pm-confirm .zcf-row-main{font-size:12.5px}
+.zcf-enemy-mark{color:#ef5350;font-size:.85em;margin-right:4px}
+.zcf-muted-mark{font-size:.85em;margin-left:5px;opacity:.5}
+.chat-containers .zcf-settings{order:4}
+.zcf-settings:not(.chat-minimized) .chat-content{overflow-y:auto}
+.zcf-set{padding:2px 0 8px}
+.zcf-set-sec{padding:8px 12px;border-bottom:1px solid #ffffff0d}
+.zcf-set-sec:last-child{border-bottom:0}
+.zcf-set-h{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff59;margin-bottom:6px}
+.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px}
+.zcf-set-chat{display:flex;align-items:center;gap:8px;padding:4px 0}
+.zcf-set-lock{width:14px;flex:none;text-align:center;color:#9e9e9e;font-size:11px}
+.zcf-set-all{margin-top:6px}
+.zcf-set-sound{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.zcf-set-sound span{flex:1}
+.zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
+.zcf-set-play:disabled{opacity:.4;cursor:default}
+.zcf-set-about{font-size:12px;opacity:.6}
+.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.zcf-news-toggle:hover{text-decoration:underline}
+.zcf-news-ver{margin-top:8px}
+.zcf-news-vh{display:flex;gap:8px;align-items:baseline;font-size:12px;font-weight:700}
+.zcf-news-date{font-size:11px;font-weight:400;opacity:.45}
+.zcf-news-f{margin-top:5px}
+.zcf-news-ft{font-size:12px;color:#e0e0e0}
+.zcf-news-f ul{margin:2px 0 0;padding-left:16px;font-size:11.5px;opacity:.75}
+.zcf-cc{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:400}
+.chat-container.chat-minimized .zcf-cc{display:none}
+.zcf-cc [hidden]{display:none!important}
+.zcf-cc-icon{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0;background:none;border:0;color:#ffffff4d;font-size:11px;cursor:pointer}
+.zcf-cc-icon:hover{color:#ffffffb3}
+.zcf-cc-lock.zcf-cc-unlocked{color:#f2c037}
+.zcf-cc-inline{display:inline-flex;align-items:center;gap:3px;margin-right:4px;color:#d9d9d9;font-size:11px}
+.zcf-cc-step,.zcf-cc-btn{height:18px;min-width:18px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font:inherit;font-size:11px;line-height:1;cursor:pointer}
+.zcf-cc-step:hover,.zcf-cc-btn:hover{background:#ffffff1f;color:#fff}
+.zcf-cc-btn:disabled,.zcf-cc-step:disabled{opacity:.4;cursor:default}
+.zcf-cc-value{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+.zcf-grip{position:absolute;z-index:10;background:transparent;touch-action:none;user-select:none}
+.zcf-grip:hover{background:#0a748f59}
+.zcf-grip-n{top:0;left:0;right:0;height:6px;cursor:ns-resize}
+.zcf-grip-s{bottom:0;left:0;right:0;height:6px;cursor:ns-resize}
+.zcf-grip-nw{top:0;left:0;width:12px;height:12px;cursor:nwse-resize;z-index:11}
+.zcf-grip-se{right:0;bottom:0;width:12px;height:12px;cursor:nwse-resize;z-index:11}
+html.zcf-dragging,html.zcf-dragging *{cursor:grabbing!important;user-select:none!important}
+html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
+.zcf-cmenu{position:fixed;z-index:4000;min-width:210px;padding:6px 0;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 10px 24px #000000a0;color:#d9d9d9;font-size:12.5px}
+.zcf-cmenu[hidden]{display:none}
+.zcf-cmenu-title{padding:2px 12px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff66}
+.zcf-cmenu-row{display:flex;align-items:center;gap:6px;padding:4px 12px}
+.zcf-cmenu-label{flex:1}
 .zcf-toolbar{display:flex;gap:6px;align-items:center;background:#ffffff05;border-bottom:1px solid #ffffff1a;min-height:42px;padding:7px 8px}
 .zcf-search{flex:1;display:flex;align-items:center;gap:6px;background:#14171a;border:1px solid #ffffff14;border-radius:3px;padding:0 7px}
 .zcf-search i{opacity:.45;font-size:11px}
 .zcf-input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#d9d9d9;font:inherit;font-size:12.5px;padding:5px 0}
 .zcf-input::placeholder{color:#ffffff4d}
-.zcf-iconbtn{width:30px;height:28px;display:flex;align-items:center;justify-content:center;background:#ffffff0a;border:1px solid #ffffff14;border-radius:3px;color:#a6a6a6;cursor:pointer}
-.zcf-iconbtn:hover,.zcf-iconbtn.zcf-active{background:#3d8b40;border-color:#3d8b40;color:#fff}
 .zcf-list{flex:1;overflow-y:auto;overscroll-behavior:contain}
-.zcf-sec{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff59;padding:8px 10px 4px}
 .zcf-row{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;position:relative}
 .zcf-row:hover{background:#ffffff08}
 .zcf-row-main{min-width:0;flex:1}
@@ -5797,9 +7585,6 @@ sandfish		/items/sandfish.webp`;
 .zcf-status{font-size:11px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zcf-status.zcf-status-on{color:#6fcf73;opacity:.9}
 .zcf-pill{background:#ff4242;color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px}
-.zcf-row-actions{display:none;gap:4px}
-.zcf-row:hover .zcf-row-actions,.zcf-row:focus-within .zcf-row-actions{display:flex}
-@media (hover:none){.zcf-row-actions{display:flex}}
 .zcf-mini{background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font-size:10.5px;padding:3px 6px;cursor:pointer}
 .zcf-mini:hover{background:#ffffff1f;color:#fff}
 .zcf-mini.zcf-danger{background:#ff42421f;color:#ff8a8a}
@@ -5839,6 +7624,9 @@ sandfish		/items/sandfish.webp`;
 .zcf-sender{font-weight:700;line-height:1.5}
 .zcf-sender.zcf-them{color:#6fb3c8;cursor:pointer}
 .zcf-sender.zcf-them:hover{text-decoration:underline}
+.zcf-dm:not(.zcf-enemy) .zcf-them .zcf-enemy-mark{display:none}
+.zcf-dm.chat-minimized .chat-title .zcf-enemy-mark{display:none}
+.msg-cont .zcf-enemy-mark{margin-right:4px}
 .zcf-time{opacity:.4;margin-left:8px;font-size:11px}
 .zcf-text{opacity:.9;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
@@ -5884,11 +7672,17 @@ sandfish		/items/sandfish.webp`;
 .zcf-toast{background:#202327;color:#d9d9d9;border:1px solid #000;border-left:3px solid #3d8b40;border-radius:4px;padding:8px 12px;font-size:12.5px;box-shadow:0 6px 18px #00000080}
 .zcf-toast-error{border-left-color:#ff4242}
 .q-btn.zcf-is-friend{color:#81c784!important}
+.q-btn.zcf-is-enemy{color:#ef5350!important}
 .zcf-page{max-width:1000px;margin:0 auto;color:#d9d9d9;font-size:13px}
 .zcf-page-title{display:flex;align-items:center;margin-bottom:16px}
 .zcf-page-side{flex:1;display:flex;align-items:center;min-width:0}
 .zcf-page-side-r{justify-content:flex-end}
 .zcf-page-mid{text-align:center}
+.zcf-page-htabs{display:flex;justify-content:center;gap:18px}
+.zcf-page .zcf-page-h{color:#e0e0e0;text-decoration:none;opacity:.35;transition:opacity .15s}
+.zcf-page .zcf-page-h:hover{opacity:.7}
+.zcf-page .zcf-page-h.zcf-page-h-on{opacity:1}
+.zcf-page .zcf-col-name > .zcf-enemy-mark{margin-right:6px}
 .zcf-page-sub{font-size:12px;color:#9e9e9e;margin-top:2px}
 .zcf-page-back{display:inline-flex;align-items:center;gap:6px;color:#bdbdbd;font-size:12px;text-transform:uppercase;text-decoration:none;padding:4px 8px;border-radius:4px}
 .zcf-page-back:hover{background:#ffffff0d;color:#e0e0e0}
@@ -5960,12 +7754,15 @@ sandfish		/items/sandfish.webp`;
 .zcf-page-btn.zcf-page-danger{background:#ff42421f;color:#ff8a8a}
 .zcf-page-empty{padding:28px 16px;text-align:center;color:#9e9e9e}
 @media (min-width:600px){
+  body .chat-containers{right:0}
   .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
   .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
   .chat-containers .zcf-dm.chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
   .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
 }
 @media (max-width:599.98px){
+  .zcf-cc,.zcf-grip{display:none!important}
+  .chat-containers .zcf.zcf-open ~ .zcf-settings.chat-minimized,.chat-containers.single-chat-mode .zcf-settings.chat-minimized{display:none}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}
