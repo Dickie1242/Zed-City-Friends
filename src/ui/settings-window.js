@@ -43,6 +43,9 @@ export function createSettingsWindow(services, { doc = document } = {}) {
   const friendsOnlyBox = checkbox('Friends only', 'notify-friends', (on) => actions.setNotifyFriendsOnly(on));
   const titleBox = checkbox('Unread count in the browser tab', 'title-count', (on) => actions.setTitleCount(on));
   const note = h('div', { class: 'zcf-set-note' });
+  const timeSelect = h('select', { class: 'zcf-set-select', 'aria-label': 'Chat times', 'data-zcf-focus': 'times' },
+    h('option', { value: 'game' }, 'Zed City time (ZCT)'), h('option', { value: 'local' }, 'Your time'));
+  timeSelect.addEventListener('change', () => actions.setLocalTime(timeSelect.value === 'local'));
 
   // What the browser allows, in words, or '' when notifications can simply be switched on.
   function permissionNote() {
@@ -152,6 +155,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
       section('Notifications', notifyBox.row, h('div', { class: 'zcf-set-sub' }, friendsOnlyBox.row), note, titleBox.row),
       section('Sounds', h('label', { class: 'zcf-set-sound' }, h('span', null, 'New private message'), select, play)),
+      section('Time', h('label', { class: 'zcf-set-sound' }, h('span', null, 'Chat times'), timeSelect), h('div', { class: 'zcf-set-hint' }, 'Hover any chat time to see it in the other clock.')),
       section('About', h('div', { class: 'zcf-set-about' }, `Zed City Friends v${VERSION}`), whatsNew(), devLink()),
     ];
   }
@@ -167,6 +171,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
     friendsOnlyBox.input.checked = s.notifyFriendsOnly;
     friendsOnlyBox.input.disabled = !s.notify;
     titleBox.input.checked = s.titleCount;
+    timeSelect.value = s.localTime ? 'local' : 'game';
     note.textContent = blocked;
     note.hidden = !blocked;
     const rows = chatRows();

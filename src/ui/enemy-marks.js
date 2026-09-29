@@ -9,8 +9,9 @@ const ROW = '.msg-cont';
 // Past this many queued nodes (a hidden tab pauses the frame that drains them), drop the queue and rescan.
 const MAX_PENDING = 500;
 
-// names(): the Set of lower-cased enemy usernames (enemies.js enemyNames).
-export function createEnemyMarks({ doc = document, win = window, keeper = null, names }) {
+// names(): the Set of lower-cased enemy usernames (enemies.js enemyNames). onRow(row): anything else done to
+// each game chat row as it appears and on refresh() (the time display, game-clock.js).
+export function createEnemyMarks({ doc = document, win = window, keeper = null, names, onRow = null }) {
   let dockEl = null;
   let observer = null;
   let frame = 0;
@@ -54,6 +55,7 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
         if (handled.has(row) || !isGameRow(row)) continue;
         handled.add(row);
         markRow(row, set);
+        if (onRow) onRow(row);
       }
     }
   }
@@ -79,6 +81,7 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
       if (!isGameRow(row)) continue;
       handled.add(row);
       markRow(row, set);
+      if (onRow) onRow(row);
     }
   }
 

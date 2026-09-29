@@ -13,7 +13,7 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 - **Chat settings.** The cog in the bottom-right corner: mark all chats read, close all private chats, every chat's settings with a Reset, an optional sound for new private messages, the version, and what's new.
 - **Mute.** The bell in a DM header mutes that conversation: no pop-up tab, no sound, and it's left out of the green count.
 - **Never miss a message.** Optional desktop notifications for new private messages while the game isn't in focus (off until you turn them on in Chat settings, with a Friends only switch), and your unread count in the browser tab's title. Pin conversations to the top of the Chats tab.
-- **Times in your clock.** Hover (or tap) any chat time, in DMs and in the game's own chats, to see it in your own time zone or in game time (ZCT). Opening a DM with unread messages puts a "New" line above the first one, and when moved chats overlap, the one you click comes to the front.
+- **One clock everywhere.** Every chat time shows Zed City time (ZCT), the game's Global, Faction and Activity chats included; hover (or tap) one to see your own time. Chat settings → Time flips it: your time shown, ZCT on hover. Opening a DM with unread messages puts a "New" line above the first one, and when moved chats overlap, the one you click comes to the front.
 
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 

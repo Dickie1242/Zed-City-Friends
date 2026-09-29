@@ -372,7 +372,7 @@
   var SOUNDS = ["off", "chirp", "ping", "bell"];
   var MAX_MUTED = 500;
   var MAX_PINNED = 20;
-  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount"];
+  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "localTime"];
   function defaultSettings() {
     return {
       v: 1,
@@ -383,7 +383,9 @@
       pinned: [],
       notify: false,
       notifyFriendsOnly: false,
-      titleCount: true
+      titleCount: true,
+      localTime: false
+      // chat times in your own clock instead of Zed City time
     };
   }
   var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
@@ -408,7 +410,8 @@
       pinned: normalizeIdList(doc.pinned, MAX_PINNED),
       notify: doc.notify === true,
       notifyFriendsOnly: doc.notifyFriendsOnly === true,
-      titleCount: doc.titleCount !== false
+      titleCount: doc.titleCount !== false,
+      localTime: doc.localTime === true
     };
   }
   function setPmTab(s, tab) {
@@ -5245,6 +5248,8 @@ sandfish		/items/sandfish.webp`;
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const isEnemy2 = services.isEnemy || (() => false);
     const isMuted2 = services.isMuted || (() => false);
+    const localTime = () => !!(services.isLocalTime && services.isLocalTime());
+    let drawnLocal = null;
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -5404,7 +5409,7 @@ sandfish		/items/sandfish.webp`;
       if (item.type === "new") return h("div", { class: "zcf-new-line" }, "New");
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
-      const time = m.ts ? formatMessageTime(m.ts, Date.now()) : "";
+      const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : "";
       if (item.grouped) return h("div", { class: cls, "data-zcf-ts": m.ts || null }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
@@ -5433,8 +5438,14 @@ sandfish		/items/sandfish.webp`;
     function renderConversation() {
       renderNotice();
       loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
+      const local = localTime();
+      if (drawnLocal !== null && drawnLocal !== local) {
+        renderedKeys = [];
+        clear(log);
+      }
+      drawnLocal = local;
       placeNewLine();
-      const items = buildLog(conv.messages(), { newFrom });
+      const items = buildLog(conv.messages(), { local, newFrom });
       const keys = items.map((i) => i.key);
       const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
       const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -5511,6 +5522,8 @@ sandfish		/items/sandfish.webp`;
         conv.ensureLoaded();
         atBottom = true;
         renderConversation();
+      } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
+        renderConversation();
       }
       if (!open) {
         unreadAtOpen = 0;
@@ -5573,7 +5586,7 @@ sandfish		/items/sandfish.webp`;
         {
           title: "Chats",
           points: [
-            "Hover (or tap) any chat time, in DMs and in the game's own chats, to see it in the other clock: your time or game time.",
+            "Every chat time shows Zed City time (ZCT), the game's own chats included; hover (or tap) one to see your time. Chat settings can flip it.",
             'Opening a DM with unread messages puts a "New" line above the first one.',
             "Moved chats that overlap: the one you click comes to the front."
           ]
@@ -5689,6 +5702,13 @@ sandfish		/items/sandfish.webp`;
     const friendsOnlyBox = checkbox("Friends only", "notify-friends", (on) => actions.setNotifyFriendsOnly(on));
     const titleBox = checkbox("Unread count in the browser tab", "title-count", (on) => actions.setTitleCount(on));
     const note = h("div", { class: "zcf-set-note" });
+    const timeSelect = h(
+      "select",
+      { class: "zcf-set-select", "aria-label": "Chat times", "data-zcf-focus": "times" },
+      h("option", { value: "game" }, "Zed City time (ZCT)"),
+      h("option", { value: "local" }, "Your time")
+    );
+    timeSelect.addEventListener("change", () => actions.setLocalTime(timeSelect.value === "local"));
     function permissionNote() {
       const n = services.notifier;
       if (!n || !n.supported) return "Not supported in this browser.";
@@ -5800,6 +5820,7 @@ sandfish		/items/sandfish.webp`;
         ),
         section("Notifications", notifyBox.row, h("div", { class: "zcf-set-sub" }, friendsOnlyBox.row), note, titleBox.row),
         section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
+        section("Time", h("label", { class: "zcf-set-sound" }, h("span", null, "Chat times"), timeSelect), h("div", { class: "zcf-set-hint" }, "Hover any chat time to see it in the other clock.")),
         section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
       ];
     }
@@ -5814,6 +5835,7 @@ sandfish		/items/sandfish.webp`;
       friendsOnlyBox.input.checked = s.notifyFriendsOnly;
       friendsOnlyBox.input.disabled = !s.notify;
       titleBox.input.checked = s.titleCount;
+      timeSelect.value = s.localTime ? "local" : "game";
       note.textContent = blocked;
       note.hidden = !blocked;
       const rows = chatRows();
@@ -6095,7 +6117,7 @@ sandfish		/items/sandfish.webp`;
   // src/ui/enemy-marks.js
   var ROW = ".msg-cont";
   var MAX_PENDING = 500;
-  function createEnemyMarks({ doc = document, win = window, keeper = null, names }) {
+  function createEnemyMarks({ doc = document, win = window, keeper = null, names, onRow = null }) {
     let dockEl = null;
     let observer = null;
     let frame = 0;
@@ -6135,6 +6157,7 @@ sandfish		/items/sandfish.webp`;
           if (handled.has(row) || !isGameRow(row)) continue;
           handled.add(row);
           markRow(row, set);
+          if (onRow) onRow(row);
         }
       }
     }
@@ -6157,6 +6180,7 @@ sandfish		/items/sandfish.webp`;
         if (!isGameRow(row)) continue;
         handled.add(row);
         markRow(row, set);
+        if (onRow) onRow(row);
       }
     }
     function ensure() {
@@ -7512,12 +7536,10 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
-  // src/ui/time-hover.js
+  // src/ui/game-clock.js
   var DAY_MS2 = 864e5;
   var NEAR_MIN = 2;
-  var TAP_MS = 2500;
-  var OURS = "[data-zcf-ts]";
-  var GAME = ".chat-container:not(.zcf) .msg-time";
+  var TIME = ".msg-time";
   var minutesOf = (text2) => {
     const m = /^(\d{1,2}):(\d{2})$/.exec(String(text2).trim());
     return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -7526,70 +7548,140 @@ sandfish		/items/sandfish.webp`;
     const d = Math.abs(a - b) % 1440;
     return Math.min(d, 1440 - d) <= NEAR_MIN;
   };
-  function createTimeHover({ doc = document, win = window, storage, key, now = () => Date.now() }) {
-    let tip = null;
-    let shownFor = null;
-    let hideTimer = 0;
-    let clock = null;
+  function clockOfStamp(value) {
+    if (value === null || value === void 0 || value === "") return null;
+    if (typeof value === "number" || /^\d+$/.test(String(value).trim())) return "local";
+    const s = String(value).trim();
+    if (/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) return "local";
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) return "game";
+    return null;
+  }
+  function createGameClock({ doc = document, storage, key, now = () => Date.now(), onChange = () => {
+  } }) {
+    let known = null;
+    let remembered = null;
+    const printedText = /* @__PURE__ */ new WeakMap();
     try {
       const v = storage.getItem(key);
-      if (v === "local" || v === "game") clock = v;
+      if (v === "local" || v === "game") remembered = v;
     } catch {
     }
-    const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
-    function clockNow() {
+    const changed = () => Promise.resolve().then(onChange);
+    function remember(v) {
+      if (v === remembered) return;
+      remembered = v;
+      try {
+        storage.setItem(key, v);
+      } catch {
+      }
+    }
+    function fromStore() {
+      try {
+        const root = doc.querySelector("#q-app");
+        const app = root && root.__vue_app__;
+        const pinia = app && app.config && app.config.globalProperties && app.config.globalProperties.$pinia;
+        const chat = pinia && pinia._s && typeof pinia._s.get === "function" ? pinia._s.get("chat") : null;
+        const rooms = chat && chat.messages;
+        if (!rooms || typeof rooms.values !== "function") return null;
+        for (const list of rooms.values()) {
+          if (!Array.isArray(list)) continue;
+          for (const m of list) {
+            if (!m || m.type === "system") continue;
+            const found = clockOfStamp(m.sent_at != null ? m.sent_at : m.timestamp);
+            if (found) return found;
+          }
+        }
+      } catch {
+      }
+      return null;
+    }
+    function fromChats() {
       const d = new Date(now());
       const local = d.getHours() * 60 + d.getMinutes();
       const game = d.getUTCHours() * 60 + d.getUTCMinutes();
       const age = (from, m) => (from - m + NEAR_MIN + 1440) % 1440;
       let guess = null;
       for (const chat of doc.querySelectorAll(".chat-container:not(.zcf)")) {
-        const times = chat.querySelectorAll(".msg-time");
-        const m = times.length ? minutesOf(times[times.length - 1].textContent) : null;
+        const times = chat.querySelectorAll(TIME);
+        const last = times[times.length - 1];
+        const m = last ? minutesOf(printedOf(last)) : null;
         if (m === null) continue;
         const isLocal = near(m, local);
-        if (isLocal !== near(m, game)) {
-          const found = isLocal ? "local" : "game";
-          if (found !== clock) {
-            clock = found;
-            try {
-              storage.setItem(key, found);
-            } catch {
-            }
-          }
-          return clock;
-        }
+        if (isLocal !== near(m, game)) return { clock: isLocal ? "local" : "game", sure: true };
         const a = age(local, m);
         const b = age(game, m);
         if (a !== b && (!guess || Math.min(a, b) < guess.age)) guess = { age: Math.min(a, b), clock: a < b ? "local" : "game" };
       }
-      return clock || (guess ? guess.clock : "local");
+      return guess ? { clock: guess.clock, sure: false } : null;
     }
-    function gameMoment(minutes, clock2) {
+    function printed() {
+      if (known) return known;
+      const before = remembered;
+      known = fromStore();
+      if (known) remember(known);
+      else {
+        const seen = fromChats();
+        if (seen && seen.sure) remember(seen.clock);
+        if (remembered !== before) changed();
+        return remembered || (seen ? seen.clock : "local");
+      }
+      if (known !== before) changed();
+      return known;
+    }
+    function printedOf(el) {
+      const rec = printedText.get(el);
+      const text2 = el.textContent.trim();
+      return rec && text2 === rec.shown ? rec.printed : text2;
+    }
+    function momentAt(minutes, clock) {
       const t = now();
       const d = new Date(t);
-      const at = clock2 === "game" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Math.floor(minutes / 60), minutes % 60) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
+      const at = clock === "game" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), Math.floor(minutes / 60), minutes % 60) : new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
       if (at <= t + NEAR_MIN * 6e4) return at;
-      if (clock2 === "game") return at - DAY_MS2;
+      if (clock === "game") return at - DAY_MS2;
       const y = new Date(at);
       y.setDate(y.getDate() - 1);
       return y.getTime();
     }
+    function momentOf(el) {
+      const m = minutesOf(printedOf(el));
+      return m === null ? null : momentAt(m, printed());
+    }
+    function rewrite(row, want) {
+      const el = row.matches && row.matches(TIME) ? row : row.querySelector(TIME);
+      if (!el) return;
+      const text2 = printedOf(el);
+      const ts = momentOf(el);
+      const shown = ts === null || printed() === want ? text2 : formatClock(ts, want === "local");
+      printedText.set(el, { printed: text2, shown });
+      const node = el.firstChild;
+      if (el.childNodes.length === 1 && node.nodeType === 3 && node.nodeValue.trim() !== shown) node.nodeValue = shown;
+    }
+    return { printed, momentOf, rewrite };
+  }
+
+  // src/ui/time-hover.js
+  var TAP_MS = 2500;
+  var OURS = "[data-zcf-ts]";
+  var GAME = `.chat-container:not(.zcf) ${TIME}`;
+  function createTimeHover({ doc = document, win = window, now = () => Date.now(), isLocal = () => false, gameClock }) {
+    let tip = null;
+    let shownFor = null;
+    let hideTimer = 0;
+    const sameClocks = () => new Date(now()).getTimezoneOffset() === 0;
+    const label = (local) => local ? "your time" : "ZCT";
     function textFor(el) {
+      if (sameClocks()) return el.matches(OURS) && !el.classList.contains("zcf-time") ? formatMessageTime(Number(el.getAttribute("data-zcf-ts")), now()) : "";
+      const other = !isLocal();
       if (el.matches(OURS)) {
         const ts2 = Number(el.getAttribute("data-zcf-ts"));
         if (!Number.isFinite(ts2) || ts2 <= 0) return "";
-        const game = formatMessageTime(ts2, now(), false);
-        if (sameClocks()) return el.classList.contains("zcf-time") ? "" : game;
-        const local = `${formatMessageTime(ts2, now(), true)} your time`;
-        return el.classList.contains("zcf-time") ? local : `${game} ZCT · ${local}`;
+        const otherText = `${formatMessageTime(ts2, now(), other)} ${label(other)}`;
+        if (el.classList.contains("zcf-time")) return otherText;
+        return `${formatMessageTime(ts2, now(), !other)} ${label(!other)} · ${otherText}`;
       }
-      if (sameClocks()) return "";
-      const minutes = minutesOf(el.textContent);
-      if (minutes === null) return "";
-      const printed = clockNow();
-      const ts = gameMoment(minutes, printed);
-      return printed === "game" ? `${formatClock(ts, true)} your time` : `${formatClock(ts, false)} ZCT`;
+      const ts = gameClock ? gameClock.momentOf(el) : null;
+      return ts === null ? "" : `${formatClock(ts, other)} ${label(other)}`;
     }
     function hide() {
       clearTimeout(hideTimer);
@@ -7634,7 +7726,7 @@ sandfish		/items/sandfish.webp`;
     doc.addEventListener("pointerup", onTap);
     doc.addEventListener("scroll", hide, true);
     return {
-      clock: () => clock,
+      hide,
       destroy() {
         doc.removeEventListener("mouseover", onOver);
         doc.removeEventListener("pointerup", onTap);
@@ -7882,6 +7974,7 @@ sandfish		/items/sandfish.webp`;
       },
       setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, "notifyFriendsOnly", on)),
       setTitleCount: (on) => settings.update((s) => setFlag(s, "titleCount", on)),
+      setLocalTime: (on) => settings.update((s) => setFlag(s, "localTime", on)),
       togglePin(id) {
         if (!settings.update((s) => togglePinned(s, id))) toast("You can pin up to 20 chats.");
       },
@@ -7918,6 +8011,7 @@ sandfish		/items/sandfish.webp`;
       enemies,
       isEnemy: (id) => isEnemy(enemies.get(), id),
       isMuted: (id) => isMuted(settings.get(), id),
+      isLocalTime: () => settings.get().localTime,
       notifier,
       sound,
       playerId,
@@ -7968,10 +8062,12 @@ sandfish		/items/sandfish.webp`;
       after: () => profileButton.wrap,
       myId: playerId
     });
-    const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
+    const gameClock = createGameClock({ doc, storage, key: `zcf:v1:${playerId}:gameClock`, now, onChange: () => marks.refresh() });
+    const wantClock = () => settings.get().localTime ? "local" : "game";
+    const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, wantClock()) });
     const page = createFriendsPage(services, { doc, win, keeper });
     const titleCount = createTitleCount({ doc, win });
-    const timeHover = createTimeHover({ doc, win, storage, key: `zcf:v1:${playerId}:gameClock`, now });
+    const timeHover = createTimeHover({ doc, win, now, isLocal: () => settings.get().localTime, gameClock });
     const syncTitle = () => {
       const s = settings.get();
       titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -7997,9 +8093,15 @@ sandfish		/items/sandfish.webp`;
       view.pm.syncBadge();
       syncTitle();
     });
+    let shownClock = wantClock();
     settings.subscribe(() => {
       renderDock();
       syncTitle();
+      if (wantClock() !== shownClock) {
+        shownClock = wantClock();
+        marks.refresh();
+        timeHover.hide();
+      }
     });
     enemies.subscribe(() => {
       renderDock();
@@ -8241,6 +8343,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-divider:before,.zcf-divider:after{content:"";flex:1;border-top:1px solid #ffffff14}
 .zcf-new-line{display:flex;align-items:center;gap:8px;margin:8px 15px 2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6fcf73}
 .zcf-new-line:before,.zcf-new-line:after{content:"";flex:1;border-top:1px solid #3d8b40aa}
+.zcf-set-hint{font-size:11px;opacity:.5;margin-top:4px}
 .zcf-tip{position:fixed;z-index:4001;pointer-events:none;padding:4px 8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 4px 12px #00000080;color:#e0e0e0;font-size:11px;line-height:1.3;white-space:nowrap}
 .zcf-tip[hidden]{display:none}
 .zcf-msg{padding:2px 15px;margin-top:8px}

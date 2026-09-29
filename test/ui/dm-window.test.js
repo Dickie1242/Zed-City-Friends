@@ -403,7 +403,22 @@ describe('dm window', () => {
     win.update();
   });
 
-  it('shows game time and stamps each time with its moment, for the your-time hover', async () => {
+  it('shows your time when the Time setting says so, catching up after being minimized', async () => {
+    const { el, services, win } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00')] }) });
+    await flush();
+    expect(el.querySelector('.zcf-time').textContent).toContain('14:02');
+    services.settings.update((s) => { s.localTime = true; });
+    win.update();
+    expect(el.querySelector('.zcf-time').textContent).toContain('10:02');
+    services.store.update((s) => setDmOpen(s, THEM, false));
+    services.settings.update((s) => { s.localTime = false; });
+    win.update();
+    services.store.update((s) => setDmOpen(s, THEM, true));
+    await flush();
+    expect(el.querySelector('.zcf-time').textContent).toContain('14:02');
+  });
+
+  it('shows game time and stamps each time with its moment, for the hover', async () => {
     const { el } = mount({
       getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:02:00'), rawMsg(2, THEM, 'again', '2026-09-28 14:03:00')] }),
     });

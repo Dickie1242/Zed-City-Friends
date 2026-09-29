@@ -40,6 +40,7 @@ import { createFriendsPage } from './ui/friends-page.js';
 import { createChatCustom } from './ui/chat-custom/index.js';
 import { createTitleCount } from './ui/title-count.js';
 import { createTimeHover } from './ui/time-hover.js';
+import { createGameClock } from './ui/game-clock.js';
 import { avatarUrl } from './ui/dom.js';
 import { statsPlayer } from './util.js';
 
@@ -315,6 +316,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     },
     setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on)),
     setTitleCount: (on) => settings.update((s) => setFlag(s, 'titleCount', on)),
+    setLocalTime: (on) => settings.update((s) => setFlag(s, 'localTime', on)),
     togglePin(id) {
       if (!settings.update((s) => togglePinned(s, id))) toast('You can pin up to 20 chats.');
     },
@@ -352,6 +354,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
     isMuted: (id) => isMuted(settings.get(), id),
+    isLocalTime: () => settings.get().localTime,
     notifier,
     sound,
     playerId,
@@ -404,10 +407,13 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     after: () => profileButton.wrap,
     myId: playerId,
   });
-  const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
+  // Chat times everywhere in the clock picked in Chat settings; the game's own chats get theirs rewritten.
+  const gameClock = createGameClock({ doc, storage, key: `zcf:v1:${playerId}:gameClock`, now, onChange: () => marks.refresh() });
+  const wantClock = () => (settings.get().localTime ? 'local' : 'game');
+  const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, wantClock()) });
   const page = createFriendsPage(services, { doc, win, keeper });
   const titleCount = createTitleCount({ doc, win });
-  const timeHover = createTimeHover({ doc, win, storage, key: `zcf:v1:${playerId}:gameClock`, now });
+  const timeHover = createTimeHover({ doc, win, now, isLocal: () => settings.get().localTime, gameClock });
   const syncTitle = () => {
     const s = settings.get();
     titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -434,9 +440,15 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     view.pm.syncBadge();
     syncTitle();
   });
+  let shownClock = wantClock();
   settings.subscribe(() => {
     renderDock();
     syncTitle();
+    if (wantClock() !== shownClock) {
+      shownClock = wantClock();
+      marks.refresh();
+      timeHover.hide();
+    }
   });
   enemies.subscribe(() => {
     renderDock();

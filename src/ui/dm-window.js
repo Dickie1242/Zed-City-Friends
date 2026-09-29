@@ -17,6 +17,8 @@ export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const isEnemy = services.isEnemy || (() => false);
   const isMuted = services.isMuted || (() => false);
+  const localTime = () => !!(services.isLocalTime && services.isLocalTime());
+  let drawnLocal = null; // the clock the log was last drawn in
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -204,8 +206,8 @@ export function createDmWindow(services, userId) {
     if (item.type === 'new') return h('div', { class: 'zcf-new-line' }, 'New');
     const m = item.msg;
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
-    const time = m.ts ? formatMessageTime(m.ts, Date.now()) : '';
-    // data-zcf-ts: hovering shows the time in your own time zone (ui/time-hover.js).
+    const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : '';
+    // data-zcf-ts: hovering shows the time in the other clock (ui/time-hover.js).
     if (item.grouped) return h('div', { class: cls, 'data-zcf-ts': m.ts || null }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
     const mine = m.senderId === myId;
     const sender = mine
@@ -239,8 +241,16 @@ export function createDmWindow(services, userId) {
   function renderConversation() {
     renderNotice();
     loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
+    const local = localTime();
+    if (drawnLocal !== null && drawnLocal !== local) {
+      // Zed City time <-> your time: every time and day divider changes, so draw the log afresh. Checked here,
+      // not only on a settings change, so a window that was minimized at the time catches up on reopen.
+      renderedKeys = [];
+      clear(log);
+    }
+    drawnLocal = local;
     placeNewLine();
-    const items = buildLog(conv.messages(), { newFrom });
+    const items = buildLog(conv.messages(), { local, newFrom });
     const keys = items.map((i) => i.key);
     const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
     const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -320,6 +330,8 @@ export function createDmWindow(services, userId) {
       newFrom = null;
       conv.ensureLoaded();
       atBottom = true;
+      renderConversation();
+    } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
       renderConversation();
     }
     if (!open) {

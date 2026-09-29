@@ -153,10 +153,16 @@ describe('chat settings window', () => {
     expect(el.querySelector('.zcf-set-note').textContent).toContain('Not supported');
   });
 
-  it('has no time zone setting: hovering a time shows your own', () => {
-    const { el } = mount();
-    expect(el.querySelector('select[aria-label="Message times"]')).toBeNull();
-    expect(el.textContent).not.toContain('Display');
+  it('picks the clock chat times show, Zed City time by default', () => {
+    const { services, el } = mount();
+    const select = el.querySelector('select[aria-label="Chat times"]');
+    expect(select.value).toBe('game');
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Zed City time (ZCT)', 'Your time']);
+    select.value = 'local';
+    select.dispatchEvent(new Event('change'));
+    expect(services.actions.setLocalTime).toHaveBeenCalledWith(true);
+    expect(select.value).toBe('local');
+    expect(el.textContent).toContain('Hover any chat time');
   });
 
   it('keeps focus on the sound picker when the window redraws', () => {

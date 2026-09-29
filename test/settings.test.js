@@ -29,6 +29,7 @@ describe('settings document', () => {
       notify: false,
       notifyFriendsOnly: false,
       titleCount: true,
+      localTime: false,
     });
     expect(normalizeSettings({ v: 1, pmTab: 'nope', sound: 'siren' })).toMatchObject({ pmTab: 'chats', sound: 'off' });
     expect(() => normalizeSettings({ v: 2 })).toThrow();
@@ -76,7 +77,9 @@ describe('settings document', () => {
   });
 
   it('reads the 0.6 options strictly, with notifications off and the tab count on by default', () => {
-    expect(defaultSettings()).toMatchObject({ pinned: [], notify: false, notifyFriendsOnly: false, titleCount: true });
+    expect(defaultSettings()).toMatchObject({ pinned: [], notify: false, notifyFriendsOnly: false, titleCount: true, localTime: false });
+    expect(normalizeSettings({ v: 1, localTime: true }).localTime).toBe(true);
+    expect(normalizeSettings({ v: 1, localTime: 'yes' }).localTime).toBe(false);
     expect(normalizeSettings({ v: 1, notify: 'yes', notifyFriendsOnly: 1, titleCount: 0, pinned: [5, '5', 7, 'x'] })).toMatchObject({
       notify: false,
       notifyFriendsOnly: false,
