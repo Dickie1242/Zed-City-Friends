@@ -638,6 +638,33 @@
     if (message === null || message === void 0) return "";
     return String(message);
   }
+  var IMAGE_RE = /!\[([^\]]*)\]\((https:\/\/cdn\.zed\.city\/[^\s()<>"'\\]*)\)/g;
+  var MAX_ALT_LEN = 200;
+  function messageParts(text) {
+    const s = typeof text === "string" ? text : String(text ?? "");
+    const raw = [];
+    let last = 0;
+    IMAGE_RE.lastIndex = 0;
+    let m;
+    while (m = IMAGE_RE.exec(s)) {
+      if (m.index > last) raw.push({ type: "text", text: s.slice(last, m.index) });
+      raw.push({ type: "image", alt: m[1].slice(0, MAX_ALT_LEN), src: m[2] });
+      last = m.index + m[0].length;
+    }
+    if (last < s.length || raw.length === 0) raw.push({ type: "text", text: s.slice(last) });
+    const parts = [];
+    for (const p of raw) {
+      if (p.type === "text" && p.text === "") continue;
+      const top = parts[parts.length - 1];
+      if (p.type === "text" && top && top.type === "text") top.text += p.text;
+      else parts.push(p.type === "text" ? { type: "text", text: p.text } : p);
+    }
+    return parts.length ? parts : [{ type: "text", text: "" }];
+  }
+  function previewText(text) {
+    const s = messageParts(text).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.text).join("");
+    return s.replace(/\s+/g, " ").trim();
+  }
   function normalizeMessage(raw) {
     const id = toId(raw && raw.id);
     if (!id) return null;
@@ -661,7 +688,7 @@
       userId,
       username: typeof other.username === "string" && other.username ? other.username : `#${userId}`,
       avatar: typeof other.avatar === "string" && other.avatar ? other.avatar : null,
-      preview: messageText(raw.message),
+      preview: previewText(messageText(raw.message)),
       senderId: toId(raw.sender_id),
       lastReply: parseSentAt(raw.last_reply),
       newMail: unread > 0 ? Math.floor(unread) : 0,
@@ -1866,15 +1893,26 @@
       const entry = s.dock.dms.find((d) => d.id === userId);
       return conv.state.info && conv.state.info.avatar || s.friends[userId] && s.friends[userId].avatar || entry && entry.avatar || null;
     }
+    function renderGif(part) {
+      const img = h("img", { class: "zcf-gif", src: part.src, alt: part.alt, title: part.alt, loading: "lazy", referrerpolicy: "no-referrer" });
+      img.addEventListener("load", () => {
+        if (atBottom) scrollToBottom();
+      });
+      img.addEventListener("error", () => img.replaceWith(document.createTextNode(part.alt)));
+      return img;
+    }
+    function renderText(text) {
+      return messageParts(text).map((part) => part.type === "image" ? renderGif(part) : document.createTextNode(part.text));
+    }
     function renderItem(item) {
       if (item.type === "divider") return h("div", { class: "zcf-divider" }, item.label);
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
       const time = m.ts ? formatMessageTime(m.ts) : "";
-      if (item.grouped) return h("div", { class: cls, title: time }, h("div", { class: "zcf-text" }, m.text));
+      if (item.grouped) return h("div", { class: cls, title: time }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, displayName());
-      return h("div", { class: cls }, sender, h("span", { class: "zcf-time" }, time), h("div", { class: "zcf-text" }, m.text));
+      return h("div", { class: cls }, sender, h("span", { class: "zcf-time" }, time), h("div", { class: "zcf-text" }, ...renderText(m.text)));
     }
     function renderPending() {
       clear(pendingEl);
@@ -1882,7 +1920,7 @@
         pendingEl.appendChild(h(
           "div",
           { class: `zcf-msg zcf-pending-msg${p.error ? " zcf-failed" : ""}` },
-          h("div", { class: "zcf-text" }, p.text),
+          h("div", { class: "zcf-text" }, ...renderText(p.text)),
           p.error ? h("div", { class: "zcf-error" }, "Failed to send · ", h("button", { class: "zcf-link", type: "button", onclick: () => conv.retry(p.localId) }, "Retry")) : null
         ));
       }
@@ -2528,6 +2566,7 @@
 .zcf-sender.zcf-them:hover{text-decoration:underline}
 .zcf-time{opacity:.4;margin-left:8px;font-size:11px}
 .zcf-text{opacity:.9;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
 .zcf-system .zcf-text{font-style:italic;opacity:.7}
 .zcf-pending-msg .zcf-text{opacity:.55}
 .zcf-failed .zcf-text{opacity:.5}

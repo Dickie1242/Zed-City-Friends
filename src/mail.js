@@ -19,6 +19,43 @@ export function messageText(message) {
   return String(message);
 }
 
+// The game routes GIF embeds through its own image proxy (cdn.zed.city); only that host is
+// ever fetched, so a sender can't use a Markdown image to leak the viewer's IP to another host.
+const IMAGE_RE = /!\[([^\]]*)\]\((https:\/\/cdn\.zed\.city\/[^\s()<>"'\\]*)\)/g;
+const MAX_ALT_LEN = 200;
+
+// Splits message text into ordered text/image parts. Linear-time: one global-flag regex pass.
+export function messageParts(text) {
+  const s = typeof text === 'string' ? text : String(text ?? '');
+  const raw = [];
+  let last = 0;
+  IMAGE_RE.lastIndex = 0;
+  let m;
+  while ((m = IMAGE_RE.exec(s))) {
+    if (m.index > last) raw.push({ type: 'text', text: s.slice(last, m.index) });
+    raw.push({ type: 'image', alt: m[1].slice(0, MAX_ALT_LEN), src: m[2] });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length || raw.length === 0) raw.push({ type: 'text', text: s.slice(last) });
+  // Merge adjacent text parts (can happen after dropping empties below) and drop empty text parts.
+  const parts = [];
+  for (const p of raw) {
+    if (p.type === 'text' && p.text === '') continue;
+    const top = parts[parts.length - 1];
+    if (p.type === 'text' && top && top.type === 'text') top.text += p.text;
+    else parts.push(p.type === 'text' ? { type: 'text', text: p.text } : p);
+  }
+  return parts.length ? parts : [{ type: 'text', text: '' }];
+}
+
+// Thread-list preview: same text, but each allowed GIF embed collapses to "GIF: <alt>".
+export function previewText(text) {
+  const s = messageParts(text)
+    .map((p) => (p.type === 'image' ? `GIF${p.alt ? ': ' + p.alt : ''}` : p.text))
+    .join('');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 export function normalizeMessage(raw) {
   const id = toId(raw && raw.id);
   if (!id) return null;
@@ -44,7 +81,7 @@ export function normalizeThread(raw) {
     userId,
     username: typeof other.username === 'string' && other.username ? other.username : `#${userId}`,
     avatar: typeof other.avatar === 'string' && other.avatar ? other.avatar : null,
-    preview: messageText(raw.message),
+    preview: previewText(messageText(raw.message)),
     senderId: toId(raw.sender_id),
     lastReply: parseSentAt(raw.last_reply),
     newMail: unread > 0 ? Math.floor(unread) : 0,

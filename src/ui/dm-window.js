@@ -1,6 +1,6 @@
 // One DM window/tab in the dock, styled like the game's chat (name · time · text, grouped).
 import { h, clear, icon, avatar, badge, setBadge } from './dom.js';
-import { buildLog } from '../mail.js';
+import { buildLog, messageParts } from '../mail.js';
 import { formatMessageTime, statusText } from '../time.js';
 
 const BUSY_TEXT = {
@@ -94,24 +94,40 @@ export function createDmWindow(services, userId) {
     return (conv.state.info && conv.state.info.avatar) || (s.friends[userId] && s.friends[userId].avatar) || (entry && entry.avatar) || null;
   }
 
+  // A GIF loading after render grows the log; if we were pinned to the bottom, follow it back down.
+  // Uses the same `atBottom`/scrollToBottom the scroll handler and renderConversation share.
+  function renderGif(part) {
+    const img = h('img', { class: 'zcf-gif', src: part.src, alt: part.alt, title: part.alt, loading: 'lazy', referrerpolicy: 'no-referrer' });
+    img.addEventListener('load', () => {
+      if (atBottom) scrollToBottom();
+    });
+    // A dead GIF degrades to its alt text instead of showing a broken-image icon.
+    img.addEventListener('error', () => img.replaceWith(document.createTextNode(part.alt)));
+    return img;
+  }
+
+  function renderText(text) {
+    return messageParts(text).map((part) => (part.type === 'image' ? renderGif(part) : document.createTextNode(part.text)));
+  }
+
   function renderItem(item) {
     if (item.type === 'divider') return h('div', { class: 'zcf-divider' }, item.label);
     const m = item.msg;
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
     const time = m.ts ? formatMessageTime(m.ts) : '';
-    if (item.grouped) return h('div', { class: cls, title: time }, h('div', { class: 'zcf-text' }, m.text));
+    if (item.grouped) return h('div', { class: cls, title: time }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
     const mine = m.senderId === myId;
     const sender = mine
       ? h('span', { class: 'zcf-sender' }, myName)
       : h('span', { class: 'zcf-sender zcf-them', onclick: () => router.navigate(`/profile/${userId}`) }, displayName());
-    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time' }, time), h('div', { class: 'zcf-text' }, m.text));
+    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time' }, time), h('div', { class: 'zcf-text' }, ...renderText(m.text)));
   }
 
   function renderPending() {
     clear(pendingEl);
     for (const p of conv.pending()) {
       pendingEl.appendChild(h('div', { class: `zcf-msg zcf-pending-msg${p.error ? ' zcf-failed' : ''}` },
-        h('div', { class: 'zcf-text' }, p.text),
+        h('div', { class: 'zcf-text' }, ...renderText(p.text)),
         p.error
           ? h('div', { class: 'zcf-error' }, 'Failed to send · ', h('button', { class: 'zcf-link', type: 'button', onclick: () => conv.retry(p.localId) }, 'Retry'))
           : null));

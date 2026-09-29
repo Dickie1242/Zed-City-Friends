@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   messageText,
+  messageParts,
+  previewText,
   normalizeMessages,
   normalizeThreads,
   buildLog,
@@ -102,5 +104,75 @@ describe('mail', () => {
   it('drops pending messages once their server copy arrives', () => {
     const pending = [{ localId: 1, realId: 50 }, { localId: 2, realId: null }, { localId: 3, realId: 60 }];
     expect(reconcilePending(pending, [{ id: 50 }]).map((p) => p.localId)).toEqual([2, 3]);
+  });
+});
+
+describe('messageParts', () => {
+  const gif = (path) => 'https://cdn.zed.city/?url=' + encodeURIComponent(`https://static.klipy.com/${path}`);
+
+  it('turns a plain GIF into a single image part', () => {
+    const src = gif('ii/4493325008d34b7bf8cd6813cd5c1619/d3/19/Wgu8FhZhblHegj8J.gif');
+    expect(messageParts(`![Bibi Impressed](${src})`)).toEqual([{ type: 'image', alt: 'Bibi Impressed', src }]);
+  });
+
+  it('keeps text around a GIF', () => {
+    const src = gif('a.gif');
+    expect(messageParts(`brooo\n![hi](${src})\nthanks`)).toEqual([
+      { type: 'text', text: 'brooo\n' },
+      { type: 'image', alt: 'hi', src },
+      { type: 'text', text: '\nthanks' },
+    ]);
+  });
+
+  it('handles two GIFs back to back', () => {
+    const a = gif('a.gif');
+    const b = gif('b.gif');
+    expect(messageParts(`![a](${a})![b](${b})`)).toEqual([
+      { type: 'image', alt: 'a', src: a },
+      { type: 'image', alt: 'b', src: b },
+    ]);
+  });
+
+  it('leaves a non-proxy URL as text', () => {
+    expect(messageParts('![x](https://evil.example/a.gif)')).toEqual([{ type: 'text', text: '![x](https://evil.example/a.gif)' }]);
+  });
+
+  it('leaves a javascript: URL as text', () => {
+    expect(messageParts('![x](javascript:alert(1))')).toEqual([{ type: 'text', text: '![x](javascript:alert(1))' }]);
+  });
+
+  it('leaves a non-https proxy URL as text', () => {
+    expect(messageParts('![x](http://cdn.zed.city/a.gif)')).toEqual([{ type: 'text', text: '![x](http://cdn.zed.city/a.gif)' }]);
+  });
+
+  it('leaves a URL containing a space or a quote as text', () => {
+    expect(messageParts('![x](https://cdn.zed.city/a b.gif)')).toEqual([{ type: 'text', text: '![x](https://cdn.zed.city/a b.gif)' }]);
+    expect(messageParts("![x](https://cdn.zed.city/a'b.gif)")).toEqual([{ type: 'text', text: "![x](https://cdn.zed.city/a'b.gif)" }]);
+  });
+
+  it('returns a single text part when there is no Markdown', () => {
+    expect(messageParts('just a normal message')).toEqual([{ type: 'text', text: 'just a normal message' }]);
+  });
+});
+
+describe('previewText', () => {
+  it('replaces an allowed GIF embed with "GIF: <alt>"', () => {
+    const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/ii/4493325008d34b7bf8cd6813cd5c1619/d3/19/Wgu8FhZhblHegj8J.gif');
+    expect(previewText(`![Bibi Impressed](${src})`)).toBe('GIF: Bibi Impressed');
+  });
+
+  it('keeps surrounding text and collapses whitespace', () => {
+    const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    expect(previewText(`brooo\n![hi](${src})\nthanks`)).toBe('brooo GIF: hi thanks');
+  });
+
+  it('leaves a non-proxy embed as-is', () => {
+    expect(previewText('![x](https://evil.example/a.gif)')).toBe('![x](https://evil.example/a.gif)');
+  });
+
+  it('feeds normalizeThread\'s preview', () => {
+    const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    const [t] = normalizeThreads([rawThread(10, { message: `![hi](${src})` })]);
+    expect(t.preview).toBe('GIF: hi');
   });
 });

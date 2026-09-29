@@ -107,6 +107,64 @@ describe('dm window', () => {
     expect(texts(el)).toEqual(['<img src=x onerror=alert(1)>']);
   });
 
+  it('renders an allowed GIF embed as an image, not raw markdown text', async () => {
+    const gif = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/ii/x/a.gif');
+    const { el } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, `brooo\n![Bibi Impressed](${gif})`, '2026-09-28 14:02:00')] }),
+    });
+    await flush();
+    const imgs = el.querySelectorAll('.zcf-log img.zcf-gif');
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].getAttribute('src')).toBe(gif);
+    expect(imgs[0].getAttribute('alt')).toBe('Bibi Impressed');
+    expect(el.querySelector('.zcf-log').textContent).not.toContain('![');
+  });
+
+  it('leaves a non-proxy image embed as literal text', async () => {
+    const { el } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, '![x](https://evil.example/a.gif)', '2026-09-28 14:02:00')] }),
+    });
+    await flush();
+    expect(el.querySelector('.zcf-log img.zcf-gif')).toBeNull();
+    expect(texts(el)).toEqual(['![x](https://evil.example/a.gif)']);
+  });
+
+  it('replaces a GIF with its alt text if it fails to load', async () => {
+    const gif = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    const { el } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, `![oops](${gif})`, '2026-09-28 14:02:00')] }),
+    });
+    await flush();
+    const img = el.querySelector('.zcf-gif');
+    img.dispatchEvent(new Event('error'));
+    expect(el.querySelector('.zcf-gif')).toBeNull();
+    expect(texts(el)).toEqual(['oops']);
+  });
+
+  it('scrolls the log back to the bottom when a pinned GIF finishes loading', async () => {
+    const gif = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    const { el } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, `![hi](${gif})`, '2026-09-28 14:02:00')] }),
+    });
+    await flush();
+    const scroller = el.querySelector('.zcf-scroll');
+    Object.defineProperty(scroller, 'scrollHeight', { value: 500, configurable: true });
+    scroller.scrollTop = 100; // simulate the GIF having grown the log below the visible area
+    el.querySelector('.zcf-gif').dispatchEvent(new Event('load'));
+    expect(scroller.scrollTop).toBe(500);
+  });
+
+  it('renders GIFs in pending and failed optimistic messages too', async () => {
+    const gif = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
+    const { el, api } = mount({ sendMail: vi.fn().mockResolvedValue({ ok: false, kind: 'network' }) });
+    await flush();
+    el.querySelector('textarea').value = `check this ![hi](${gif})`;
+    el.querySelector('.zcf-send').click();
+    await flush();
+    expect(el.querySelector('.zcf-failed img.zcf-gif')).not.toBeNull();
+    expect(api.sendMail).toHaveBeenCalled();
+  });
+
   it('header buttons minimize, close and open the inbox', async () => {
     const { el, services } = mount();
     await flush();
