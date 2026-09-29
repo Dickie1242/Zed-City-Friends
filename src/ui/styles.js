@@ -28,6 +28,11 @@ export const CSS = `
 .zcf-pm-line{display:flex;align-items:center;gap:6px;min-width:0}
 .zcf-pm-line .zcf-name{min-width:0}
 .zcf-pm-time{margin-left:auto;flex:none;font-size:10.5px;opacity:.45;white-space:nowrap}
+.zcf-pm-line .zcf-pm-pin{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-right:-4px;padding:0;background:none;border:0;border-radius:3px;color:#ffffff59;font-size:10px;cursor:pointer;opacity:0}
+.zcf-row:hover .zcf-pm-line .zcf-pm-pin,.zcf-row:focus-within .zcf-pm-line .zcf-pm-pin,.zcf-pm-line .zcf-pm-pin.zcf-pinned{opacity:1}
+.zcf-pm-line .zcf-pm-pin:hover,.zcf-pm-line .zcf-pm-pin:focus-visible{color:#e0e0e0;background:#ffffff14}
+.zcf-pm-line .zcf-pm-pin.zcf-pinned{color:#f2c037}
+@media (hover:none){.zcf-pm-line .zcf-pm-pin{opacity:1}}
 .zcf-pm-preview.zcf-unread{color:#fff;opacity:1;font-weight:500}
 .zcf-pill.zcf-pill-green{background:#3d8b40}
 .zcf-pill.zcf-pill-dim{opacity:.45}

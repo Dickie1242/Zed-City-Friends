@@ -91,7 +91,8 @@ const dock = { friendsOpen: false, settingsOpen: false, dms: [] };
 const settings = { v: 1, pmTab: tabFor[scene] || 'chats', sound: 'off', chats: {}, muted: [] };
 if (scene.startsWith('pm-')) {
   dock.friendsOpen = true;
-  if (scene === 'pm-chats') dock.dms.push({ id: 5, open: true, lastUsed: 2, username: 'Spike', avatar: null });
+  if (scene === 'pm-chats') dock.dms.push({ id: 5, open: window.innerWidth >= 600, lastUsed: 2, username: 'Spike', avatar: null });
+  if (scene === 'pm-chats') settings.pinned = [9, 7];
 }
 if (scene === 'dm') dock.dms.push({ id: 5, open: true, lastUsed: 2, username: 'Spike', avatar: null });
 if (scene === 'settings') {

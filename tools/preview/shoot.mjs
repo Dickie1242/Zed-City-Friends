@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const DESKTOP = ['pm-chats', 'pm-friends', 'pm-faction', 'pm-blocked', 'settings', 'custom', 'enemies', 'profile'];
-const PHONE = ['pm-chats', 'settings', 'dm'];
+const PHONE = ['pm-chats', 'pm-friends', 'settings', 'dm'];
 const outDir = process.argv[2] || join(here, 'out');
 
 if (!existsSync(join(here, 'game-css', 'LoggedIn.css'))) throw new Error('Run node tools/preview/fetch-css.mjs first.');
