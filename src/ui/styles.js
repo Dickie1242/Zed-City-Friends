@@ -5,6 +5,7 @@ export const CSS = `
 .zcf.chat-container .chat-header{gap:6px}
 .zcf.chat-container .chat-title{min-width:0}
 .zcf-friends .chat-title .chat-icon{color:#3d8b40}
+.chat-containers .zcf-friends{order:2}
 .zcf .zcf-count{text-transform:none;letter-spacing:0;opacity:.6;font-weight:400}
 .zcf .zcf-hbtn{background:none;border:0;padding:0 2px;margin:0;color:#ffffff4d;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center}
 .zcf .zcf-hbtn:hover{color:#ffffffb3}
@@ -59,6 +60,7 @@ export const CSS = `
 .zcf-dm.chat-minimized .zcf-close{position:absolute;top:-6px;left:-6px;width:14px;height:14px;border-radius:50%;background:#2c3036;color:#fff;font-size:8px;justify-content:center;display:none;padding:0}
 .zcf-dm.chat-minimized:hover .zcf-close{display:flex}
 .zcf-dm.chat-minimized .chat-header{position:relative}
+.zcf-dm.chat-minimized .zcf-dm-name{display:none}
 .zcf-notice{background:#f2c0371a;color:#f2c037;font-size:11.5px;padding:6px 12px;border-bottom:1px solid #f2c03733}
 .zcf-scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 8px}
 .zcf-loader{text-align:center;font-size:11px;opacity:.5;padding:6px}
@@ -89,8 +91,14 @@ export const CSS = `
 .zcf-addname{background:none;border:1px solid #3d8b4088;border-radius:3px;color:#6fcf73;font-size:10px;line-height:15px;padding:0 4px;margin-left:6px;cursor:pointer;vertical-align:1px}
 .zcf-addname:hover{background:#3d8b40;color:#fff}
 .q-btn.zcf-is-friend{color:#81c784!important}
+@media (min-width:600px){
+  .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
+  .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
+  .chat-containers .zcf-dm.chat-minimized .chat-title{justify-content:flex-start;gap:6px}
+  .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
+}
 @media (max-width:599.98px){
-  .chat-containers .zcf.zcf-open{order:1;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
+  .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-body{height:min(420px,60vh)}
 }
 `;

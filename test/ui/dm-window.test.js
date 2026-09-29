@@ -3,6 +3,7 @@ import { createDmWindow } from '../../src/ui/dm-window.js';
 import { openDm, addFriend } from '../../src/state.js';
 import { makeServices, ME } from './services.js';
 import { fakeApi, rawMsg, flush } from '../helpers.js';
+import { CSS } from '../../src/ui/styles.js';
 
 const THEM = 5;
 
@@ -57,6 +58,18 @@ describe('dm window', () => {
     expect(el.classList.contains('chat-minimized')).toBe(true);
     expect(el.querySelector('.unread-badge').textContent).toBe('3');
     expect(el.querySelector('.unread-badge').hidden).toBe(false);
+  });
+
+  it('keeps the name on a minimized tab, like Torn, with the username as its title', async () => {
+    const { el } = mount({}, { open: false });
+    await flush();
+    const name = el.querySelector('.zcf-dm-name');
+    expect(name).not.toBeNull();
+    expect(name.textContent).toBe('Spike');
+    expect(name.title).toBe('Spike');
+    // The desktop rule must out-specificity the game's 2-class `.chat-container.chat-minimized` selectors.
+    expect(CSS).toContain('@media (min-width:600px){');
+    expect(CSS).toContain('.chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}');
   });
 
   it('sends on Enter, shows the message right away, and keeps Shift+Enter for new lines', async () => {

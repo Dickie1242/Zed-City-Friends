@@ -18,7 +18,7 @@ export function createDmWindow(services, userId) {
   let wasOpen = false;
 
   const avatarSlot = h('span', { class: 'zcf-dm-avatar' });
-  const nameEl = h('span', { class: 'zcf-dm-name', title: 'View profile' });
+  const nameEl = h('span', { class: 'zcf-dm-name' });
   const statusEl = h('span', { class: 'zcf-dm-status' });
   const unreadBadge = badge();
   const title = h('div', { class: 'chat-title' }, avatarSlot, nameEl, statusEl, unreadBadge);
@@ -179,13 +179,13 @@ export function createDmWindow(services, userId) {
     el.classList.toggle('chat-minimized', !open);
     el.classList.toggle('zcf-open', open);
     body.hidden = !open;
-    nameEl.hidden = !open;
     statusEl.hidden = !open;
     inboxBtn.hidden = !open;
     minBtn.hidden = !open;
     const p = presence.get(userId);
     clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : undefined, size: open ? 18 : 24 }));
     nameEl.textContent = displayName();
+    nameEl.title = displayName();
     statusEl.textContent = statusText(p);
     statusEl.classList.toggle('zcf-status-on', !!(p && p.online));
     el.title = open ? '' : displayName();

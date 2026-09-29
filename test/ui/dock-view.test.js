@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createDockView, visibleDms, SMALL_MAX_DMS } from '../../src/ui/dock-view.js';
 import { openDm } from '../../src/state.js';
 import { makeServices } from './services.js';
+import { CSS } from '../../src/ui/styles.js';
 
 describe('dock view', () => {
   it(`shows every DM on desktop but only the ${SMALL_MAX_DMS} most recent on phones`, () => {
@@ -31,5 +32,10 @@ describe('dock view', () => {
     view.render();
     expect([...root.children].map((c) => c.dataset.zcfDm || 'friends')).toEqual(['8', 'friends']);
     expect(services.conversations.get(7)).toBeNull();
+  });
+
+  it('tucks the Friends tab into the corner with CSS order, beyond an open window on phones', () => {
+    expect(CSS).toContain('.chat-containers .zcf-friends{order:2}');
+    expect(CSS).toContain('.chat-containers .zcf.zcf-open{order:3');
   });
 });
