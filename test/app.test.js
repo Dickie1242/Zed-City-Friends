@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createApp, INTERVALS, PRESENCE_PER_SWEEP } from '../src/app.js';
+import { createApp, INTERVALS, PRESENCE_PER_SWEEP, PRESENCE_BACKGROUND_PER_SWEEP } from '../src/app.js';
 import { storageKey } from '../src/store.js';
-import { DOCK_HTML, wireGameHeaders } from './fixtures/game-dom.js';
+import { DOCK_HTML, HEADER_HTML, PAGE_404_HTML, wireGameHeaders } from './fixtures/game-dom.js';
 import { fakeApi, memoryStorage, rawThread, rawMsg, flush } from './helpers.js';
 
 const ME = 1;
@@ -50,6 +50,8 @@ describe('app', () => {
     // Belt-and-suspenders: a test that sets this directly (not via vi.stubGlobal) must not leak
     // it into the next test if an assertion throws before its own cleanup line runs.
     delete window.matchMedia;
+    window.history.replaceState({}, '', '/');
+    document.documentElement.classList.remove('zcf-on-friends');
   });
 
   it('puts the Friends tab into the game dock, left of the game chats', () => {
@@ -215,5 +217,52 @@ describe('app', () => {
     await vi.advanceTimersByTimeAsync(INTERVALS.presence + 5000);
     const sweep2Ids = new Set(api.getProfile.mock.calls.slice(before).map((c) => c[0]));
     for (const id of untouched) expect(sweep2Ids.has(id)).toBe(true);
+  });
+  it('keeps the top-bar online count fresh with a small background sweep when no list is open', async () => {
+    vi.useFakeTimers();
+    let t = 1000000;
+    document.body.insertAdjacentHTML('afterbegin', HEADER_HTML);
+    const ids = Array.from({ length: 30 }, (_, i) => 300 + i);
+    const api = fakeApi({ getProfile: vi.fn(async (id) => ({ ok: true, data: { online: id < 303, active: 60 } })) });
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(...ids) }), now: () => t });
+    await vi.advanceTimersByTimeAsync(10000);
+    // The first sweep uses the full budget so the count fills in quickly.
+    expect(api.getProfile).toHaveBeenCalledTimes(PRESENCE_PER_SWEEP);
+    expect(document.querySelector('.zcf-topbar-badge').textContent).toBe('3');
+    // After that: at most PRESENCE_BACKGROUND_PER_SWEEP a sweep, and only friends not checked in 5 minutes.
+    api.getProfile.mockClear();
+    t += INTERVALS.presence;
+    await vi.advanceTimersByTimeAsync(INTERVALS.presence);
+    expect(api.getProfile).toHaveBeenCalledTimes(PRESENCE_BACKGROUND_PER_SWEEP);
+    for (const [id] of api.getProfile.mock.calls) expect(id).toBeGreaterThanOrEqual(320);
+  });
+
+  it('refreshes presence right away when the Friends window opens', async () => {
+    vi.useFakeTimers();
+    let t = 1000000;
+    const api = fakeApi();
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(5) }), now: () => t });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.getProfile).toHaveBeenCalledTimes(1);
+    t += 2 * 60000; // stale for an open list (60s), not yet for the background sweep (5 min)
+    app.actions.toggleFriends();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.getProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the Friends page on /friends and saves notes from it', async () => {
+    document.body.insertAdjacentHTML('beforeend', PAGE_404_HTML);
+    window.history.replaceState({}, '', '/friends');
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: withFriend() });
+    const page = document.querySelector('.q-page-container main.zcf-page');
+    expect(page).not.toBeNull();
+    page.querySelector('.zcf-note').click();
+    const input = page.querySelector('.zcf-note-input');
+    input.value = 'owes me nails';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(app.store.get().friends[SPIKE].note).toBe('owes me nails');
+    window.history.pushState({}, '', '/');
+    await flush();
+    expect(document.querySelector('main.zcf-page')).toBeNull();
   });
 });

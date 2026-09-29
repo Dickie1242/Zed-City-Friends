@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { waitForPlayer, boot } from '../src/main.js';
 import { resetWarnings } from '../src/util.js';
-import { fakeApi } from './helpers.js';
+import { fakeApi, flush } from './helpers.js';
 
 describe('main', () => {
   afterEach(() => {
     delete window.__zcfStarted;
     document.getElementById('zcf-styles')?.remove();
+    document.getElementById('zcf-early-styles')?.remove();
   });
 
   it('waits until getStats returns a logged-in player', async () => {
@@ -50,5 +51,14 @@ describe('main', () => {
     expect(document.getElementById('zcf-styles')).not.toBeNull();
     expect(await boot({ api })).toBeNull();
     app.destroy();
+  });
+  it('hides the game 404 on /friends before login, and shows it again while not logged in', async () => {
+    window.history.replaceState({}, '', '/friends');
+    const api = fakeApi({ getStats: vi.fn().mockResolvedValueOnce({ ok: false, kind: 'auth' }).mockReturnValue(new Promise(() => {})) });
+    boot({ api }); // never finishes: the second login check never answers
+    expect(document.documentElement.classList.contains('zcf-on-friends')).toBe(true);
+    await flush();
+    expect(document.documentElement.classList.contains('zcf-on-friends')).toBe(false);
+    window.history.replaceState({}, '', '/');
   });
 });

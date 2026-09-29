@@ -17,16 +17,24 @@ import {
   closeDm,
   setFriendsOpen,
   collapseAll,
+  setFriendNote,
 } from './state.js';
 import { createDock } from './ui/dock.js';
 import { createDockView } from './ui/dock-view.js';
 import { createToaster } from './ui/toast.js';
 import { createProfileButton } from './ui/profile-button.js';
+import { createKeeper } from './ui/keeper.js';
+import { createTopbarButton } from './ui/topbar-button.js';
+import { createFriendsPage } from './ui/friends-page.js';
+import { countOnline } from './friends-table.js';
 import { statsPlayer } from './util.js';
 
 export const CHATTING_MS = 5 * 60 * 1000;
 export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, activeDmBusy: 10000, dmInfo: 60000, presence: 60000 };
 export const PRESENCE_PER_SWEEP = 20;
+// With no friends list on screen, presence only keeps the top-bar online count roughly fresh (spec §5.3).
+export const PRESENCE_BACKGROUND_PER_SWEEP = 5;
+export const PRESENCE_BACKGROUND_STALE_MS = 5 * 60 * 1000;
 
 export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
   const store = createStore({ playerId, storage, win, now });
@@ -128,12 +136,18 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     interval: INTERVALS.dmInfo,
     doc,
   });
+  // A friends list is on screen: the dock's Friends window, or the Friends page.
+  const listOpen = () => store.get().dock.friendsOpen || page.active;
+  let fullSweepPending = true; // the first sweep fills in the top-bar count quickly
   const presencePoller = makePoller({
     run: () => {
       // Stalest first, capped, so a long friends list can't turn into one getProfile per friend per minute.
+      const full = fullSweepPending || listOpen();
+      fullSweepPending = false;
+      const maxAge = full ? undefined : PRESENCE_BACKGROUND_STALE_MS;
       const age = (id) => (presence.get(id) || { fetchedAt: 0 }).fetchedAt;
-      const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id));
-      presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, PRESENCE_PER_SWEEP));
+      const stale = Object.keys(store.get().friends).map(Number).filter((id) => presence.isStale(id, maxAge));
+      presence.refresh(stale.sort((a, b) => age(a) - age(b)).slice(0, full ? PRESENCE_PER_SWEEP : PRESENCE_BACKGROUND_PER_SWEEP));
       return { ok: true };
     },
     interval: INTERVALS.presence,
@@ -141,14 +155,20 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   });
   const pollers = [threadsPoller, activeDmPoller, infoPoller, presencePoller];
 
+  let wasListOpen = false;
   function syncPollers() {
     if (stopped) return;
     const s = store.get();
     const anyOpen = s.dock.dms.some((d) => d.open);
-    for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen], [presencePoller, s.dock.friendsOpen]]) {
+    for (const [p, on] of [[activeDmPoller, anyOpen], [infoPoller, anyOpen]]) {
       if (on) p.start();
       else p.stop();
     }
+    // Presence always runs now (the top-bar count); opening a list refreshes it at once.
+    const open = listOpen();
+    if (!presencePoller.active) presencePoller.start();
+    else if (open && !wasListOpen) presencePoller.poke();
+    wasListOpen = open;
   }
 
   function stopAll() {
@@ -167,7 +187,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     syncPollers();
   }
 
-  const dock = createDock({ doc, win, onGameChatOpened: () => store.update((s) => collapseAll(s)) });
+  const keeper = createKeeper({ doc, win });
+  const dock = createDock({ doc, win, keeper, onGameChatOpened: () => store.update((s) => collapseAll(s)) });
 
   const actions = {
     addFriend(p) {
@@ -175,6 +196,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       presence.refresh([p.id]);
     },
     removeFriend: (id) => store.update((s) => removeFriend(s, id)),
+    setFriendNote: (id, note) => store.update((s) => setFriendNote(s, id, note)),
     openDm(id, { expand = true, username, avatar } = {}) {
       const small = dock.isSmall();
       store.update((s) => openDm(s, id, { expand, exclusive: small && expand, now: now(), username, avatar }));
@@ -232,11 +254,16 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
 
   const view = createDockView({ root: dock.root, services });
   const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
+  const page = createFriendsPage(services, { doc, win, keeper });
+  const topbar = createTopbarButton({ doc, keeper, router });
+  const updateOnlineCount = () => topbar.setCount(countOnline(store.get().friends, presence.get));
 
   store.subscribe(() => {
     view.render();
     syncPollers();
     profileButton.refresh();
+    page.scheduleRender();
+    updateOnlineCount();
   });
   presence.subscribe(() => {
     view.friends.scheduleList();
@@ -244,10 +271,14 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       const w = view.dmWindow(d.id);
       if (w) w.update();
     }
+    page.scheduleRender();
+    updateOnlineCount();
   });
   inbox.subscribe(() => view.friends.scheduleList());
   router.onChange((path) => {
     profileButton.onRoute(path);
+    page.onRoute(path);
+    syncPollers();
     resumeIfLoggedIn();
   });
   // Entering the phone layout (rotation, resize): keep only the most recently used of our windows open,
@@ -272,9 +303,13 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   });
 
   dock.start();
+  page.start();
+  topbar.start();
   if (dock.isSmall()) enforcePhoneRule();
   view.render();
   profileButton.onRoute(router.path);
+  page.onRoute(router.path);
+  updateOnlineCount();
   threadsPoller.start();
   syncPollers();
 
@@ -289,6 +324,10 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       for (const p of pollers) p.destroy();
       dock.destroy();
       profileButton.destroy();
+      page.destroy();
+      topbar.destroy();
+      keeper.destroy();
+      router.destroy();
       store.destroy();
     },
   };

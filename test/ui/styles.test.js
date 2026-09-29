@@ -3,7 +3,9 @@ import { CSS } from '../../src/ui/styles.js';
 import { createDockView } from '../../src/ui/dock-view.js';
 import { addFriend, openDm, setDmOpen, setFriendsOpen } from '../../src/state.js';
 import { makeServices } from './services.js';
-import { DOCK_HTML } from '../fixtures/game-dom.js';
+import { DOCK_HTML, HEADER_HTML, PAGE_404_HTML } from '../fixtures/game-dom.js';
+import { createFriendsPage } from '../../src/ui/friends-page.js';
+import { createTopbarButton } from '../../src/ui/topbar-button.js';
 import { GAME_DOCK_CSS } from '../fixtures/game-dock-css.js';
 
 // Just enough of the CSS cascade to ask "which declaration wins on this element?" without a layout engine:
@@ -68,13 +70,24 @@ function mediaApplies(media, width) {
   }));
 }
 
+// Cached per element: every check below asks the same element about the same selectors many times,
+// and the elements' classes don't change while they're being checked.
+const matchCache = new WeakMap();
 function matches(el, selector) {
-  if (/::|:before|:after/.test(selector)) return false; // styles a pseudo-element, not el itself
-  try {
-    return el.matches(selector);
-  } catch {
-    return false;
+  let seen = matchCache.get(el);
+  if (!seen) matchCache.set(el, (seen = new Map()));
+  if (!seen.has(selector)) {
+    let hit = false;
+    if (!/::|:before|:after/.test(selector)) { // a pseudo-element selector styles that, not el itself
+      try {
+        hit = el.matches(selector);
+      } catch {
+        hit = false;
+      }
+    }
+    seen.set(selector, hit);
   }
+  return seen.get(selector);
 }
 
 const compareKeys = (a, b) => {
@@ -129,6 +142,25 @@ function renderDock({ friendsOpen, dms }) {
 }
 
 const describeEl = (el) => `${el.tagName.toLowerCase()}.${[...el.classList].join('.')}`;
+const hasOurRule = (selector) => OURS.some((r) => r.selector === selector);
+
+// Every computed value of ours under `root` that would change if the game's stylesheet loaded after ours.
+function orderProblems(root) {
+  const problems = [];
+  for (const width of WIDTHS) {
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      const props = new Set(OURS.filter((r) => mediaApplies(r.media, width) && matches(el, r.selector)).flatMap((r) => r.decls.map((d) => d.prop)));
+      for (const prop of props) {
+        const last = winner(el, prop, width, OURS_LAST);
+        const first = winner(el, prop, width, OURS_FIRST);
+        if (last.value !== first.value) {
+          problems.push(`${width}px ${describeEl(el)} ${prop}: "${last.value}" (${last.selector}) if ours loads last, "${first.value}" (${first.selector}) if ours loads first`);
+        }
+      }
+    }
+  }
+  return problems;
+}
 
 describe('styles against the game dock CSS', () => {
   beforeEach(() => {
@@ -137,22 +169,27 @@ describe('styles against the game dock CSS', () => {
 
   it('never depends on whether the game stylesheet or ours loaded last', () => {
     const problems = new Set();
-    for (const state of STATES) {
-      const root = renderDock(state);
-      for (const width of WIDTHS) {
-        for (const el of root.querySelectorAll('*')) {
-          const props = new Set(OURS.filter((r) => mediaApplies(r.media, width) && matches(el, r.selector)).flatMap((r) => r.decls.map((d) => d.prop)));
-          for (const prop of props) {
-            const last = winner(el, prop, width, OURS_LAST);
-            const first = winner(el, prop, width, OURS_FIRST);
-            if (last.value !== first.value) {
-              problems.add(`${width}px ${describeEl(el)} ${prop}: "${last.value}" (${last.selector}) if ours loads last, "${first.value}" (${first.selector}) if ours loads first`);
-            }
-          }
-        }
-      }
-    }
+    for (const state of STATES) for (const p of orderProblems(renderDock(state))) problems.add(p);
     expect([...problems]).toEqual([]);
+  });
+
+  it('keeps the page and top-bar rules order-independent too', () => {
+    document.body.innerHTML = HEADER_HTML + PAGE_404_HTML;
+    const services = makeServices({ presence: { 5: { online: true, active: 0, profile: { level: 3, faction: { id: 2, name: 'F' }, injured: true, traveling: true } } } });
+    services.store.update((s) => {
+      addFriend(s, { id: 5, username: 'Spike' }, 0);
+      addFriend(s, { id: 6, username: 'Nyx' }, 0);
+    });
+    const page = createFriendsPage(services);
+    page.onRoute('/friends');
+    const topbar = createTopbarButton({ router: services.router });
+    topbar.start();
+    topbar.setCount(1);
+    expect(document.querySelector('.zcf-page-table th').textContent).toBe('Name');
+    expect(hasOurRule('.zcf-page-table th')).toBe(true);
+    expect([...orderProblems(document.querySelector('main.zcf-page')), ...orderProblems(document.querySelector('.zcf-topbar'))]).toEqual([]);
+    page.destroy();
+    topbar.destroy();
   });
 
   it('lays out every open window body as a flex column, so the DM composer and the Friends list scroll fit', () => {

@@ -11,8 +11,8 @@ describe('build', () => {
     expect(text).toContain('// @match        https://www.zed.city/*');
     expect(text).toContain('// @grant        none');
     expect(text).not.toMatch(/\bimport\s*[{*]/);
-    // ~140 KB readable today (Greasy Fork forbids minified code), most of it the ~50 KB emoji
-    // table; the cap catches accidental bloat, not the readable, unminified source itself.
-    expect(Buffer.byteLength(text)).toBeLessThan(200 * 1024);
+    // ~205 KB readable today (Greasy Fork forbids minified code): the ~50 KB emoji table, and
+    // since 0.4.0 the Friends page. The cap catches accidental bloat, not the readable source itself.
+    expect(Buffer.byteLength(text)).toBeLessThan(256 * 1024);
   }, 30000);
 });
