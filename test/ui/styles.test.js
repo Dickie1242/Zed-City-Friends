@@ -162,6 +162,12 @@ describe('styles against the game dock CSS', () => {
     expect(winner(document.querySelector('.chat-containers'), 'flex-wrap', 400, OURS_LAST)).toBeNull();
   });
 
+  it("gives the game's Faction chat the campground, the icon Faction has everywhere else in the game", () => {
+    // Only the glyph changes, from our stylesheet: fa-users is \f0c0, fa-campground \f6bb in its Font Awesome.
+    expect(CSS).toContain('body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}');
+    expect(CSS).not.toContain('\f');
+  });
+
   it('parses specificity the way browsers count it', () => {
     expect(specificity('.chat-container .chat-content')).toEqual([0, 2, 0]);
     expect(specificity('.zcf-dm:not(.chat-minimized)')).toEqual([0, 2, 0]);
