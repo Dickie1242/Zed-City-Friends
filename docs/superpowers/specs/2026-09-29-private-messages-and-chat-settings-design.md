@@ -1,14 +1,14 @@
-# Zed City Friends: Private Messages, Chat Settings and Enemies Design
+# Zed City Friends 0.5.0 Design: Private Messages, Chat Settings, Enemies, Mute
 
 **Date:** 2026-09-29
-**Ships as:** 0.5.0 (one release covering all three parts)
+**Ships as:** 0.5.0 (one release covering all four parts)
 **Builds on:**
 - [2026-09-28-zed-city-friends-design.md](2026-09-28-zed-city-friends-design.md): the dock, DMs, mail API, storage and polling.
 - [2026-09-28-friends-page-design.md](2026-09-28-friends-page-design.md): the Friends page, notes, presence details and the mount keeper.
 
 **Status:**
 - **Part A** (Private Messages window) was designed with the user and approved.
-- **Part C** (Enemies list) was designed with the user and approved.
+- **Part C** (Enemies list) and **Part D** (Mute, What's new, four fixes) were designed with the user and approved.
 - **Part B** (per-chat customization and the settings cog): the user set its requirements (Chat+ drag-to-resize grips, movable bubbles, and a size, message size and location for each chat). Claude filled in the details after the user went to bed. The remaining judgment calls are listed in §B.7 for the morning review.
 
 ## 0. Background
@@ -244,6 +244,7 @@ A new DM starts with default settings. Settings for a closed DM are kept, so reo
   - **Position:** `x`/`y` are present only when the chat is moved. They are the viewport coordinates of the top-left.
   - **Validation:** numbers are clamped to their ranges (w 270–900, h 200–2000, text 80–200 in steps of 10, x/y ≥ 0). Keys must be `game:general|faction|activity`, `pm`, `settings` or `dm:<positive int>`, and anything else is dropped. An entry that ends up equal to the defaults is deleted.
   - **Corrupt documents** fall back to defaults.
+  - **Part D adds** `muted: [userId…]` (§D.1) and `seenVersion` (§D.2) to this document.
 - **Other tabs:** open tabs follow along live, as in Chat+.
 
 ## B.6 Architecture (Part B)
@@ -401,15 +402,73 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
 
 ---
 
-## D. Error handling (all parts)
+# Part D: Mute, What's new, and four fixes (approved)
+
+## D.1 Mute a conversation
+
+- **Where:**
+  - a bell button in each DM window's header (`fas fa-bell`, or `fas fa-bell-slash` when muted), with the title "Mute {name}" / "Unmute {name}";
+  - a **Mute / Unmute** item in the chat menu (§B.3), for DM chats.
+  - A muted conversation's row in the Private Messages **Chats** tab shows a small `fa-bell-slash` after the name.
+- **Effect:** new mail from a muted player:
+  - doesn't pop up a DM tab (in `inbox.js`, skip the pop for muted ids, even friends);
+  - isn't counted in the Private Messages tab's green unread number (`chatsUnreadTotal` leaves muted ids out);
+  - plays no sound.
+- **Still shown:** their Chats row keeps a (dimmed) unread pill. A DM tab you already have open for them keeps its own badge. Their mail arrives normally, and they're not told.
+- **Storage:** `muted: [userId, …]` in the settings document (§B.5). It is validated to positive integers, deduped and capped at 500. Other tabs follow along live.
+
+## D.2 What's new (in Chat settings)
+
+- **Where:** the bottom of the Chat settings window. A row reads **What's new in v{version} ▸**, and clicking it expands:
+  - that version's **major features**, each with a line or two of **sub-features**;
+  - an **Earlier versions ▸** row that expands to the older ones.
+- **Content:** a data module, `src/whats-new.js`, holding `[{ version, date, features: [{ title, points: [...] }] }]`, rendered as text only. Write the 0.5.0 entry from this spec (Private Messages, Enemies, customize any chat, chat settings and sounds, mute) and short entries for earlier versions:
+  - **0.4.x:** the Friends page, notes, the plain top-bar icon and the green unread count
+  - **0.3.x:** emoji picker; DM windows no longer cut off
+  - **0.2.x:** GIFs and the install link
+  - **0.1.x:** friends, DM windows, Add Friend on profiles
+- **Nudge:** after an update (and on first install), the **cog tab shows a small green dot** until you next open Chat settings.
+  - This works by keeping `seenVersion` in the settings document and comparing it with the build version.
+  - It is the only nudge. The user prefers a quiet UI, so there are no pop-ups and no notes elsewhere.
+
+## D.3 Four fixes (logged by the 0.4.0 review)
+
+1. **Back from `/friends` flashes the game's 404.**
+   - **Cause:** `router.js` handles `popstate` synchronously, so the page hides before Vue has switched routes.
+   - **Fix:** when leaving the page, keep the `<html>` class and our page until the next route has replaced the 404, i.e. `.q-page-container > .fixed-center` is gone, capped at 1s. Only then remove them.
+2. **The note editor or remove confirm closes when a friend's status flips while you're on the Online/Offline tab.**
+   - **Fix:** keep the row being edited or confirmed in the list until the action ends, even if it no longer matches the tab. Pass pinned ids into `buildFriendsTable`.
+3. **The ⋯ menu on phones can't be used from the keyboard.**
+   - **Fix:** on open, focus its first item; Up/Down move between items; Esc closes it and focuses the ⋯ button again.
+4. **Level, faction and status icons go stale for a friend you have an open DM with.**
+   - **Cause:** `getChatInfo` refreshes `fetchedAt` every 60s, so `getProfile` never runs again.
+   - **Fix:** track `profileAt` separately in the presence cache. An entry whose profile details are older than 5 minutes counts as stale for the sweeps, even when its online status is fresh.
+
+## D.4 Tests
+
+- **Mute:**
+  - no pop-up for a muted friend
+  - `chatsUnreadTotal` leaves muted ids out
+  - no sound for muted mail
+  - the bell toggles and persists across tabs
+  - the Chats row shows its icon
+- **What's new:**
+  - renders from the data module, and expands and collapses
+  - the dot shows when `seenVersion` is older than the build, and clears when settings opens
+  - text only
+- **Fixes:** one regression test each. Leaving `/friends` keeps the page until `.fixed-center` is gone (or 1s passes); a pinned row survives a tab filter change; the ⋯ menu keyboard behavior; a stale `profileAt` triggers `getProfile` while `set()` keeps status fresh.
+
+---
+
+## Shared 1. Error handling (all parts)
 
 - **Every new entry point is wrapped** (`safe()`, try/catch), and failures log once with `[ZCF]`.
 - **API failures:** Faction and Blocked show an inline "Couldn't load. Retry" line. Mark all as read stops with a toast. Search keeps the existing "Search failed. Try again." message.
 - **All player strings are text only** (names, previews, faction and blocked usernames), never `innerHTML`. Avatars use `avatarUrl()` as before.
 
-## E. Testing
+## Shared 2. Testing
 
-**Unit tests** (Vitest + jsdom). For Part C's tests, see §C.7.
+**Unit tests** (Vitest + jsdom). For Part C's tests see §C.7, and for Part D's see §D.4.
 - `pm-view.js`: merging page 1 with extra pages, dropping system threads, dedupe, newest first, the `You:` / `Name:` preview, and faction/blocked row sorting.
 - `chat-custom/chats.js`: defaults, clamps, key validation, removal of entries equal to the defaults, corrupt input.
 - `chat-custom/geometry.js`: on-screen clamping; each grip's resize math and fixed edges; limits; the drag threshold.
@@ -447,7 +506,7 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
 
 **Manual checklist:** add the new items to `docs/manual-test.md`.
 
-## F. Verify live (needs the user logged in; defaults already set above)
+## Shared 3. Verify live (needs the user logged in; defaults already set above)
 
 1. The `getFactionMembers` shape, and what it returns when you're not in a faction.
 2. `blockList` row fields and `total`; the `unblockUser` response.
@@ -457,7 +516,7 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
 6. Our padlock and grips inside the game's chat headers survive the game's re-renders (opening and closing, switching rooms, new messages), or the keeper puts them back without flicker.
 7. A game chat set to `position:fixed` and a custom size still scrolls, loads history and sends normally; its GIF and emoji pickers still open in the right place.
 
-## G. Overnight build instructions (for the next session)
+## Shared 4. Overnight build instructions (for the next session)
 
 - **Branch:** work on a new branch `pm-and-settings` from `main`. Commit as the repo-local identity "Zed City Friends" (`git config user.name` must say so).
 - **Don't push or merge.** The user reviews in the morning.
@@ -466,6 +525,6 @@ A small red skull (`fas fa-skull`, `#ef5350`, about 0.85em, `title="Enemy"`, `ar
   2. Execute it: TDD per task, batched commits.
   3. Run one code review at the end (a reviewer agent), fixing only Critical/Important issues and logging Minor ones.
   4. Set the version to 0.5.0 and build `dist/`.
-  5. Run the visual check (§E).
-- **Build order:** Part A (Private Messages), then Part C (Enemies), then Part B (per-chat customization and the settings cog), because B carries the most risk. Commit each part in a working, fully tested state. If something blocks a later part, stop there, keep what's done, and explain it in the morning summary rather than leaving a half-built part.
-- **Morning summary:** leave a short summary as the session's final message: what was built, the screenshots taken, the review findings and what was fixed, and the open questions (§B.7, §C.8, §F).
+  5. Run the visual check (Shared 2).
+- **Build order:** Part D.3's four fixes first (they're small and in code the other parts touch), then Part A (Private Messages), then Part C (Enemies), then Part B (per-chat customization and the settings cog, because it carries the most risk). The rest of Part D (mute, What's new) goes with Part B, since both live in the settings window and the chat menu. Commit each part in a working, fully tested state. If something blocks a later part, stop there, keep what's done, and explain it in the morning summary rather than leaving a half-built part.
+- **Morning summary:** leave a short summary as the session's final message: what was built, the screenshots taken, the review findings and what was fixed, and the open questions (§B.7, §C.8, Shared 3).
