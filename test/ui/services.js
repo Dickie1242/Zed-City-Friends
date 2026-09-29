@@ -3,7 +3,24 @@ import { vi } from 'vitest';
 import { createStore, createSettingsStore, createEnemiesStore } from '../../src/store.js';
 import { createConversations } from '../../src/conversation.js';
 import { addFriend, removeFriend, openDm, setDmOpen, closeDm, setFriendsOpen, setFriendNote, setSettingsOpen, closeAllDms } from '../../src/state.js';
-import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats, togglePinned, setFlag } from '../../src/settings.js';
+import {
+  setPmTab,
+  setSound,
+  setMuted,
+  isMuted,
+  resetChat,
+  resetAllChats,
+  togglePinned,
+  setFlag,
+  setSettingsTab,
+  setMentionSound,
+  setVolume,
+  setMentionWords,
+  setTextAll,
+  updateChat,
+  restoreDefaults,
+} from '../../src/settings.js';
+import { textOf, clampText } from '../../src/chat-custom/chats.js';
 import { addEnemy, removeEnemy, setEnemyNote, isEnemy } from '../../src/enemies.js';
 import { exportFriends, parseImport, mergeImport } from '../../src/backup.js';
 import { fakeApi, memoryStorage } from '../helpers.js';
@@ -41,6 +58,21 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     setNotifyFriendsOnly: vi.fn((on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on))),
     setTitleCount: vi.fn((on) => settings.update((s) => setFlag(s, 'titleCount', on))),
     setHoverLocal: vi.fn((on) => settings.update((s) => setFlag(s, 'hoverLocal', on))),
+    setSettingsTab: vi.fn((tab) => settings.update((s) => setSettingsTab(s, tab))),
+    setMentionSound: vi.fn((name) => settings.update((s) => setMentionSound(s, name))),
+    setVolume: vi.fn((v) => settings.update((s) => setVolume(s, v))),
+    setMentions: vi.fn((on) => settings.update((s) => setFlag(s, 'mentions', on))),
+    setMentionWords: vi.fn((text) => {
+      settings.update((s) => setMentionWords(s, text));
+      return settings.get().mentionWords;
+    }),
+    setClock12: vi.fn((on) => settings.update((s) => setFlag(s, 'clock12', on))),
+    setChatLocked: vi.fn((key, locked) => settings.update((s) => updateChat(s, key, { locked: locked ? null : false }))),
+    stepChatText: vi.fn((key, delta) => settings.update((s) => updateChat(s, key, { text: clampText(textOf(s.chats[key], s.textAll) + delta) }))),
+    returnChat: vi.fn((key) => settings.update((s) => updateChat(s, key, { x: null, y: null }))),
+    resetChatSize: vi.fn((key) => settings.update((s) => updateChat(s, key, { w: null, h: null }))),
+    stepTextAll: vi.fn((delta) => settings.update((s) => setTextAll(s, s.textAll + delta))),
+    restoreDefaults: vi.fn(() => settings.update((s) => restoreDefaults(s))),
     addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
     removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
     setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),

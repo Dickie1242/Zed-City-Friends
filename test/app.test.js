@@ -289,7 +289,7 @@ describe('app', () => {
     const text = app.actions.exportBackup();
     expect(JSON.parse(text).enemies).toEqual([{ id: 9, username: 'Grim' }]);
     app.actions.removeEnemy(9);
-    expect(app.actions.importBackup(text)).toEqual({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
+    expect(app.actions.importBackup(text)).toMatchObject({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
   });
 
   it('adds the Chat settings cog after Private Messages, and padlocks to the game chats', () => {
@@ -331,7 +331,7 @@ describe('app', () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
     expect(sound.play).toHaveBeenCalledTimes(1);
-    expect(sound.play).toHaveBeenCalledWith('chirp');
+    expect(sound.play).toHaveBeenCalledWith('chirp', { volume: 100 });
     await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
     expect(sound.play).toHaveBeenCalledTimes(1);
   });
@@ -505,5 +505,40 @@ describe('app', () => {
       expect(app.settings.get().pinned).toHaveLength(20);
       expect(document.querySelector('.zcf-toast').textContent).toBe('You can pin up to 20 chats.');
     });
+  });
+
+  it('restores settings from a backup, merging muted chats', () => {
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
+    app.actions.toggleMute(5);
+    app.settings.update((s) => { s.sound = 'bell'; s.clock12 = true; });
+    const text = app.actions.exportBackup();
+    app.actions.restoreDefaults();
+    expect(app.settings.get()).toMatchObject({ sound: 'off', clock12: false, muted: [5] });
+    app.actions.toggleMute(5);
+    app.actions.toggleMute(6);
+    expect(app.actions.importBackup(text)).toMatchObject({ ok: true, settings: 'restored' });
+    expect(app.settings.get()).toMatchObject({ sound: 'bell', clock12: true, muted: [5, 6] });
+  });
+
+  it('flags messages mentioning you in Global, and redoes them when the words change', () => {
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
+    const flagged = () => [...document.querySelectorAll('.general-chat .msg-cont')].filter((r) => r.querySelector('.zcf-mention-flag')).length;
+    expect(flagged()).toBe(0);
+    app.actions.setMentionWords('bunker');
+    expect(flagged()).toBe(1);
+    app.actions.setMentions(false);
+    expect(flagged()).toBe(0);
+  });
+
+  it('steps text size for one chat and for every chat', () => {
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
+    app.actions.stepChatText('pm', 10);
+    expect(app.settings.get().chats.pm).toEqual({ text: 110 });
+    app.actions.stepTextAll(20);
+    expect(app.settings.get()).toMatchObject({ textAll: 120, chats: {} });
+    app.actions.setChatLocked('pm', false);
+    expect(app.settings.get().chats.pm).toEqual({ locked: false });
+    app.actions.setChatLocked('pm', true);
+    expect(app.settings.get().chats.pm).toBeUndefined();
   });
 });

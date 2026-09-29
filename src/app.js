@@ -1,6 +1,24 @@
 // Wires the modules together: stores, pollers, dock UI, profile buttons and pages.
 import { createStore, createSettingsStore, createEnemiesStore } from './store.js';
-import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats, togglePinned, setFlag } from './settings.js';
+import {
+  setPmTab,
+  setSound,
+  setMuted,
+  isMuted,
+  resetChat,
+  resetAllChats,
+  togglePinned,
+  setFlag,
+  setSettingsTab,
+  setMentionSound,
+  setVolume,
+  setMentionWords,
+  setTextAll,
+  updateChat,
+  restoreDefaults,
+  applyBackupSettings,
+} from './settings.js';
+import { textOf, clampText } from './chat-custom/chats.js';
 import { createNotifier } from './notify.js';
 import { createTabFocus } from './tab-focus.js';
 import { createSound } from './sound.js';
@@ -34,13 +52,14 @@ import { createDockView } from './ui/dock-view.js';
 import { createToaster } from './ui/toast.js';
 import { createProfileButton, ENEMY_BUTTON } from './ui/profile-button.js';
 import { createEnemyMarks } from './ui/enemy-marks.js';
+import { createMentionMarks } from './ui/mention-marks.js';
 import { createKeeper } from './ui/keeper.js';
 import { createTopbarButton } from './ui/topbar-button.js';
 import { createFriendsPage } from './ui/friends-page.js';
 import { createChatCustom } from './ui/chat-custom/index.js';
 import { createTitleCount } from './ui/title-count.js';
 import { createTimeHover } from './ui/time-hover.js';
-import { createGameClock } from './ui/game-clock.js';
+import { createGameClock, TIME } from './ui/game-clock.js';
 import { avatarUrl } from './ui/dom.js';
 import { statsPlayer } from './util.js';
 
@@ -49,6 +68,9 @@ export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 
 // At most this many desktop notifications from one check.
 const MAX_NOTIFY = 3;
 export const PRESENCE_PER_SWEEP = 20;
+// The mention sound: only for a message sent in the last 2 minutes, and at most once every 5 seconds.
+const MENTION_RECENT_MS = 2 * 60 * 1000;
+const MENTION_GAP_MS = 5000;
 
 export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }), notifier: notifierOpt = null }) {
   const store = createStore({ playerId, storage, win, now });
@@ -130,8 +152,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
     onNewMail: (arrived) => {
       if (tabFocus.elsewhere()) return; // another game tab has focus and hears this mail itself
-      const name = settings.get().sound;
-      if (name !== 'off') sound.play(name);
+      const s = settings.get();
+      if (s.sound !== 'off') sound.play(s.sound, { volume: s.volume });
       notifyNewMail(arrived);
     },
   });
@@ -299,6 +321,25 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     },
     resetChat: (key) => settings.update((s) => resetChat(s, key)),
     resetAllChats: () => settings.update((s) => resetAllChats(s)),
+    setSettingsTab: (tab) => settings.update((s) => setSettingsTab(s, tab)),
+    setMentionSound(name) {
+      settings.update((s) => setMentionSound(s, name));
+      sound.unlock();
+    },
+    setVolume: (v) => settings.update((s) => setVolume(s, v)),
+    setMentions: (on) => settings.update((s) => setFlag(s, 'mentions', on)),
+    // Returns the cleaned list, for the text field to show.
+    setMentionWords(text) {
+      settings.update((s) => setMentionWords(s, text));
+      return settings.get().mentionWords;
+    },
+    setClock12: (on) => settings.update((s) => setFlag(s, 'clock12', on)),
+    setChatLocked: (key, locked) => settings.update((s) => updateChat(s, key, { locked: locked ? null : false })),
+    stepChatText: (key, delta) => settings.update((s) => updateChat(s, key, { text: clampText(textOf(s.chats[key], s.textAll) + delta) })),
+    returnChat: (key) => settings.update((s) => updateChat(s, key, { x: null, y: null })),
+    resetChatSize: (key) => settings.update((s) => updateChat(s, key, { w: null, h: null })),
+    stepTextAll: (delta) => settings.update((s) => setTextAll(s, s.textAll + delta)),
+    restoreDefaults: () => settings.update((s) => restoreDefaults(s)),
     async setNotify(on) {
       const ask = ++notifyAsk;
       const off = (message, opts) => {
@@ -344,7 +385,16 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       if (!r.ok) return r;
       const f = store.update((s) => mergeImport(s, r.friends, now()));
       const e = r.enemies.length ? enemies.update((d) => mergeEnemiesImport(d, r.enemies, now())) : { added: 0, notes: 0 };
-      return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes };
+      let restored;
+      if (r.settings) {
+        try {
+          settings.update((s) => applyBackupSettings(s, r.settings));
+          restored = 'restored';
+        } catch {
+          restored = 'unreadable';
+        }
+      }
+      return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes, settings: restored };
     },
   };
 
@@ -408,10 +458,40 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   });
   // Every chat time in Zed City time: the game's own chats print the browser clock, so theirs get rewritten.
   const gameClock = createGameClock({ doc, storage, key: `zcf:v1:${playerId}:gameClock`, now, onChange: () => marks.refresh() });
-  const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, 'game') });
+  // A mention arriving while you watch: the mention sound, if it's on, for a message from the last 2
+  // minutes, at most every 5 seconds, and not when another game tab has focus (it hears it itself).
+  let lastMentionSound = 0;
+  function onMention(row) {
+    const s = settings.get();
+    if (s.mentionSound === 'off' || tabFocus.elsewhere()) return;
+    const el = row.querySelector(TIME);
+    const ts = el ? gameClock.momentOf(el) : null;
+    const t = now();
+    if (ts === null || t - ts > MENTION_RECENT_MS || t - lastMentionSound < MENTION_GAP_MS) return;
+    lastMentionSound = t;
+    sound.play(s.mentionSound, { volume: s.volume });
+  }
+  const mentionMarks = createMentionMarks({
+    doc,
+    win,
+    words: () => [playerName, ...settings.get().mentionWords].filter(Boolean),
+    enabled: () => settings.get().mentions,
+    myName: playerName || '',
+    onMention,
+  });
+  const marks = createEnemyMarks({
+    doc,
+    win,
+    keeper,
+    names: () => enemyNames(enemies.get()),
+    onRow: (row, info) => {
+      gameClock.rewrite(row, 'game', { h12: settings.get().clock12 });
+      mentionMarks.mark(row, info);
+    },
+  });
   const page = createFriendsPage(services, { doc, win, keeper });
   const titleCount = createTitleCount({ doc, win });
-  const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal });
+  const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal, clock12: () => settings.get().clock12 });
   const syncTitle = () => {
     const s = settings.get();
     titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -438,9 +518,20 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     view.pm.syncBadge();
     syncTitle();
   });
+  // The game chats' rows depend on the clock and the mention settings: redo them when those change.
+  const rowsSig = () => {
+    const s = settings.get();
+    return JSON.stringify([s.clock12, s.mentions, s.mentionWords]);
+  };
+  let lastRowsSig = rowsSig();
   settings.subscribe(() => {
     renderDock();
     syncTitle();
+    const sig = rowsSig();
+    if (sig !== lastRowsSig) {
+      lastRowsSig = sig;
+      marks.refresh();
+    }
   });
   enemies.subscribe(() => {
     renderDock();
@@ -491,7 +582,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   custom.start();
   // Browsers only start audio after the player has interacted with the page (spec §B.4).
   const unlockSound = () => {
-    if (settings.get().sound !== 'off') sound.unlock();
+    const s = settings.get();
+    if (s.sound !== 'off' || s.mentionSound !== 'off') sound.unlock();
   };
   doc.addEventListener('pointerdown', unlockSound, { capture: true, once: true });
   const onVisible = () => {
@@ -522,6 +614,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       profileButton.destroy();
       enemyButton.destroy();
       marks.destroy();
+      mentionMarks.destroy();
       custom.destroy();
       titleCount.destroy();
       timeHover.destroy();
