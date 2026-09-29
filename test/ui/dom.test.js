@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { h, avatarUrl, avatar, highlightMatch, badge, setBadge, downloadText, DEFAULT_AVATAR, AVATAR_BASE } from '../../src/ui/dom.js';
+import { h, avatarUrl, avatar, highlightMatch, badge, setBadge, downloadText, wireMenuKeys, DEFAULT_AVATAR, AVATAR_BASE } from '../../src/ui/dom.js';
 import { createToaster } from '../../src/ui/toast.js';
 
 describe('dom helpers', () => {
@@ -148,5 +148,27 @@ describe('dom helpers', () => {
     vi.advanceTimersByTime(3500);
     host.remove();
     vi.useRealTimers();
+  });
+});
+
+describe('wireMenuKeys', () => {
+  it('moves between items with the arrows, wrapping, and calls onEscape on Esc', () => {
+    document.body.innerHTML = '<div id="m"><button>a</button><button>b</button><button hidden>x</button><button>c</button></div>';
+    const menu = document.getElementById('m');
+    const onEscape = vi.fn();
+    wireMenuKeys(menu, { onEscape });
+    const [a, b, , c] = menu.querySelectorAll('button');
+    const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    a.focus();
+    key('ArrowDown');
+    expect(document.activeElement).toBe(b);
+    key('ArrowDown');
+    expect(document.activeElement).toBe(c); // the hidden item is skipped
+    key('ArrowDown');
+    expect(document.activeElement).toBe(a);
+    key('ArrowUp');
+    expect(document.activeElement).toBe(c);
+    key('Escape');
+    expect(onEscape).toHaveBeenCalledTimes(1);
   });
 });

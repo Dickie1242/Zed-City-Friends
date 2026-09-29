@@ -47,6 +47,7 @@ describe('friends page', () => {
     vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(cb, 0));
   });
   afterEach(() => {
+    vi.useRealTimers();
     if (current) {
       current.page.destroy();
       current.keeper.destroy();
@@ -58,14 +59,39 @@ describe('friends page', () => {
     vi.unstubAllGlobals();
   });
 
-  it('draws the page in the 404 slot on /friends, and removes it on leave', () => {
+  it('draws the page in the 404 slot, and on leave keeps it until the next route replaces the 404', async () => {
     const { page } = mount();
     const slot = document.querySelector('.q-page-container');
     expect(slot.querySelector('main.zcf-page')).not.toBeNull();
     expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(true);
     page.onRoute('/city');
+    expect(slot.querySelector('main.zcf-page')).not.toBeNull();
+    expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(true);
+    slot.querySelector('.fixed-center').remove(); // Vue swaps in the next route's page
+    await flush();
     expect(slot.querySelector('main.zcf-page')).toBeNull();
     expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(false);
+  });
+
+  it('stops waiting for the next route after 1s', () => {
+    vi.useFakeTimers();
+    const { page } = mount();
+    page.onRoute('/city');
+    vi.advanceTimersByTime(999);
+    expect(document.querySelector('main.zcf-page')).not.toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(document.querySelector('main.zcf-page')).toBeNull();
+    expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(false);
+  });
+
+  it('coming straight back keeps the page', async () => {
+    const { page } = mount();
+    page.onRoute('/city');
+    page.onRoute('/friends');
+    document.querySelector('.fixed-center').remove();
+    await flush();
+    expect(document.querySelector('main.zcf-page')).not.toBeNull();
+    expect(document.documentElement.classList.contains(PAGE_CLASS)).toBe(true);
   });
 
   it('puts itself back when the game rebuilds the page slot', async () => {
@@ -297,6 +323,46 @@ describe('friends page', () => {
     services.actions.addFriend({ id: 50, username: 'Grackle' });
     page.render();
     expect(document.querySelector('.zcf-page .zcf-result .zcf-done')).not.toBeNull();
+  });
+
+  it('keeps a row being edited on the Online tab after that friend goes offline', () => {
+    const presence = presenceFixture();
+    const { page } = mount({ friends: FRIENDS, presence });
+    byText('.zcf-page-tab', 'Online').click();
+    row(1).querySelector('.zcf-note').click();
+    const input = row(1).querySelector('.zcf-note-input');
+    input.value = 'half-typed';
+    presence[1] = { ...presence[1], online: false };
+    page.render();
+    expect(row(1).querySelector('.zcf-note-input')).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('keeps a remove confirm on the Online tab after that friend goes offline', () => {
+    const presence = presenceFixture();
+    const { page } = mount({ friends: FRIENDS, presence });
+    byText('.zcf-page-tab', 'Online').click();
+    row(2).querySelector('[title="Remove"]').click();
+    presence[2] = { ...presence[2], online: false };
+    page.render();
+    expect(row(2).classList.contains('zcf-page-confirm')).toBe(true);
+    expect(document.activeElement.textContent).toBe('Cancel');
+  });
+
+  it('drives the ⋯ menu from the keyboard: first item focused, arrows move, Esc returns to ⋯', () => {
+    mount({ friends: FRIENDS, presence: presenceFixture() });
+    row(1).querySelector('.zcf-act-more').click();
+    const items = () => [...row(1).querySelectorAll('.zcf-page-menu button')];
+    const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(items()[0]);
+    key('ArrowDown');
+    expect(document.activeElement).toBe(items()[1]);
+    key('ArrowUp');
+    key('ArrowUp');
+    expect(document.activeElement).toBe(items()[2]);
+    key('Escape');
+    expect(row(1).querySelector('.zcf-page-menu')).toBeNull();
+    expect(document.activeElement).toBe(row(1).querySelector('.zcf-act-more'));
   });
 
   it('does not save a note that was left unchanged', () => {

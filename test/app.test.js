@@ -241,6 +241,7 @@ describe('app', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     expect(app.store.get().friends[SPIKE].note).toBe('owes me nails');
     window.history.pushState({}, '', '/');
+    document.querySelector('.q-page-container > .fixed-center').remove(); // the next route replaces the 404
     await flush();
     expect(document.querySelector('main.zcf-page')).toBeNull();
   });

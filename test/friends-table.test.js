@@ -20,6 +20,12 @@ const table = (opts = {}) => buildFriendsTable({ friends, presence, threads: { 3
 const ids = (t) => t.rows.map((r) => r.id);
 
 describe('friends table', () => {
+  it('keeps pinned rows on a tab they no longer match, without changing the counts', () => {
+    const t = table({ tab: 'online', pinned: [3] });
+    expect(ids(t)).toEqual([1, 2, 3]);
+    expect(t.counts).toEqual({ all: 5, online: 2, offline: 3 });
+  });
+
   it('counts tabs over every friend and fills each row', () => {
     const t = table();
     expect(t.counts).toEqual({ all: 5, online: 2, offline: 3 });

@@ -96,3 +96,23 @@ export function downloadText(filename, text, doc = document) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Keyboard for a small pop-up menu of buttons: Up/Down move between its visible, enabled items
+// (wrapping), Esc calls onEscape. Capture phase, so it works whichever item has focus.
+export function wireMenuKeys(menu, { onEscape }) {
+  menu.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      onEscape();
+      return;
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...menu.querySelectorAll('button')].filter((b) => !b.hidden && !b.disabled);
+    if (!items.length) return;
+    e.preventDefault();
+    const i = items.indexOf(menu.ownerDocument.activeElement);
+    const next = e.key === 'ArrowDown' ? (i + 1) % items.length : i <= 0 ? items.length - 1 : i - 1;
+    items[next].focus();
+  }, true);
+}

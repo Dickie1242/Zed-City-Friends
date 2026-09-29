@@ -40,7 +40,8 @@ export function nextSort(sort, key) {
 }
 
 // friends: the saved friends map; presence(id): cache entry or null; threads: saved thread state (unread).
-export function buildFriendsTable({ friends, presence, threads = {}, tab = 'all', query = '', sort = DEFAULT_SORT }) {
+// pinned: ids kept in the list even when they no longer match the tab (a row mid-edit or mid-confirm).
+export function buildFriendsTable({ friends, presence, threads = {}, tab = 'all', query = '', sort = DEFAULT_SORT, pinned = [] }) {
   const q = String(query || '').trim().toLowerCase();
   const all = Object.values(friends).map((f) => {
     const p = presence(f.id);
@@ -57,7 +58,8 @@ export function buildFriendsTable({ friends, presence, threads = {}, tab = 'all'
   const isOnline = (r) => !!(r.presence && r.presence.online);
   const online = all.filter(isOnline).length;
   const counts = { all: all.length, online, offline: all.length - online };
-  const inTab = all.filter((r) => tab === 'all' || (tab === 'online') === isOnline(r));
+  const keep = new Set(pinned);
+  const inTab = all.filter((r) => tab === 'all' || (tab === 'online') === isOnline(r) || keep.has(r.id));
   const matches = (r) => !q || r.username.toLowerCase().includes(q) || r.note.toLowerCase().includes(q);
   return { rows: sortRows(inTab.filter(matches), sort), counts };
 }

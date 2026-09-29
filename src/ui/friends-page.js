@@ -1,6 +1,6 @@
 // The Friends page at /friends: a game-style table of your friends (spec §4), drawn in the slot where
 // the game's logged-in layout shows its catch-all 404 for a path it doesn't know.
-import { h, clear, append, icon, avatar, highlightMatch } from './dom.js';
+import { h, clear, append, icon, avatar, highlightMatch, wireMenuKeys } from './dom.js';
 import { createAddFriendPopover } from './add-friend-popover.js';
 import { buildFriendsTable, nextSort, DEFAULT_SORT } from '../friends-table.js';
 import { isFriend, normalizeNote, MAX_NOTE } from '../state.js';
@@ -12,6 +12,8 @@ export const PAGE_CLASS = 'zcf-on-friends';
 // Hides the game's "Sorry, nothing here..." while we're on /friends.
 export const HIDE_404_CSS = `html.${PAGE_CLASS} .q-page-container > .fixed-center{display:none!important}`;
 const WARN_MS = 10000;
+// How long a leave waits for the next route to replace the game's 404 before giving up.
+const LEAVE_MS = 1000;
 
 export const isFriendsPath = (path) => path === FRIENDS_PATH || path === `${FRIENDS_PATH}/`;
 
@@ -61,6 +63,8 @@ export function createFriendsPage(services, { doc = document, win = window, keep
   let currentIds = [];
   let unkeep = null;
   let warnTimer = null;
+  let leaveObserver = null;
+  let leaveTimer = null;
   const rowEls = new Map(); // id -> { sig, el }: rows are reused while what they show is unchanged
 
   const link = (href, className, children, extra = {}) => h('a', {
@@ -233,6 +237,18 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     focusKey(`remove:${id}`, `more:${id}`);
   }
 
+  function toggleMenu(id) {
+    menuId = menuId === id ? null : id;
+    render();
+    if (menuId === id) focusKey(`menu:${id}:0`);
+  }
+
+  function closeMenu(id) {
+    menuId = null;
+    render();
+    focusKey(`more:${id}`);
+  }
+
   function doRemove(id) {
     const i = currentIds.indexOf(id);
     const next = currentIds[i + 1] ?? currentIds[i - 1];
@@ -290,6 +306,19 @@ export function createFriendsPage(services, { doc = document, win = window, keep
         h('button', { class: 'zcf-page-btn', type: 'button', 'data-zcf-focus': `cancel:${r.id}`, onclick: () => cancelRemove(r.id) }, 'Cancel'))));
   }
 
+  function rowMenu(r) {
+    const item = (i, label, onclick) => h('button', { type: 'button', role: 'menuitem', 'data-zcf-focus': `menu:${r.id}:${i}`, onclick }, label);
+    const menu = h('div', { class: 'zcf-page-menu', role: 'menu' },
+      item(0, 'Profile', () => {
+        menuId = null;
+        router.navigate(`/profile/${r.id}`);
+      }),
+      item(1, 'Edit note', () => startEdit(r.id)),
+      item(2, 'Remove', () => askRemove(r.id)));
+    wireMenuKeys(menu, { onEscape: () => closeMenu(r.id) });
+    return menu;
+  }
+
   function buildRow(r, now) {
     if (confirmId === r.id) return confirmRow(r);
     const online = !!(r.presence && r.presence.online);
@@ -344,24 +373,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
         'aria-haspopup': 'menu',
         'aria-expanded': String(menuId === r.id),
         'data-zcf-focus': `more:${r.id}`,
-        onclick: () => {
-          menuId = menuId === r.id ? null : r.id;
-          render();
-        },
+        onclick: () => toggleMenu(r.id),
       }, icon('ellipsis-h')),
-      menuId === r.id
-        ? h('div', { class: 'zcf-page-menu', role: 'menu' },
-          h('button', {
-            type: 'button',
-            role: 'menuitem',
-            onclick: () => {
-              menuId = null;
-              router.navigate(`/profile/${r.id}`);
-            },
-          }, 'Profile'),
-          h('button', { type: 'button', role: 'menuitem', onclick: () => startEdit(r.id) }, 'Edit note'),
-          h('button', { type: 'button', role: 'menuitem', onclick: () => askRemove(r.id) }, 'Remove'))
-        : null);
+      menuId === r.id ? rowMenu(r) : null);
 
     return h('tr', { class: `zcf-page-row${editId === r.id ? ' zcf-editing' : ''}`, dataset: { id: String(r.id) } },
       nameCell, h('td', { class: 'zcf-col-level' }, level), statusCell, factionCell, noteCell, h('td', { class: 'zcf-col-act' }, acts));
@@ -375,7 +389,9 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     if (!active) return;
     const s = store.get();
     const now = Date.now();
-    const { rows, counts } = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads, tab, query, sort });
+    // Rows mid-edit or mid-confirm stay put even if they stop matching the tab (spec §D.3 #2).
+    const pinned = [editId, confirmId, menuId].filter((id) => id !== null);
+    const { rows, counts } = buildFriendsTable({ friends: s.friends, presence: presence.get, threads: s.threads, tab, query, sort, pinned });
     const ids = rows.map((r) => r.id);
     // A note being edited for a row that just left the list (a search, a remove in another tab) is saved, not lost.
     if (editId !== null && !ids.includes(editId)) {
@@ -463,8 +479,38 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     slot.appendChild(el);
   }
 
+  const game404 = () => doc.querySelector('.q-page-container > .fixed-center');
+  const leaving = () => !!(leaveObserver || leaveTimer);
+
+  // Takes our page and the <html> class away, once the next route has drawn (or 1s passed). Coming
+  // back to the page meanwhile only stops the wait.
+  function finishLeave() {
+    if (leaveObserver) leaveObserver.disconnect();
+    leaveObserver = null;
+    clearTimeout(leaveTimer);
+    leaveTimer = null;
+    if (active) return;
+    doc.documentElement.classList.remove(PAGE_CLASS);
+    el.remove();
+  }
+
+  // The router reports popstate synchronously, before Vue has swapped routes: removing the page now
+  // would show the game's 404, still in the slot, for a moment (spec §D.3 #1).
+  function leaveWhenReplaced() {
+    if (!game404()) {
+      finishLeave();
+      return;
+    }
+    leaveObserver = new win.MutationObserver(() => {
+      if (!game404()) finishLeave();
+    });
+    leaveObserver.observe(doc.body, { childList: true, subtree: true });
+    leaveTimer = setTimeout(finishLeave, LEAVE_MS);
+  }
+
   function show() {
     active = true;
+    finishLeave(); // back before the last leave finished: just stop waiting
     doc.documentElement.classList.add(PAGE_CLASS);
     doc.addEventListener('mousedown', onDocMousedown);
     doc.addEventListener('pointerup', onPointerRelease, true);
@@ -496,15 +542,14 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     doc.removeEventListener('pointercancel', onPointerRelease, true);
     holdRender = false;
     renderWanted = false;
-    doc.documentElement.classList.remove(PAGE_CLASS);
-    el.remove();
+    leaveWhenReplaced();
   }
 
   function onRoute(path) {
     const want = isFriendsPath(path);
     if (want && !active) show();
     else if (!want && active) hide();
-    else if (!want) doc.documentElement.classList.remove(PAGE_CLASS); // left over from hideGame404Early
+    else if (!want && !leaving()) doc.documentElement.classList.remove(PAGE_CLASS); // left over from hideGame404Early
   }
 
   return {
@@ -520,6 +565,7 @@ export function createFriendsPage(services, { doc = document, win = window, keep
     },
     destroy() {
       if (active) hide();
+      if (leaving()) finishLeave();
       if (unkeep) unkeep();
       unkeep = null;
     },

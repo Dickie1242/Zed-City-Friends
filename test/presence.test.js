@@ -248,6 +248,29 @@ describe('presence', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(fetchProfile.mock.calls.map((c) => c[0])).toEqual([1, 1, 2, 3]);
   });
+
+  it('refetches profile details older than 5 minutes even while set() keeps the status fresh', async () => {
+    let t = 0;
+    const fetchProfile = vi.fn(() => Promise.resolve({ ok: true, data: { online: true, rank: 3 } }));
+    const p = createPresence({ fetchProfile, now: () => t });
+    p.refresh([5]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetchProfile).toHaveBeenCalledTimes(1);
+    for (t = 60000; t <= 300000; t += 60000) {
+      p.set(5, { online: true }); // getChatInfo from an open DM, once a minute
+      p.refresh([5]);
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    // Status never went stale, but at 5 minutes the level / faction / icons were due again.
+    expect(fetchProfile).toHaveBeenCalledTimes(2);
+    expect(p.lastTried(5)).toBe(300000);
+  });
+
+  it('orders an entry known only from set() first, since it has no profile yet', () => {
+    const p = createPresence({ fetchProfile: vi.fn(), now: () => 9000 });
+    p.set(5, { online: true });
+    expect(p.lastTried(5)).toBe(0);
+  });
 });
 
 describe('lastActive', () => {

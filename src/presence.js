@@ -32,6 +32,7 @@ export function createPresence({
   fetchProfile,
   onProfile,
   staleMs = 60000,
+  profileStaleMs = 300000,
   concurrency = 2,
   gapMs = 250,
   pauseMs = 300000,
@@ -67,6 +68,9 @@ export function createPresence({
       active: lastActive(info.active, now()),
       fetchedAt: at,
       profile: profile || (prev && prev.profile) || null,
+      // When level, faction and the icons were last fetched. A getChatInfo set() refreshes the online
+      // status only, so fetchedAt alone can't tell whether these have gone stale (spec §D.3 #4).
+      profileAt: profile ? at : (prev && prev.profileAt) || 0,
     });
     emit(id);
   }
@@ -76,19 +80,21 @@ export function createPresence({
   }
 
   // An entry without profile details is stale however fresh it is, so the Friends page's level
-  // and faction fill in even for someone whose status so far only came from a DM header.
+  // and faction fill in even for someone whose status so far only came from a DM header. Profile
+  // details older than profileStaleMs are stale too, even when the status is fresh.
   function isStale(id, maxAgeMs = staleMs) {
     // A failed fetch waits out the same interval as a success, so a friend whose profile can't be
     // loaded can't take a slot in every sweep and starve everyone else.
     if (failedAt.has(id) && now() - failedAt.get(id) < maxAgeMs) return false;
     const c = cache.get(id);
-    return !c || !c.profile || now() - c.fetchedAt >= maxAgeMs;
+    if (!c || !c.profile) return true;
+    return now() - c.fetchedAt >= maxAgeMs || now() - c.profileAt >= Math.max(maxAgeMs, profileStaleMs);
   }
 
-  // When an id was last fetched or tried, for "stalest first" ordering; 0 if never.
+  // When an id's profile was last fetched or tried, for "stalest first" ordering; 0 if never.
   function lastTried(id) {
     const c = cache.get(id);
-    return Math.max(c ? c.fetchedAt : 0, failedAt.get(id) || 0);
+    return Math.max(c ? c.profileAt : 0, failedAt.get(id) || 0);
   }
 
   // Drops everything still waiting its turn and stops new fetches until pauseMs has passed.
