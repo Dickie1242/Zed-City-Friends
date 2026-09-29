@@ -62,3 +62,26 @@ export function statusText(info, now = Date.now()) {
   if (info.active) return `Active ${timeAgo(info.active, now)}`;
   return 'Offline';
 }
+
+// The Friends page's wording, like the game's player lists: "18 min ago", "3 hr ago", "2 days ago".
+export function longAgo(ts, now = Date.now()) {
+  const s = Math.max(0, Math.floor((now - ts) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.floor(h / 24);
+  const unit = (n, word) => `${n} ${word}${n === 1 ? '' : 's'} ago`;
+  if (d < 30) return unit(d, 'day');
+  if (d < 365) return unit(Math.floor(d / 30), 'month');
+  return unit(Math.floor(d / 365), 'year');
+}
+
+// info: { online, active: ms|null } from the presence cache.
+export function longStatusText(info, now = Date.now()) {
+  if (!info) return '';
+  if (info.online) return 'Online';
+  if (info.active) return `Active ${longAgo(info.active, now)}`;
+  return 'Offline';
+}

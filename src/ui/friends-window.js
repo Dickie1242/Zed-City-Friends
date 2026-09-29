@@ -5,6 +5,7 @@ import { buildFriendSections } from '../friends-view.js';
 import { friendsUnreadTotal, isFriend } from '../state.js';
 import { statusText } from '../time.js';
 import { safe } from '../util.js';
+import { importMessage } from '../backup.js';
 
 const MAX_IMPORT_BYTES = 1024 * 1024;
 
@@ -92,7 +93,7 @@ export function createFriendsWindow(services, { doc = document } = {}) {
       return;
     }
     const res = actions.importFriends(text);
-    toast(res.ok ? `Imported ${res.added} new friend${res.added === 1 ? '' : 's'}.` : res.error, { error: !res.ok });
+    toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
   }));
   // Close the pop-out and menu on outside clicks.
   function onDocMousedown(e) {

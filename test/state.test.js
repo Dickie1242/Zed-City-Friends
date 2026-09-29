@@ -13,7 +13,9 @@ import {
   setFriendsOpen,
   collapseAll,
   friendsUnreadTotal,
+  setFriendNote,
   MAX_DMS,
+  MAX_NOTE,
 } from '../src/state.js';
 
 describe('state', () => {
@@ -34,6 +36,25 @@ describe('state', () => {
     expect(updateFriendInfo(s, 5, { username: 'Spike2', avatar: '' })).toBe(false);
     removeFriend(s, 5);
     expect(isFriend(s, 5)).toBe(false);
+  });
+
+  it('sets, trims, caps and clears a friend note', () => {
+    const s = emptyState();
+    addFriend(s, { id: 5, username: 'Spike' }, 0);
+    expect(setFriendNote(s, 5, '  owes me 40 nails  ')).toBe(true);
+    expect(s.friends[5].note).toBe('owes me 40 nails');
+    expect(setFriendNote(s, 5, 'owes me 40 nails')).toBe(false);
+    expect(setFriendNote(s, 5, 'x'.repeat(MAX_NOTE + 50))).toBe(true);
+    expect(s.friends[5].note).toHaveLength(MAX_NOTE);
+    expect(setFriendNote(s, 5, '   ')).toBe(true);
+    expect('note' in s.friends[5]).toBe(false);
+    expect(setFriendNote(s, 9, 'not a friend')).toBe(false);
+    expect(s.friends[9]).toBeUndefined();
+  });
+
+  it('keeps notes through normalizeState, so older script versions never drop them', () => {
+    const doc = normalizeState({ v: 1, friends: { 5: { id: 5, username: 'Spike', note: 'hi' } } });
+    expect(doc.friends[5].note).toBe('hi');
   });
 
   it('marks threads seen', () => {

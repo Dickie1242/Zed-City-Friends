@@ -6,7 +6,7 @@ import { createPresence } from './presence.js';
 import { createConversations } from './conversation.js';
 import { createInbox } from './inbox.js';
 import { makePoller } from './poller.js';
-import { exportFriends, parseImport } from './backup.js';
+import { exportFriends, parseImport, mergeImport } from './backup.js';
 import {
   addFriend,
   removeFriend,
@@ -210,8 +210,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     importFriends(text) {
       const r = parseImport(text, playerId);
       if (!r.ok) return r;
-      const added = store.update((s) => r.friends.reduce((n, f) => n + (addFriend(s, f, now()) ? 1 : 0), 0));
-      return { ok: true, added };
+      return { ok: true, ...store.update((s) => mergeImport(s, r.friends, now())) };
     },
   };
 

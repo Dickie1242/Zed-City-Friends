@@ -53,6 +53,19 @@ export function updateFriendInfo(state, id, { username, avatar }) {
   return changed;
 }
 
+export const MAX_NOTE = 200;
+
+// A friend's private note: trimmed and capped; an empty note removes the field. Returns whether it changed.
+export function setFriendNote(state, id, note) {
+  const f = state.friends[id];
+  if (!f) return false;
+  const text = typeof note === 'string' ? note.trim().slice(0, MAX_NOTE).trim() : '';
+  if ((f.note || '') === text) return false;
+  if (text) f.note = text;
+  else delete f.note;
+  return true;
+}
+
 export function threadEntry(state, id) {
   if (!state.threads[id]) state.threads[id] = { lastSeenReply: 0, lastNotifiedReply: 0, unread: 0 };
   return state.threads[id];

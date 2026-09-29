@@ -41,3 +41,38 @@ describe('time', () => {
     expect(statusText(null, now)).toBe('');
   });
 });
+
+import { longAgo, longStatusText } from '../src/time.js';
+
+describe('longAgo', () => {
+  const now = Date.UTC(2026, 8, 28, 12);
+  const S = 1000;
+  const M = 60 * S;
+  const H = 60 * M;
+  const D = 24 * H;
+  const ago = (ms) => longAgo(now - ms, now);
+
+  it('uses the game player-list wording at every boundary', () => {
+    expect(ago(59 * S)).toBe('just now');
+    expect(ago(M)).toBe('1 min ago');
+    expect(ago(59 * M)).toBe('59 min ago');
+    expect(ago(H)).toBe('1 hr ago');
+    expect(ago(23 * H)).toBe('23 hr ago');
+    expect(ago(D)).toBe('1 day ago');
+    expect(ago(2 * D)).toBe('2 days ago');
+    expect(ago(29 * D)).toBe('29 days ago');
+    expect(ago(30 * D)).toBe('1 month ago');
+    expect(ago(60 * D)).toBe('2 months ago');
+    expect(ago(364 * D)).toBe('12 months ago');
+    expect(ago(365 * D)).toBe('1 year ago');
+    expect(ago(730 * D)).toBe('2 years ago');
+    expect(longAgo(now + M, now)).toBe('just now');
+  });
+
+  it('builds the page status line', () => {
+    expect(longStatusText(null, now)).toBe('');
+    expect(longStatusText({ online: true, active: now - H }, now)).toBe('Online');
+    expect(longStatusText({ online: false, active: now - 18 * M }, now)).toBe('Active 18 min ago');
+    expect(longStatusText({ online: false, active: null }, now)).toBe('Offline');
+  });
+});
