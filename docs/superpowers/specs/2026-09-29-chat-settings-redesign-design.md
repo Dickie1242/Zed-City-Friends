@@ -98,13 +98,13 @@ In order:
 - Which chats are listed is unchanged from today (`chatRows()`): everything that exists now or has settings.
 - **A row:** a status padlock icon (yellow `fa-lock-open` when unlocked, grey `fa-lock` when locked; status only), the name, one plain-words line, and a chevron (right when closed, down when open).
   - The line is teal when anything is changed, grey otherwise.
-  - Plain words: the parts that differ from default, joined by " · ": "Moved", "Resized" (both w and h set) or "Wider" / "Taller" (only one set), "Text 120%" (own text only). Nothing changed = "As the game made it" for game chats, "As it came" for ours.
+  - Plain words: the parts that differ from default, joined by " · ": "Moved", "Resized" (any saved width or height; the panel shows the numbers), "Text 120%" (own text only), "Unlocked". Nothing changed = "As the game made it" for game chats, "As it came" for ours.
   - `describeChat` is replaced by this; it stays pure and tested.
 - **Tapping a row** opens its panel under it and closes any other; tapping it again closes it. The open row survives redraws (it's view state, like `showNews`). Panel lines:
   - **Locked** / **Unlocked: drag it anywhere** [Unlock / Lock]: `updateChat(key, { locked: false | null })`, the same state the chat's own padlock sets.
   - **Text size** [− 120% +]: this chat's own size, stepping from what it shows now.
   - **In the dock** / **Moved** [Back to the dock]: clears `x` and `y`. The button is only there when moved.
-  - **Default size** / **460 × 520** (or "Wider (420px)", "Taller (520px)") [Default size]: clears `w` and `h`. Only when resized.
+  - **Default size** / **460 × 520** (or "420 × auto") [Default size]: clears `w` and `h`. Only when resized.
   - [Reset everything]: `resetChat(key)`. Only when anything is changed.
 - **Reset all chats** stays under the Private chats group (disabled when nothing is customized). It also resets `textAll` to 100.
 
@@ -193,7 +193,7 @@ In order:
 
 - `createEnemyMarks`' `onRow(row)` becomes `onRow(row, { fresh })`. `fresh` is true for rows from the observer when that pass added at most 5 rows to the row's chat container, and false otherwise (bigger batches, `refresh()`).
 - The app passes one `onRow` that calls `gameClock.rewrite(row, 'game')` and then `mentionMarks.mark(row, { fresh })`.
-- New `src/ui/mention-marks.js`: `createMentionMarks({ doc, win, words, enabled, myName, onMention })`, with `mark(row, { fresh })`, `refresh()` and `destroy()`. `onMention` is the app's sound call (throttle, tab focus, 2-minute check).
+- New `src/ui/mention-marks.js`: `createMentionMarks({ doc, win, words, enabled, myName, onMention })`, with `mark(row, { fresh })` and `destroy()`. `mark` first clears what it did to that row before, so re-marking is safe. `onMention` is the app's sound call (throttle, tab focus, 2-minute check).
 - A settings change to `mentions` or `mentionWords` calls `marks.refresh()`, which re-runs `onRow` on every row with `fresh:false`.
 
 ---
@@ -225,7 +225,7 @@ New fields in `defaultSettings()` / `normalizeSettings()` (still `v: 1`, and eve
 | `clock12` | boolean | `false` | `=== true` |
 | `textAll` | 80–200, step 10 | `100` | `clampText`; non-number → 100 |
 
-`FLAGS` gains `mentions` and `clock12`. New pure helpers: `setSettingsTab`, `setMentionSound` (or a generalized `setSound(s, which, name)`), `setVolume`, `setMentionWords` (returns the cleaned list), `setTextAll` (sets it and clears every chat's own `text`), `restoreDefaults(s)` (keeps `muted`, `pinned`, `pmTab` and `settingsTab`), and `mergeBackupSettings(current, incoming)`. `resetAllChats` also sets `textAll` back to 100.
+`FLAGS` gains `mentions` and `clock12`. New pure helpers: `setSettingsTab`, `setMentionSound` (or a generalized `setSound(s, which, name)`), `setVolume`, `setMentionWords` (returns the cleaned list), `setTextAll` (sets it and clears every chat's own `text`), `restoreDefaults(s)` (keeps `muted`, `pinned`, `pmTab` and `settingsTab`), and `applyBackupSettings(s, incoming)`. `resetAllChats` also sets `textAll` back to 100.
 
 ---
 
