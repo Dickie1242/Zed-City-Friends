@@ -99,4 +99,19 @@ describe('backup', () => {
     expect(importMessage({ added: 2, enemiesAdded: 1, notes: 3 })).toBe('Imported 2 new friends, 1 new enemy and 3 notes.');
     expect(importMessage({ added: 0, enemiesAdded: 2 })).toBe('Imported 0 new friends and 2 new enemies.');
   });
+
+  it('carries the settings document, and still reads files without one', () => {
+    const s = emptyState();
+    addFriend(s, { id: 5, username: 'Spike' }, 0);
+    const text = exportFriends(s, 77, null, { v: 1, sound: 'ping' });
+    expect(JSON.parse(text).settings).toEqual({ v: 1, sound: 'ping' });
+    expect(parseImport(text, 77)).toMatchObject({ ok: true, settings: { v: 1, sound: 'ping' } });
+    expect(parseImport(exportFriends(s, 77), 77).settings).toBeUndefined();
+    expect(parseImport(JSON.stringify({ v: 1, playerId: 77, friends: [], settings: [1] }), 77).settings).toBeUndefined();
+  });
+
+  it('says when settings came back, or could not be read', () => {
+    expect(importMessage({ added: 1, settings: 'restored' })).toBe('Imported 1 new friend. Settings restored.');
+    expect(importMessage({ added: 0, settings: 'unreadable' })).toBe("Imported 0 new friends. The settings in it couldn't be read.");
+  });
 });

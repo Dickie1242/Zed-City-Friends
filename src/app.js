@@ -338,8 +338,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     },
     removeEnemy: (id) => enemies.update((d) => removeEnemy(d, id)),
     setEnemyNote: (id, note) => enemies.update((d) => setEnemyNote(d, id, note)),
-    exportFriends: () => exportFriends(store.get(), playerId, enemies.get()),
-    importFriends(text) {
+    exportBackup: () => exportFriends(store.get(), playerId, enemies.get(), settings.get()),
+    importBackup(text) {
       const r = parseImport(text, playerId);
       if (!r.ok) return r;
       const f = store.update((s) => mergeImport(s, r.friends, now()));

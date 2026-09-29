@@ -1,6 +1,6 @@
 // The Private Messages window in the dock (spec Part A): Chats / Friends / Faction / Blocked tabs, a search
 // box that starts a chat with any player, and the ⋯ menu (export / import). Replaces 0.4's Friends & Chats.
-import { h, clear, icon, avatar, badge, setBadge, downloadText, wireMenuKeys } from './dom.js';
+import { h, clear, icon, avatar, badge, setBadge, wireMenuKeys } from './dom.js';
 import { createPlayerSearch } from './player-search.js';
 import { enemyMark, mutedMark } from './marks.js';
 import { buildChatRows, previewLine, buildFactionRows, buildBlockedRows } from '../pm-view.js';
@@ -9,9 +9,8 @@ import { chatsUnreadTotal, isFriend } from '../state.js';
 import { longAgo, longStatusText } from '../time.js';
 import { makePoller } from '../poller.js';
 import { asArray, safe } from '../util.js';
-import { importMessage } from '../backup.js';
+import { createBackupFile } from './backup-file.js';
 
-const MAX_IMPORT_BYTES = 1024 * 1024;
 export const FACTION_MS = 60000;
 const LOAD_MORE_PX = 80;
 const TABS = [['chats', 'Chats'], ['friends', 'Friends'], ['faction', 'Faction'], ['blocked', 'Blocked']];
@@ -81,19 +80,26 @@ export function createPmWindow(services, { doc = document } = {}) {
     h('div', { class: 'zcf-toolbar' }, h('label', { class: 'zcf-search zcf-pm-search' }, icon('search'), searchInput)),
     list);
 
-  const fileInput = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
+  const backup = createBackupFile({ doc, actions, toast, playerId });
   const menu = h('div', { class: 'zcf-menu', role: 'menu', hidden: true },
-    h('div', { class: 'zcf-menu-title' }, 'Friends list'),
-    h('button', { type: 'button', role: 'menuitem', onclick: onExport }, 'Export friends'),
+    h('div', { class: 'zcf-menu-title' }, 'Your data'),
     h('button', {
       type: 'button',
       role: 'menuitem',
       onclick: () => {
         closeMenu();
-        fileInput.click();
+        backup.save();
       },
-    }, 'Import friends'));
-  const body = h('div', { class: 'chat-content zcf-body' }, main, menu, fileInput);
+    }, 'Save backup'),
+    h('button', {
+      type: 'button',
+      role: 'menuitem',
+      onclick: () => {
+        closeMenu();
+        backup.load();
+      },
+    }, 'Load backup'));
+  const body = h('div', { class: 'chat-content zcf-body' }, main, menu, backup.input);
   const el = h('div', { class: 'chat-container zcf zcf-pm', dataset: { zcfChat: 'pm' } }, header, body);
 
   // The ⋯ menu.
@@ -113,31 +119,6 @@ export function createPmWindow(services, { doc = document } = {}) {
     menu.querySelector('button').focus();
   });
   wireMenuKeys(menu, { onEscape: () => closeMenu({ focusButton: true }) });
-  fileInput.addEventListener('change', safe('friends-import', async () => {
-    const file = fileInput.files && fileInput.files[0];
-    fileInput.value = ''; // let the same file be picked again, whatever happens below
-    if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) {
-      toast('That file is too large to be a friends export.', { error: true });
-      return;
-    }
-    let text;
-    try {
-      text = await file.text();
-    } catch {
-      toast("Couldn't read that file.", { error: true });
-      return;
-    }
-    const res = actions.importFriends(text);
-    toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
-  }));
-
-  function onExport() {
-    closeMenu();
-    const n = Object.keys(store.get().friends).length;
-    downloadText(`zed-city-friends-${playerId}.json`, actions.exportFriends(), doc);
-    toast(`Exported ${n} friend${n === 1 ? '' : 's'}.`);
-  }
 
   function onDocMousedown(e) {
     if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();

@@ -290,9 +290,9 @@ describe('private messages window', () => {
     btn.click();
     const menu = el.querySelector('.zcf-menu');
     expect(menu.hidden).toBe(false);
-    expect(document.activeElement.textContent).toBe('Export friends');
+    expect(document.activeElement.textContent).toBe('Save backup');
     key('ArrowDown');
-    expect(document.activeElement.textContent).toBe('Import friends');
+    expect(document.activeElement.textContent).toBe('Load backup');
     key('Escape');
     expect(menu.hidden).toBe(true);
     expect(document.activeElement).toBe(btn);
@@ -300,7 +300,7 @@ describe('private messages window', () => {
 
   it('rejects an oversized import without reading it, and toasts an unreadable one', async () => {
     const { services, el } = mount();
-    const importSpy = vi.spyOn(services.actions, 'importFriends');
+    const importSpy = vi.spyOn(services.actions, 'importBackup');
     const fileInput = el.querySelector('input[type=file]');
     const big = { size: 2 * 1024 * 1024, name: 'huge.json', text: vi.fn().mockResolvedValue('{}') };
     Object.defineProperty(fileInput, 'files', { configurable: true, get: () => [big] });
@@ -308,7 +308,7 @@ describe('private messages window', () => {
     await flush();
     expect(big.text).not.toHaveBeenCalled();
     expect(importSpy).not.toHaveBeenCalled();
-    expect(services.toast).toHaveBeenCalledWith('That file is too large to be a friends export.', { error: true });
+    expect(services.toast).toHaveBeenCalledWith('That file is too large to be a backup.', { error: true });
     const bad = { size: 10, name: 'x.json', text: () => Promise.reject(new Error('NotReadableError')) };
     Object.defineProperty(fileInput, 'files', { configurable: true, get: () => [bad] });
     fileInput.dispatchEvent(new Event('change'));

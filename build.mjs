@@ -2,6 +2,7 @@
 import { build } from 'esbuild';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { UPDATE_URL } from './src/version.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -19,8 +20,8 @@ export const HEADER = `// ==UserScript==
 // @run-at       document-idle
 // @homepageURL  https://github.com/Dickie1242/Zed-City-Friends
 // @supportURL   https://github.com/Dickie1242/Zed-City-Friends/issues
-// @downloadURL  https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
-// @updateURL    https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js
+// @downloadURL  ${UPDATE_URL}
+// @updateURL    ${UPDATE_URL}
 // ==/UserScript==
 `;
 

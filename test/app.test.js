@@ -286,10 +286,10 @@ describe('app', () => {
     const storage = storageWith({ friends: friends(5) });
     app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage });
     app.actions.addEnemy({ id: 9, username: 'Grim' });
-    const text = app.actions.exportFriends();
+    const text = app.actions.exportBackup();
     expect(JSON.parse(text).enemies).toEqual([{ id: 9, username: 'Grim' }]);
     app.actions.removeEnemy(9);
-    expect(app.actions.importFriends(text)).toEqual({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
+    expect(app.actions.importBackup(text)).toEqual({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
   });
 
   it('adds the Chat settings cog after Private Messages, and padlocks to the game chats', () => {

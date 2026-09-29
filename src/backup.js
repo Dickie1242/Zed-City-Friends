@@ -3,11 +3,13 @@ import { addPerson, setPersonNote, normalizeNote } from './state.js';
 
 const pick = (p) => (p.note ? { id: p.id, username: p.username, note: p.note } : { id: p.id, username: p.username });
 
-// Friends, plus enemies when there are any (older script versions ignore the extra array).
-export function exportFriends(state, playerId, enemiesDoc) {
+// Friends, plus enemies when there are any (older script versions ignore the extra array), plus the
+// settings document (0.7 spec §4.3) when given.
+export function exportFriends(state, playerId, enemiesDoc, settingsDoc) {
   const doc = { v: 1, playerId, friends: Object.values(state.friends).map(pick) };
   const enemies = enemiesDoc ? Object.values(enemiesDoc.enemies).map(pick) : [];
   if (enemies.length) doc.enemies = enemies;
+  if (settingsDoc) doc.settings = settingsDoc;
   return JSON.stringify(doc, null, 2);
 }
 
@@ -25,7 +27,7 @@ function parsePeople(list) {
   return out;
 }
 
-// Strictly validates an export file. Returns { ok: true, friends, enemies } or { ok: false, error }.
+// Strictly validates an export file. Returns { ok: true, friends, enemies, settings? } or { ok: false, error }.
 export function parseImport(text, playerId) {
   let doc;
   try {
@@ -39,7 +41,10 @@ export function parseImport(text, playerId) {
   if (toId(doc.playerId) !== toId(playerId)) {
     return { ok: false, error: 'That export belongs to a different player.' };
   }
-  return { ok: true, friends: parsePeople(doc.friends), enemies: parsePeople(Array.isArray(doc.enemies) ? doc.enemies : []) };
+  const out = { ok: true, friends: parsePeople(doc.friends), enemies: parsePeople(Array.isArray(doc.enemies) ? doc.enemies : []) };
+  // The settings go through normalizeSettings when they're applied; here only their shape is checked.
+  if (doc.settings && typeof doc.settings === 'object' && !Array.isArray(doc.settings)) out.settings = doc.settings;
+  return out;
 }
 
 // Adds new people and fills in notes only where one has none yet; never removes or overwrites.
@@ -56,11 +61,15 @@ function mergeInto(map, people, now) {
 export const mergeImport = (state, friends, now) => mergeInto(state.friends, friends, now);
 export const mergeEnemiesImport = (doc, enemies, now) => mergeInto(doc.enemies, enemies, now);
 
-export function importMessage({ added, enemiesAdded = 0, notes = 0 }) {
+// settings: 'restored' or 'unreadable' when the file had settings.
+export function importMessage({ added, enemiesAdded = 0, notes = 0, settings }) {
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const parts = [count(added, 'new friend', 'new friends')];
   if (enemiesAdded) parts.push(count(enemiesAdded, 'new enemy', 'new enemies'));
   if (notes) parts.push(count(notes, 'note', 'notes'));
   const last = parts.pop();
-  return `Imported ${parts.length ? `${parts.join(', ')} and ${last}` : last}.`;
+  const text = `Imported ${parts.length ? `${parts.join(', ')} and ${last}` : last}.`;
+  if (settings === 'restored') return `${text} Settings restored.`;
+  if (settings === 'unreadable') return `${text} The settings in it couldn't be read.`;
+  return text;
 }

@@ -44,8 +44,8 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
     removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
     setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),
-    exportFriends: () => exportFriends(store.get(), ME),
-    importFriends: (text) => {
+    exportBackup: () => exportFriends(store.get(), ME, null, settings.get()),
+    importBackup: (text) => {
       const r = parseImport(text, ME);
       if (!r.ok) return r;
       return { ok: true, ...store.update((s) => mergeImport(s, r.friends, 0)) };
