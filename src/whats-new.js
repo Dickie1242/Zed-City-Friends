@@ -2,6 +2,32 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
+    version: '0.7.0',
+    date: '2026-09-29',
+    features: [
+      {
+        title: 'Chat settings, reorganised',
+        points: [
+          'General, Chats and About tabs, with checkboxes and dropdowns that look like the game.',
+          "Tap a chat in the Chats tab to lock it, change its text size, or put it back in the dock. One size can set every chat's text at once.",
+          'Unmute chats from the Muted list.',
+        ],
+      },
+      {
+        title: 'Mentions',
+        points: ['Messages in Global and Faction that say your name, or words you add, are highlighted. A mention sound can go with them.'],
+      },
+      {
+        title: 'Sounds and time',
+        points: ['A volume for the sounds, a Test button for desktop notifications, and a 12-hour clock.'],
+      },
+      {
+        title: 'Your data',
+        points: ['One backup file now holds your friends, enemies, notes and settings. Check for updates and restore default settings in About.'],
+      },
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-09-29',
     features: [

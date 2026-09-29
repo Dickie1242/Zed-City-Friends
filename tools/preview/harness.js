@@ -95,12 +95,17 @@ if (scene.startsWith('pm-')) {
   if (scene === 'pm-chats') settings.pinned = [9, 7];
 }
 if (scene === 'dm') dock.dms.push({ id: 5, open: true, lastUsed: 2, username: 'Spike', avatar: null });
-if (scene === 'settings') {
+const SETTINGS_TAB = { 'settings-general': 'general', 'settings-chats': 'chats', 'settings-about': 'about' };
+if (SETTINGS_TAB[scene]) {
   dock.settingsOpen = true;
   dock.dms.push({ id: 5, open: false, lastUsed: 2, username: 'Spike', avatar: null });
+  settings.settingsTab = SETTINGS_TAB[scene];
   settings.sound = 'chirp';
+  settings.muted = [10, 6];
+  settings.mentionWords = ['DWR'];
   settings.chats = { 'game:general': { x: 60, y: 90, w: 460, h: 520, text: 120, locked: false }, pm: { text: 110 }, 'dm:5': { w: 420 } };
 }
+if (scene === 'mention') settings.mentionWords = ['DWR'];
 if (scene === 'custom') {
   dock.dms.push({ id: 5, open: true, lastUsed: 2, username: 'Spike', avatar: null });
   settings.chats = {
@@ -113,6 +118,16 @@ document.body.classList.add('body--dark');
 document.body.innerHTML = `<div id="q-app">${HEADER}<div class="q-page-container" style="padding-top:55px">${
   scene === 'enemies' ? PAGE_404 : scene === 'profile' ? PROFILE_PAGE : CITY_PAGE
 }</div></div>${DOCK_HTML_FULL}`;
+if (scene === 'mention') {
+  const pad = (n) => String(n).padStart(2, '0');
+  const at = (min) => {
+    const d = new Date(Date.now() - min * 60000);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const line = (name, min, text) => `<div class="msg-cont"><div><div><div><div><span class="sender-name">${name}</span><span class="msg-time" style="margin-left:8px;font-size:11px;color:#757575">${at(min)}</span></div><div>${text}</div></div></div></div></div>`;
+  document.querySelector('.general-chat .msg-cont').parentElement.insertAdjacentHTML('beforeend',
+    line('Rustbucket', 1, 'moth you coming to the bunker?') + line('Hollow', 1, 'anyone got meds') + line('Gravedigger', 0, 'DWR raid at 8, bring meds'));
+}
 // On phones only one chat is open at a time: start the game's Global chat minimized so ours can show.
 // Minimizing a game chat the way its Vue template does: the title text and chevron go, the content hides.
 function setMinimized(chat, on) {
@@ -146,7 +161,7 @@ const storage = memoryStorage({
 
 hideGame404Early(document, window); // main.js does this at boot, before login is known
 injectStyles(document);
-createApp({ api, playerId: ME, playerName: 'Me', storage, sound: { play() {}, unlock() {} } });
+createApp({ api, playerId: ME, playerName: 'Moth', storage, sound: { play() {}, unlock() {} } });
 
 if (scene === 'custom') {
   setTimeout(() => {
@@ -154,9 +169,9 @@ if (scene === 'custom') {
     lock.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   }, 300);
 }
-if (scene === 'settings') {
+if (scene === 'settings-chats') {
   setTimeout(() => {
-    const news = [...document.querySelectorAll('.zcf-news-toggle')].find((b) => b.textContent.startsWith("What's new"));
-    if (news) news.click();
+    const row = document.querySelector('.zcf-set-chat');
+    if (row) row.click();
   }, 300);
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.6.0
+// @version      0.7.0
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -260,8 +260,8 @@
       const candidates = state.dock.dms.filter((d) => d.id !== keepId);
       if (!candidates.length) break;
       const hasUnread = (d) => !!(state.threads[d.id] && state.threads[d.id].unread > 0);
-      const rank = (d) => (d.open ? 2 : 0) + (hasUnread(d) ? 1 : 0);
-      const pool = candidates.slice().sort((a, b) => rank(a) - rank(b) || a.lastUsed - b.lastUsed);
+      const rank2 = (d) => (d.open ? 2 : 0) + (hasUnread(d) ? 1 : 0);
+      const pool = candidates.slice().sort((a, b) => rank2(a) - rank2(b) || a.lastUsed - b.lastUsed);
       const victim = pool[0];
       state.dock.dms = state.dock.dms.filter((d) => d !== victim);
     }
@@ -323,7 +323,7 @@
   var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   var num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
   var clampText = (v) => clamp(Math.round(v / LIMITS.textStep) * LIMITS.textStep, LIMITS.minText, LIMITS.maxText);
-  function normalizeChatEntry(raw) {
+  function normalizeChatEntry(raw, textAll = DEFAULT_TEXT) {
     const out = {};
     if (!raw || typeof raw !== "object") return out;
     if (raw.locked === false) out.locked = false;
@@ -338,20 +338,20 @@
     const h2 = num(raw.h);
     if (h2 !== null) out.h = clamp(Math.round(h2), LIMITS.minH, LIMITS.maxH);
     const t = num(raw.text);
-    if (t !== null && clampText(t) !== DEFAULT_TEXT) out.text = clampText(t);
+    if (t !== null && clampText(t) !== textAll) out.text = clampText(t);
     return out;
   }
-  function normalizeChats(chats) {
+  function normalizeChats(chats, textAll = DEFAULT_TEXT) {
     const out = {};
     if (!chats || typeof chats !== "object" || Array.isArray(chats)) return out;
     for (const [key, raw] of Object.entries(chats)) {
       if (!isChatKey(key)) continue;
-      const entry = normalizeChatEntry(raw);
+      const entry = normalizeChatEntry(raw, textAll);
       if (Object.keys(entry).length) out[key] = entry;
     }
     return out;
   }
-  var textOf = (entry) => entry && entry.text || DEFAULT_TEXT;
+  var textOf = (entry, textAll = DEFAULT_TEXT) => entry && entry.text || textAll;
   var isLocked = (entry) => !(entry && entry.locked === false);
   var isMoved = (entry) => !!(entry && typeof entry.x === "number" && typeof entry.y === "number");
   function chatLabel(key, dmName) {
@@ -362,33 +362,49 @@
     const id = dmIdOf(key);
     return id ? dmName || `#${id}` : String(key);
   }
-  function describeChat(entry) {
-    const size = entry && (entry.w || entry.h) ? `${entry.w || "auto"}×${entry.h || "auto"}` : "default size";
-    return [isMoved(entry) ? "moved" : "docked", size, `text ${textOf(entry)}%`].join(" · ");
+  function chatSummary(entry, game = false) {
+    const parts2 = [];
+    if (isMoved(entry)) parts2.push("Moved");
+    if (entry && (entry.w || entry.h)) parts2.push("Resized");
+    if (entry && entry.text) parts2.push(`Text ${entry.text}%`);
+    if (!isLocked(entry)) parts2.push("Unlocked");
+    if (parts2.length) return parts2.join(" · ");
+    return game ? "As the game made it" : "As it came";
   }
 
   // src/settings.js
   var PM_TABS = ["chats", "friends", "faction", "blocked"];
+  var SETTINGS_TABS = ["general", "chats", "about"];
   var SOUNDS = ["off", "chirp", "ping", "bell"];
   var MAX_MUTED = 500;
   var MAX_PINNED = 20;
-  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "hoverLocal"];
+  var MAX_MENTION_WORDS = 10;
+  var MENTION_WORD_LENGTH = { min: 2, max: 30 };
+  var FLAGS = ["notify", "notifyFriendsOnly", "titleCount", "hoverLocal", "mentions", "clock12"];
   function defaultSettings() {
     return {
       v: 1,
       pmTab: "chats",
+      settingsTab: "general",
       sound: "off",
+      mentionSound: "off",
+      volume: 100,
       chats: {},
+      textAll: DEFAULT_TEXT,
       muted: [],
       pinned: [],
       notify: false,
       notifyFriendsOnly: false,
       titleCount: true,
-      hoverLocal: true
+      hoverLocal: true,
       // the chat time hover shows your own time under ZCT
+      mentions: true,
+      mentionWords: [],
+      clock12: false
     };
   }
   var isObj2 = (o) => !!o && typeof o === "object" && !Array.isArray(o);
+  var isNum = (v) => typeof v === "number" && Number.isFinite(v);
   function normalizeIdList(list, max) {
     const out = [];
     for (const v of Array.isArray(list) ? list : []) {
@@ -399,20 +415,56 @@
     return out;
   }
   var normalizeMuted = (list) => normalizeIdList(list, MAX_MUTED);
+  var normalizeVolume = (v) => isNum(v) ? Math.min(100, Math.max(0, Math.round(v / 5) * 5)) : 100;
+  function normalizeMentionWords(list) {
+    const raw = typeof list === "string" ? list.split(",") : Array.isArray(list) ? list : [];
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const v of raw) {
+      if (out.length >= MAX_MENTION_WORDS) break;
+      if (typeof v !== "string") continue;
+      const word = v.trim().replace(/\s+/g, " ");
+      const key = word.toLowerCase();
+      if (word.length < MENTION_WORD_LENGTH.min || word.length > MENTION_WORD_LENGTH.max || seen.has(key)) continue;
+      seen.add(key);
+      out.push(word);
+    }
+    return out;
+  }
   function normalizeSettings(doc) {
     if (!isObj2(doc) || doc.v !== 1) throw new Error("Unsupported settings document");
+    const textAll = isNum(doc.textAll) ? clampText(doc.textAll) : DEFAULT_TEXT;
     return {
       v: 1,
       pmTab: PM_TABS.includes(doc.pmTab) ? doc.pmTab : "chats",
+      settingsTab: SETTINGS_TABS.includes(doc.settingsTab) ? doc.settingsTab : "general",
       sound: SOUNDS.includes(doc.sound) ? doc.sound : "off",
-      chats: normalizeChats(doc.chats),
+      mentionSound: SOUNDS.includes(doc.mentionSound) ? doc.mentionSound : "off",
+      volume: normalizeVolume(doc.volume),
+      chats: normalizeChats(doc.chats, textAll),
+      textAll,
       muted: normalizeMuted(doc.muted),
       pinned: normalizeIdList(doc.pinned, MAX_PINNED),
       notify: doc.notify === true,
       notifyFriendsOnly: doc.notifyFriendsOnly === true,
       titleCount: doc.titleCount !== false,
-      hoverLocal: doc.hoverLocal !== false
+      hoverLocal: doc.hoverLocal !== false,
+      mentions: doc.mentions !== false,
+      mentionWords: normalizeMentionWords(doc.mentionWords),
+      clock12: doc.clock12 === true
     };
+  }
+  function setSettingsTab(s, tab) {
+    if (SETTINGS_TABS.includes(tab)) s.settingsTab = tab;
+  }
+  function setMentionSound(s, sound) {
+    if (SOUNDS.includes(sound)) s.mentionSound = sound;
+  }
+  function setVolume(s, v) {
+    s.volume = normalizeVolume(Number(v));
+  }
+  function setMentionWords(s, words) {
+    s.mentionWords = normalizeMentionWords(words);
   }
   function setPmTab(s, tab) {
     if (PM_TABS.includes(tab)) s.pmTab = tab;
@@ -448,7 +500,7 @@
       if (v === null || v === void 0) delete next[k];
       else next[k] = v;
     }
-    const entry = normalizeChatEntry(next);
+    const entry = normalizeChatEntry(next, s.textAll);
     if (Object.keys(entry).length) s.chats[key] = entry;
     else delete s.chats[key];
   }
@@ -457,6 +509,25 @@
   }
   function resetAllChats(s) {
     s.chats = {};
+    s.textAll = DEFAULT_TEXT;
+  }
+  function setTextAll(s, text2) {
+    if (!isNum(text2)) return;
+    s.textAll = clampText(text2);
+    for (const key of Object.keys(s.chats)) updateChat(s, key, { text: null });
+  }
+  function replaceWith(s, next) {
+    for (const k of Object.keys(s)) delete s[k];
+    Object.assign(s, next);
+  }
+  function restoreDefaults(s) {
+    replaceWith(s, { ...defaultSettings(), muted: s.muted, pinned: s.pinned, pmTab: s.pmTab, settingsTab: s.settingsTab });
+  }
+  function applyBackupSettings(s, incoming) {
+    const next = normalizeSettings(incoming);
+    next.muted = normalizeMuted([...next.muted, ...s.muted]);
+    next.pinned = normalizeIdList([...next.pinned, ...s.pinned], MAX_PINNED);
+    replaceWith(s, next);
   }
 
   // src/enemies.js
@@ -830,21 +901,23 @@
       });
       return ctx;
     }
-    function play(name, { fromUser = false } = {}) {
+    function play(name, { fromUser = false, volume = 100 } = {}) {
       const tones = TONES[name];
       if (!tones) return false;
+      const level = Math.min(100, Math.max(0, Number(volume) || 0)) / 100;
+      if (!level) return false;
       const ac = context();
       if (!ac) return false;
       if (ac.state === "running") {
-        schedule(ac, tones);
+        schedule(ac, tones, level);
         return true;
       }
       if (!fromUser || typeof ac.resume !== "function") return false;
-      ac.resume().then(() => schedule(ac, tones), () => {
+      ac.resume().then(() => schedule(ac, tones, level), () => {
       });
       return true;
     }
-    function schedule(ac, tones) {
+    function schedule(ac, tones, level) {
       const t0 = ac.currentTime;
       for (const tone of tones) {
         const osc = ac.createOscillator();
@@ -855,7 +928,7 @@
         osc.frequency.setValueAtTime(tone.f, start);
         if (tone.to) osc.frequency.exponentialRampToValueAtTime(tone.to, end);
         gain.gain.setValueAtTime(1e-4, start);
-        gain.gain.exponentialRampToValueAtTime(tone.gain || 0.18, start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(Math.max(2e-4, (tone.gain || 0.18) * level), start + 0.01);
         gain.gain.exponentialRampToValueAtTime(1e-4, end);
         osc.connect(gain);
         gain.connect(ac.destination);
@@ -1048,9 +1121,10 @@
     const [y, m, d] = parts(ts, local);
     return `${y}-${pad(m + 1)}-${pad(d)}`;
   }
-  function formatClock(ts, local = false) {
+  function formatClock(ts, local = false, h12 = false) {
     const [, , , h2, mi] = parts(ts, local);
-    return `${pad(h2)}:${pad(mi)}`;
+    if (!h12) return `${pad(h2)}:${pad(mi)}`;
+    return `${h2 % 12 || 12}:${pad(mi)} ${h2 < 12 ? "AM" : "PM"}`;
   }
   function yesterdayKey(now, local) {
     if (!local) return dayKey(now - DAY_MS, false);
@@ -1058,8 +1132,8 @@
     d.setDate(d.getDate() - 1);
     return dayKey(d.getTime(), true);
   }
-  function formatMessageTime(ts, now = Date.now(), local = false) {
-    const clock = formatClock(ts, local);
+  function formatMessageTime(ts, now = Date.now(), local = false, h12 = false) {
+    const clock = formatClock(ts, local, h12);
     const day = dayKey(ts, local);
     if (day === dayKey(now, local)) return clock;
     if (day === yesterdayKey(now, local)) return `Yesterday at ${clock}`;
@@ -1082,8 +1156,8 @@
     const [, m, day] = parts(ts, local);
     return `${WEEKDAYS[local ? d.getDay() : d.getUTCDay()]}, ${MONTHS[m].slice(0, 3)} ${day}`;
   }
-  function formatStamp(ts, local = false) {
-    return `${formatWeekday(ts, local)}, ${formatClock(ts, local)} ${local ? zoneName(ts) : "ZCT"}`;
+  function formatStamp(ts, local = false, h12 = false) {
+    return `${formatWeekday(ts, local)}, ${formatClock(ts, local, h12)} ${local ? zoneName(ts) : "ZCT"}`;
   }
   function formatDayLabel(ts, local = false) {
     const [y, m, d] = parts(ts, local);
@@ -3381,13 +3455,13 @@ sandfish		/items/sandfish.webp`;
     for (const items of GROUP_ITEMS.values()) {
       for (const item of items) {
         const name = normalizeName(item.name);
-        let rank;
-        if (name === q) rank = 0;
-        else if (name.startsWith(q)) rank = 1;
-        else if (item.aliases.some((a) => normalizeName(a).startsWith(q))) rank = 2;
-        else if (name.includes(q) || item.aliases.some((a) => normalizeName(a).includes(q))) rank = 3;
+        let rank2;
+        if (name === q) rank2 = 0;
+        else if (name.startsWith(q)) rank2 = 1;
+        else if (item.aliases.some((a) => normalizeName(a).startsWith(q))) rank2 = 2;
+        else if (name.includes(q) || item.aliases.some((a) => normalizeName(a).includes(q))) rank2 = 3;
         else continue;
-        ranked.push({ rank, item });
+        ranked.push({ rank: rank2, item });
       }
     }
     ranked.sort((a, b) => a.rank - b.rank);
@@ -4048,10 +4122,11 @@ sandfish		/items/sandfish.webp`;
 
   // src/backup.js
   var pick = (p) => p.note ? { id: p.id, username: p.username, note: p.note } : { id: p.id, username: p.username };
-  function exportFriends(state, playerId, enemiesDoc) {
+  function exportFriends(state, playerId, enemiesDoc, settingsDoc) {
     const doc = { v: 1, playerId, friends: Object.values(state.friends).map(pick) };
     const enemies = enemiesDoc ? Object.values(enemiesDoc.enemies).map(pick) : [];
     if (enemies.length) doc.enemies = enemies;
+    if (settingsDoc) doc.settings = settingsDoc;
     return JSON.stringify(doc, null, 2);
   }
   function parsePeople(list) {
@@ -4080,7 +4155,9 @@ sandfish		/items/sandfish.webp`;
     if (toId(doc.playerId) !== toId(playerId)) {
       return { ok: false, error: "That export belongs to a different player." };
     }
-    return { ok: true, friends: parsePeople(doc.friends), enemies: parsePeople(Array.isArray(doc.enemies) ? doc.enemies : []) };
+    const out = { ok: true, friends: parsePeople(doc.friends), enemies: parsePeople(Array.isArray(doc.enemies) ? doc.enemies : []) };
+    if (doc.settings && typeof doc.settings === "object" && !Array.isArray(doc.settings)) out.settings = doc.settings;
+    return out;
   }
   function mergeInto(map, people, now) {
     let added = 0;
@@ -4093,13 +4170,16 @@ sandfish		/items/sandfish.webp`;
   }
   var mergeImport = (state, friends, now) => mergeInto(state.friends, friends, now);
   var mergeEnemiesImport = (doc, enemies, now) => mergeInto(doc.enemies, enemies, now);
-  function importMessage({ added, enemiesAdded = 0, notes = 0 }) {
+  function importMessage({ added, enemiesAdded = 0, notes = 0, settings }) {
     const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     const parts2 = [count(added, "new friend", "new friends")];
     if (enemiesAdded) parts2.push(count(enemiesAdded, "new enemy", "new enemies"));
     if (notes) parts2.push(count(notes, "note", "notes"));
     const last = parts2.pop();
-    return `Imported ${parts2.length ? `${parts2.join(", ")} and ${last}` : last}.`;
+    const text2 = `Imported ${parts2.length ? `${parts2.join(", ")} and ${last}` : last}.`;
+    if (settings === "restored") return `${text2} Settings restored.`;
+    if (settings === "unreadable") return `${text2} The settings in it couldn't be read.`;
+    return text2;
   }
 
   // src/ui/dom.js
@@ -4487,8 +4567,41 @@ sandfish		/items/sandfish.webp`;
     return { rows: sortRows(inTab.filter(matches), sort), counts };
   }
 
-  // src/ui/pm-window.js
+  // src/ui/backup-file.js
   var MAX_IMPORT_BYTES = 1024 * 1024;
+  function createBackupFile({ doc = document, actions, toast, playerId }) {
+    const input = h("input", { type: "file", accept: "application/json,.json", hidden: true });
+    input.addEventListener("change", safe("backup-load", async () => {
+      const file = input.files && input.files[0];
+      input.value = "";
+      if (!file) return;
+      if (file.size > MAX_IMPORT_BYTES) {
+        toast("That file is too large to be a backup.", { error: true });
+        return;
+      }
+      let text2;
+      try {
+        text2 = await file.text();
+      } catch {
+        toast("Couldn't read that file.", { error: true });
+        return;
+      }
+      const res = actions.importBackup(text2);
+      toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
+    }));
+    return {
+      input,
+      save() {
+        downloadText(`zed-city-friends-${playerId}.json`, actions.exportBackup(), doc);
+        toast("Backup saved: friends, enemies, notes and settings.");
+      },
+      load() {
+        input.click();
+      }
+    };
+  }
+
+  // src/ui/pm-window.js
   var FACTION_MS = 6e4;
   var LOAD_MORE_PX = 80;
   var TABS = [["chats", "Chats"], ["friends", "Friends"], ["faction", "Faction"], ["blocked", "Blocked"]];
@@ -4549,22 +4662,29 @@ sandfish		/items/sandfish.webp`;
       h("div", { class: "zcf-toolbar" }, h("label", { class: "zcf-search zcf-pm-search" }, icon("search"), searchInput)),
       list
     );
-    const fileInput = h("input", { type: "file", accept: "application/json,.json", hidden: true });
+    const backup = createBackupFile({ doc, actions, toast, playerId });
     const menu = h(
       "div",
       { class: "zcf-menu", role: "menu", hidden: true },
-      h("div", { class: "zcf-menu-title" }, "Friends list"),
-      h("button", { type: "button", role: "menuitem", onclick: onExport }, "Export friends"),
+      h("div", { class: "zcf-menu-title" }, "Your data"),
       h("button", {
         type: "button",
         role: "menuitem",
         onclick: () => {
           closeMenu();
-          fileInput.click();
+          backup.save();
         }
-      }, "Import friends")
+      }, "Save backup"),
+      h("button", {
+        type: "button",
+        role: "menuitem",
+        onclick: () => {
+          closeMenu();
+          backup.load();
+        }
+      }, "Load backup")
     );
-    const body = h("div", { class: "chat-content zcf-body" }, main, menu, fileInput);
+    const body = h("div", { class: "chat-content zcf-body" }, main, menu, backup.input);
     const el = h("div", { class: "chat-container zcf zcf-pm", dataset: { zcfChat: "pm" } }, header, body);
     function closeMenu({ focusButton = false } = {}) {
       menu.hidden = true;
@@ -4582,30 +4702,6 @@ sandfish		/items/sandfish.webp`;
       menu.querySelector("button").focus();
     });
     wireMenuKeys(menu, { onEscape: () => closeMenu({ focusButton: true }) });
-    fileInput.addEventListener("change", safe("friends-import", async () => {
-      const file = fileInput.files && fileInput.files[0];
-      fileInput.value = "";
-      if (!file) return;
-      if (file.size > MAX_IMPORT_BYTES) {
-        toast("That file is too large to be a friends export.", { error: true });
-        return;
-      }
-      let text2;
-      try {
-        text2 = await file.text();
-      } catch {
-        toast("Couldn't read that file.", { error: true });
-        return;
-      }
-      const res = actions.importFriends(text2);
-      toast(res.ok ? importMessage(res) : res.error, { error: !res.ok });
-    }));
-    function onExport() {
-      closeMenu();
-      const n = Object.keys(store.get().friends).length;
-      downloadText(`zed-city-friends-${playerId}.json`, actions.exportFriends(), doc);
-      toast(`Exported ${n} friend${n === 1 ? "" : "s"}.`);
-    }
     function onDocMousedown(e) {
       if (!menu.hidden && !menu.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
     }
@@ -5267,6 +5363,8 @@ sandfish		/items/sandfish.webp`;
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const isEnemy2 = services.isEnemy || (() => false);
     const isMuted2 = services.isMuted || (() => false);
+    const clock12 = () => !!(services.settings && services.settings.get().clock12);
+    let shownClock12 = clock12();
     const conv = conversations.acquire(userId);
     let renderedKeys = [];
     let atBottom = true;
@@ -5426,7 +5524,7 @@ sandfish		/items/sandfish.webp`;
       if (item.type === "new") return h("div", { class: "zcf-new-line" }, "New");
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
-      const time = m.ts ? formatMessageTime(m.ts, Date.now()) : "";
+      const time = m.ts ? formatMessageTime(m.ts, Date.now(), false, clock12()) : "";
       if (item.grouped) return h("div", { class: cls, "data-zcf-ts": m.ts || null }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
@@ -5502,6 +5600,11 @@ sandfish		/items/sandfish.webp`;
       const s = store.get();
       const entry = s.dock.dms.find((d) => d.id === userId);
       if (!entry) return;
+      const h12 = clock12();
+      if (h12 !== shownClock12) {
+        shownClock12 = h12;
+        for (const t of log.querySelectorAll(".zcf-time[data-zcf-ts]")) t.textContent = formatMessageTime(Number(t.getAttribute("data-zcf-ts")), Date.now(), false, h12);
+      }
       const open = !!entry.open;
       el.classList.toggle("chat-minimized", !open);
       el.classList.toggle("zcf-open", open);
@@ -5558,6 +5661,167 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
+  // src/ui/settings/controls.js
+  var SOUND_LABELS = { off: "Off", chirp: "Chirp", ping: "Ping", bell: "Bell" };
+  function section(head, ...children) {
+    const title = head ? h(
+      "div",
+      { class: "zcf-set-h" },
+      h("i", { class: `fas fa-${head.icon}`, "aria-hidden": "true" }),
+      head.label,
+      head.count ? h("span", { class: "zcf-set-count" }, String(head.count)) : null
+    ) : null;
+    return h("div", { class: "zcf-set-sec" }, title, children);
+  }
+  function checkRow({ label, sub = "", focus, indent = false, onChange }) {
+    const input = h("input", { type: "checkbox", class: "zcf-check", "data-zcf-focus": focus });
+    input.addEventListener("change", () => onChange(input.checked));
+    const subEl = h("span", { class: "zcf-set-subline", hidden: !sub }, sub);
+    const row = h(
+      "div",
+      { class: `zcf-set-line${indent ? " zcf-set-ind" : ""}` },
+      h("label", { class: "zcf-set-toggle" }, input, h("span", { class: "zcf-set-text" }, h("span", { class: "zcf-set-label" }, label), subEl))
+    );
+    return {
+      input,
+      row,
+      setSub(text2) {
+        subEl.textContent = text2;
+        subEl.hidden = !text2;
+      }
+    };
+  }
+  function soundRow({ label, aria, focus, onPick, onPlay }) {
+    const select = h(
+      "select",
+      { class: "zcf-select", "aria-label": aria, "data-zcf-focus": focus },
+      SOUNDS.map((k) => h("option", { value: k }, SOUND_LABELS[k]))
+    );
+    const play = h("button", { class: "zcf-mini zcf-set-play", type: "button", title: "Play it", "aria-label": `Play the ${aria.toLowerCase()}`, "data-zcf-focus": `${focus}-play` }, "▶");
+    select.addEventListener("change", () => onPick(select.value));
+    play.addEventListener("click", () => onPlay(select.value));
+    const row = h("div", { class: "zcf-set-line" }, h("span", { class: "zcf-set-label zcf-grow" }, label), select, play);
+    return {
+      row,
+      select,
+      sync(value) {
+        select.value = value;
+        play.disabled = value === "off";
+      }
+    };
+  }
+  function stepper({ value, min, max, name, focus, onStep }) {
+    return h(
+      "span",
+      { class: "zcf-set-stepper" },
+      h("button", { class: "zcf-mini", type: "button", "aria-label": `Smaller ${name}`, "data-zcf-focus": `${focus}-`, disabled: value <= min, onclick: () => onStep(-1) }, "−"),
+      h("span", { class: "zcf-set-value" }, `${value}%`),
+      h("button", { class: "zcf-mini", type: "button", "aria-label": `Larger ${name}`, "data-zcf-focus": `${focus}+`, disabled: value >= max, onclick: () => onStep(1) }, "+")
+    );
+  }
+
+  // src/ui/settings/general-tab.js
+  function createGeneralTab({ services, doc = document }) {
+    const { settings, actions, sound, toast } = services;
+    let marking = null;
+    const play = (name) => sound.play(name, { fromUser: true, volume: settings.get().volume });
+    const notify = checkRow({ label: "Desktop notifications", sub: "Pop up outside the game when a PM arrives", focus: "notify", onChange: (on) => actions.setNotify(on) });
+    const test = h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": "notify-test", onclick: sendTest }, "Test");
+    notify.row.appendChild(test);
+    const note = h("div", { class: "zcf-set-note", hidden: true });
+    const friendsOnly = checkRow({ label: "Friends only", focus: "notify-friends", indent: true, onChange: (on) => actions.setNotifyFriendsOnly(on) });
+    const titleCount = checkRow({ label: "Unread count in the browser tab", sub: "Like (2) Zed City", focus: "title-count", onChange: (on) => actions.setTitleCount(on) });
+    const pmSound = soundRow({ label: "New private message", aria: "New private message sound", focus: "sound", onPick: (name) => actions.setSound(name), onPlay: play });
+    const mentionSound = soundRow({ label: "Mention", aria: "Mention sound", focus: "mention-sound", onPick: (name) => actions.setMentionSound(name), onPlay: play });
+    const volume = h("input", { type: "range", class: "zcf-set-range", min: 0, max: 100, step: 5, "aria-label": "Volume", "data-zcf-focus": "volume" });
+    volume.addEventListener("change", () => {
+      actions.setVolume(Number(volume.value));
+      const s = settings.get();
+      const name = s.sound !== "off" ? s.sound : s.mentionSound;
+      if (name !== "off") sound.play(name, { fromUser: true, volume: s.volume });
+    });
+    const mentions = checkRow({ label: "Highlight messages that mention you", focus: "mentions", onChange: (on) => actions.setMentions(on) });
+    const words = h("input", { type: "text", class: "zcf-set-input", "aria-label": "Also highlight these words", placeholder: "e.g. your faction tag", maxlength: 400, "data-zcf-focus": "mention-words" });
+    words.addEventListener("change", () => {
+      words.value = actions.setMentionWords(words.value).join(", ");
+    });
+    const clock12 = checkRow({ label: "12-hour clock", sub: "2:27 PM instead of 14:27", focus: "clock12", onChange: (on) => actions.setClock12(on) });
+    const hoverLocal = checkRow({ label: "Your own time in the time hover", sub: "Under ZCT, when you rest on a chat time", focus: "hover-local", onChange: (on) => actions.setHoverLocal(on) });
+    const markBtn = h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "mark", onclick: markAll }, "Mark all as read");
+    const closeBtn = h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "closeall", onclick: () => actions.closeAllDms() }, "Close all private chats");
+    const nodes = [
+      section({ icon: "bell", label: "Notifications" }, notify.row, note, friendsOnly.row, titleCount.row),
+      section(
+        { icon: "volume-up", label: "Sounds" },
+        pmSound.row,
+        mentionSound.row,
+        h("label", { class: "zcf-set-line" }, h("span", { class: "zcf-set-label zcf-grow" }, "Volume"), volume)
+      ),
+      section(
+        { icon: "at", label: "Mentions" },
+        mentions.row,
+        h("label", { class: "zcf-set-line zcf-set-ind" }, h("span", { class: "zcf-set-also" }, "Also:"), words),
+        h("div", { class: "zcf-set-hint zcf-set-ind" }, "Words or names, separated by commas")
+      ),
+      section({ icon: "clock", label: "Time" }, clock12.row, hoverLocal.row),
+      section({ icon: "bolt", label: "Quick actions" }, h("div", { class: "zcf-set-btns" }, markBtn, closeBtn))
+    ];
+    function sendTest() {
+      const n = services.notifier;
+      const shown = n && n.show({ id: 0, title: "Zed City Friends", body: "This is how a new private message will show up." });
+      if (!shown) toast("Your browser didn't show it. Check its notification settings.", { error: true });
+    }
+    async function markAll() {
+      if (marking) return;
+      marking = { done: 0, total: 0 };
+      sync();
+      try {
+        await actions.markAllRead((done, total) => {
+          marking = { done, total };
+          sync();
+        });
+      } finally {
+        marking = null;
+        sync();
+      }
+    }
+    function blockedNote() {
+      const n = services.notifier;
+      if (!n || !n.supported) return "Not supported in this browser.";
+      return n.permission() === "denied" ? "Notifications are blocked for zed.city in your browser's site settings." : "";
+    }
+    function sync() {
+      const s = settings.get();
+      const supported = !!(services.notifier && services.notifier.supported);
+      notify.input.checked = s.notify;
+      notify.input.disabled = !supported;
+      test.disabled = !(s.notify && supported);
+      const blocked = blockedNote();
+      note.textContent = blocked;
+      note.hidden = !blocked;
+      friendsOnly.input.checked = s.notifyFriendsOnly;
+      friendsOnly.input.disabled = !s.notify;
+      titleCount.input.checked = s.titleCount;
+      pmSound.sync(s.sound);
+      mentionSound.sync(s.mentionSound);
+      if (doc.activeElement !== volume) volume.value = String(s.volume);
+      mentions.input.checked = s.mentions;
+      mentions.setSub(services.myName ? `In Global and Faction: your name, ${services.myName}` : "In Global and Faction: your name");
+      words.disabled = !s.mentions;
+      if (doc.activeElement !== words) words.value = s.mentionWords.join(", ");
+      clock12.input.checked = s.clock12;
+      hoverLocal.input.checked = s.hoverLocal;
+      markBtn.disabled = !!marking;
+      markBtn.textContent = marking ? `Marking… ${marking.done}/${marking.total}` : "Mark all as read";
+    }
+    return {
+      sync,
+      model: () => null,
+      // nothing here is rebuilt: sync() keeps it current
+      build: () => nodes
+    };
+  }
+
   // src/ui/chat-custom/registry.js
   var info = (key, el) => ({
     key,
@@ -5577,8 +5841,153 @@ sandfish		/items/sandfish.webp`;
     return out;
   }
 
+  // src/ui/settings/chats-tab.js
+  function rank(key) {
+    const game = GAME_CHATS.findIndex((c) => c.key === key);
+    if (game >= 0) return game;
+    return key === "pm" ? 10 : key === "settings" ? 30 : 20;
+  }
+  function createChatsTab({ services, doc = document, requestRender }) {
+    const { store, settings, actions } = services;
+    let openKey = null;
+    function known(id) {
+      const s = store.get();
+      const d = s.dock.dms.find((x) => x.id === id);
+      if (d && d.username) return { name: d.username, avatar: d.avatar || null };
+      const f = s.friends[id];
+      if (f && f.username) return { name: f.username, avatar: f.avatar || null };
+      const e = services.enemies && services.enemies.get().enemies[id];
+      if (e && e.username) return { name: e.username, avatar: e.avatar || null };
+      const t = services.inbox && services.inbox.threads().find((x) => x.userId === id);
+      if (t && t.username) return { name: t.username, avatar: t.avatar || null };
+      return null;
+    }
+    function chatRows() {
+      const saved = settings.get().chats;
+      const keys = /* @__PURE__ */ new Set(["pm", "settings"]);
+      for (const c of findChats(doc)) keys.add(c.key);
+      for (const d of store.get().dock.dms) keys.add(dmKey(d.id));
+      for (const k of Object.keys(saved)) keys.add(k);
+      return [...keys].map((key) => {
+        const id = dmIdOf(key);
+        const who = id ? known(id) : null;
+        return { key, name: chatLabel(key, who ? who.name : null), entry: saved[key] || null };
+      }).sort((a, b) => rank(a.key) - rank(b.key) || a.name.localeCompare(b.name));
+    }
+    function mutedRows() {
+      return settings.get().muted.map((id) => {
+        const who = known(id);
+        return { id, name: who ? who.name : `#${id}`, known: !!who, avatar: who ? who.avatar : null };
+      });
+    }
+    function model() {
+      return { rows: chatRows(), muted: mutedRows(), openKey, textAll: settings.get().textAll, customized: Object.keys(settings.get().chats).length };
+    }
+    const mini = (label, focus, onclick) => h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": focus, onclick }, label);
+    const pline = (label, ...controls) => h("div", { class: "zcf-set-pline" }, h("span", null, label), controls);
+    function panel(r, textAll) {
+      const e = r.entry;
+      const locked = isLocked(e);
+      const w = e && e.w;
+      const ht = e && e.h;
+      return h(
+        "div",
+        { class: "zcf-set-panel" },
+        pline(locked ? "Locked" : "Unlocked: drag it anywhere", mini(locked ? "Unlock" : "Lock", `lock:${r.key}`, () => actions.setChatLocked(r.key, !locked))),
+        pline("Text size", stepper({ value: textOf(e, textAll), min: LIMITS.minText, max: LIMITS.maxText, name: "text", focus: `text:${r.key}`, onStep: (d) => actions.stepChatText(r.key, d * LIMITS.textStep) })),
+        pline(isMoved(e) ? "Moved" : "In the dock", isMoved(e) ? mini("Back to the dock", `dock:${r.key}`, () => actions.returnChat(r.key)) : null),
+        pline(w || ht ? `${w || "auto"} × ${ht || "auto"}` : "Default size", w || ht ? mini("Default size", `size:${r.key}`, () => actions.resetChatSize(r.key)) : null),
+        e ? h("div", { class: "zcf-set-pline zcf-set-pend" }, mini("Reset everything", `reset:${r.key}`, () => actions.resetChat(r.key))) : null
+      );
+    }
+    function chatRow(r, textAll) {
+      const open = openKey === r.key;
+      const locked = isLocked(r.entry);
+      const head = h(
+        "button",
+        {
+          class: "zcf-set-chat",
+          type: "button",
+          "aria-expanded": String(open),
+          "data-zcf-focus": `row:${r.key}`,
+          onclick: () => {
+            openKey = open ? null : r.key;
+            requestRender();
+          }
+        },
+        h("i", { class: `fas ${locked ? "fa-lock" : "fa-lock-open zcf-unlocked"} zcf-set-lock`, "aria-hidden": "true" }),
+        h(
+          "span",
+          { class: "zcf-row-main" },
+          h("span", { class: "zcf-name" }, r.name),
+          h("span", { class: `zcf-status${r.entry ? " zcf-set-changed" : ""}` }, chatSummary(r.entry, r.key.startsWith("game:")))
+        ),
+        h("i", { class: `fas fa-chevron-${open ? "down" : "right"} zcf-set-chev`, "aria-hidden": "true" })
+      );
+      return open ? [head, panel(r, textAll)] : [head];
+    }
+    function mutedRow(m) {
+      return h(
+        "div",
+        { class: "zcf-set-mrow" },
+        avatar({ avatar: m.avatar, size: 22 }),
+        h("button", { class: "zcf-set-mname", type: "button", "data-zcf-focus": `open:${m.id}`, onclick: () => actions.openDm(m.id, { expand: true, username: m.known ? m.name : void 0 }) }, m.name),
+        mini("Unmute", `unmute:${m.id}`, () => actions.toggleMute(m.id))
+      );
+    }
+    function build(m) {
+      const game = m.rows.filter((r) => r.key.startsWith("game:"));
+      const ours = m.rows.filter((r) => !r.key.startsWith("game:"));
+      return [
+        section(null, h(
+          "div",
+          { class: "zcf-set-line" },
+          h("span", { class: "zcf-set-text zcf-grow" }, h("span", { class: "zcf-set-label" }, "Text size for every chat"), h("span", { class: "zcf-set-subline" }, "Sets them all; change one below")),
+          stepper({ value: m.textAll, min: LIMITS.minText, max: LIMITS.maxText, name: "text in every chat", focus: "textall", onStep: (d) => actions.stepTextAll(d * LIMITS.textStep) })
+        )),
+        game.length ? section({ icon: "comments", label: "Game chats" }, game.map((r) => chatRow(r, m.textAll))) : null,
+        section(
+          { icon: "envelope", label: "Private chats" },
+          ours.map((r) => chatRow(r, m.textAll)),
+          h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !m.customized && m.textAll === DEFAULT_TEXT, onclick: () => actions.resetAllChats() }, "Reset all chats")
+        ),
+        section(
+          { icon: "bell-slash", label: "Muted", count: m.muted.length },
+          m.muted.length ? m.muted.map(mutedRow) : h("div", { class: "zcf-set-empty" }, "No muted chats. Mute one with the bell in its header.")
+        )
+      ];
+    }
+    return { model, build };
+  }
+
   // src/whats-new.js
   var WHATS_NEW = [
+    {
+      version: "0.7.0",
+      date: "2026-09-29",
+      features: [
+        {
+          title: "Chat settings, reorganised",
+          points: [
+            "General, Chats and About tabs, with checkboxes and dropdowns that look like the game.",
+            "Tap a chat in the Chats tab to lock it, change its text size, or put it back in the dock. One size can set every chat's text at once.",
+            "Unmute chats from the Muted list."
+          ]
+        },
+        {
+          title: "Mentions",
+          points: ["Messages in Global and Faction that say your name, or words you add, are highlighted. A mention sound can go with them."]
+        },
+        {
+          title: "Sounds and time",
+          points: ["A volume for the sounds, a Test button for desktop notifications, and a 12-hour clock."]
+        },
+        {
+          title: "Your data",
+          points: ["One backup file now holds your friends, enemies, notes and settings. Check for updates and restore default settings in About."]
+        }
+      ]
+    },
     {
       version: "0.6.0",
       date: "2026-09-29",
@@ -5675,94 +6084,86 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.6.0" : "dev";
+  var VERSION = true ? "0.7.0" : "dev";
   var DEV_PROFILE_ID = 27581;
+  var UPDATE_URL = "https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js";
 
-  // src/ui/settings-window.js
-  var SOUND_LABELS = { off: "Off", chirp: "Chirp", ping: "Ping", bell: "Bell" };
-  var ORDER = (key) => key.startsWith("game:") ? 0 : key === "pm" ? 1 : key === "settings" ? 2 : 3;
-  function createSettingsWindow(services, { doc = document } = {}) {
-    const { store, settings, actions, sound, router } = services;
-    let marking = null;
-    let showNews = false;
+  // src/update-check.js
+  function compareVersions(a, b) {
+    const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+    const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+  function headerVersion(text2) {
+    const m = /^\/\/\s*@version\s+(\S+)/m.exec(String(text2));
+    return m && /^\d+(\.\d+)*$/.test(m[1]) ? m[1] : null;
+  }
+  async function checkForUpdate({ current, fetchImpl = (...a) => fetch(...a), url = UPDATE_URL } = {}) {
+    try {
+      const res = await fetchImpl(url, { cache: "no-store", credentials: "omit" });
+      if (!res || !res.ok) return { status: "failed" };
+      const latest = headerVersion(await res.text());
+      if (!latest) return { status: "failed" };
+      return compareVersions(latest, current) > 0 ? { status: "newer", latest } : { status: "current" };
+    } catch {
+      return { status: "failed" };
+    }
+  }
+
+  // src/ui/settings/about-tab.js
+  function createAboutTab({ services, requestRender, backup }) {
+    const { actions, router, toast } = services;
+    let update = { status: "idle" };
+    const openFeatures = /* @__PURE__ */ new Set();
     let showOlder = false;
-    let lastSig = null;
-    const titleText = h("span", null, "Chat settings");
-    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-cog chat-icon", "aria-hidden": "true" }), titleText);
-    const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
-    const header = h("div", { class: "chat-header", onclick: () => actions.toggleSettings() }, title, toggle);
-    const content = h("div", { class: "zcf-set zcf-zoom" });
-    const body = h("div", { class: "chat-content zcf-body" }, content);
-    const el = h("div", { class: "chat-container zcf zcf-settings", dataset: { zcfChat: "settings" } }, header, body);
-    const select = h(
-      "select",
-      { class: "zcf-set-select", "aria-label": "New private message sound", "data-zcf-focus": "sound" },
-      SOUNDS.map((k) => h("option", { value: k }, SOUND_LABELS[k]))
-    );
-    const play = h("button", { class: "zcf-mini zcf-set-play", type: "button", title: "Play it", "aria-label": "Play the sound", "data-zcf-focus": "play" }, "▶");
-    select.addEventListener("change", () => actions.setSound(select.value));
-    play.addEventListener("click", () => sound.play(select.value, { fromUser: true }));
-    const checkbox = (label, focusKey, onChange) => {
-      const input = h("input", { type: "checkbox", class: "zcf-set-check", "data-zcf-focus": focusKey });
-      input.addEventListener("change", () => onChange(input.checked));
-      return { input, row: h("label", { class: "zcf-set-toggle" }, input, h("span", null, label)) };
-    };
-    const notifyBox = checkbox("Desktop notifications", "notify", (on) => actions.setNotify(on));
-    const friendsOnlyBox = checkbox("Friends only", "notify-friends", (on) => actions.setNotifyFriendsOnly(on));
-    const titleBox = checkbox("Unread count in the browser tab", "title-count", (on) => actions.setTitleCount(on));
-    const hoverLocalBox = checkbox("Show your time too when hovering a chat time", "hover-local", (on) => actions.setHoverLocal(on));
-    const note = h("div", { class: "zcf-set-note" });
-    function permissionNote() {
-      const n = services.notifier;
-      if (!n || !n.supported) return "Not supported in this browser.";
-      return n.permission() === "denied" ? "Notifications are blocked for zed.city in your browser's site settings." : "";
+    let confirming = false;
+    async function check() {
+      if (update.status === "checking") return;
+      update = { status: "checking" };
+      requestRender();
+      const opts = { current: VERSION };
+      if (services.fetchImpl) opts.fetchImpl = services.fetchImpl;
+      update = await checkForUpdate(opts);
+      requestRender();
     }
-    function dmName(id) {
-      const s = store.get();
-      const d = s.dock.dms.find((x) => x.id === id);
-      return d && d.username || s.friends[id] && s.friends[id].username || null;
+    const model = () => ({ update, open: [...openFeatures], showOlder, confirming });
+    function updateStatus() {
+      if (update.status === "checking") return h("span", { class: "zcf-set-upd" }, "Checking…");
+      if (update.status === "current") return h("span", { class: "zcf-set-upd zcf-set-ok" }, h("i", { class: "fas fa-check", "aria-hidden": "true" }), " You're up to date");
+      if (update.status === "newer") {
+        return h(
+          "span",
+          { class: "zcf-set-upd zcf-set-new" },
+          `v${update.latest} is out · `,
+          h("a", { class: "zcf-set-link", href: UPDATE_URL, target: "_blank", rel: "noopener", "data-zcf-focus": "update-now" }, "Update now")
+        );
+      }
+      if (update.status === "failed") return h("span", { class: "zcf-set-upd zcf-set-fail" }, "Couldn't check. Try again later.");
+      return null;
     }
-    function chatRows() {
-      const saved = settings.get().chats;
-      const keys = /* @__PURE__ */ new Set(["pm", "settings"]);
-      for (const c of findChats(doc)) keys.add(c.key);
-      for (const d of store.get().dock.dms) keys.add(dmKey(d.id));
-      for (const k of Object.keys(saved)) keys.add(k);
-      return [...keys].sort((a, b) => ORDER(a) - ORDER(b) || a.localeCompare(b)).map((key) => {
-        const id = dmIdOf(key);
-        return { key, name: chatLabel(key, id ? dmName(id) : null), entry: saved[key] };
+    function features(v) {
+      return v.features.map((f, i) => {
+        const id = `${v.version}:${i}`;
+        const open = openFeatures.has(id);
+        return [
+          h("button", {
+            class: "zcf-set-feat",
+            type: "button",
+            "aria-expanded": String(open),
+            "data-zcf-focus": `feat:${id}`,
+            onclick: () => {
+              if (open) openFeatures.delete(id);
+              else openFeatures.add(id);
+              requestRender();
+            }
+          }, h("span", { class: "zcf-grow" }, f.title), h("i", { class: `fas fa-chevron-${open ? "down" : "right"}`, "aria-hidden": "true" })),
+          open ? h("ul", { class: "zcf-set-points" }, f.points.map((p) => h("li", null, p))) : null
+        ];
       });
-    }
-    const section = (label, ...children) => h("div", { class: "zcf-set-sec" }, h("div", { class: "zcf-set-h" }, label), children);
-    const disclosure = (label, open, focusKey, onToggle) => h("button", {
-      class: "zcf-news-toggle",
-      type: "button",
-      "aria-expanded": String(open),
-      "data-zcf-focus": focusKey,
-      onclick: onToggle
-    }, label, " ", open ? "▾" : "▸");
-    const versionBlock = (v) => h(
-      "div",
-      { class: "zcf-news-ver" },
-      h("div", { class: "zcf-news-vh" }, `v${v.version}`, h("span", { class: "zcf-news-date" }, v.date)),
-      v.features.map((f) => h("div", { class: "zcf-news-f" }, h("div", { class: "zcf-news-ft" }, f.title), h("ul", null, f.points.map((p) => h("li", null, p)))))
-    );
-    function whatsNew() {
-      const [latest, ...older] = WHATS_NEW;
-      return h(
-        "div",
-        { class: "zcf-news" },
-        disclosure(`What's new in v${latest.version}`, showNews, "news", () => {
-          showNews = !showNews;
-          render();
-        }),
-        showNews ? versionBlock(latest) : null,
-        showNews && older.length ? disclosure("Earlier versions", showOlder, "older", () => {
-          showOlder = !showOlder;
-          render();
-        }) : null,
-        showNews && showOlder ? older.map(versionBlock) : null
-      );
     }
     function devLink() {
       if (!DEV_PROFILE_ID) return null;
@@ -5778,81 +6179,151 @@ sandfish		/items/sandfish.webp`;
         }
       }, h("i", { class: "fas fa-user-plus", "aria-hidden": "true" }), " Become friends or enemies with the dev!");
     }
-    async function markAll() {
-      if (marking) return;
-      marking = { done: 0, total: 0 };
-      render();
-      try {
-        await actions.markAllRead((done, total) => {
-          marking = { done, total };
-          render();
-        });
-      } finally {
-        marking = null;
-        render();
+    function restoreControls() {
+      if (!confirming) {
+        return h("button", {
+          class: "zcf-page-btn zcf-page-danger",
+          type: "button",
+          "data-zcf-focus": "restore",
+          onclick: () => {
+            confirming = true;
+            requestRender();
+          }
+        }, "Restore default settings");
       }
+      return h(
+        "div",
+        { class: "zcf-set-confirm" },
+        h("span", null, "Put every setting back to how it came?"),
+        h("button", {
+          class: "zcf-page-btn zcf-page-danger",
+          type: "button",
+          "data-zcf-focus": "restore-yes",
+          onclick: () => {
+            confirming = false;
+            actions.restoreDefaults();
+            toast("Settings are back to how they came.");
+            requestRender();
+          }
+        }, "Restore"),
+        h("button", {
+          class: "zcf-page-btn",
+          type: "button",
+          "data-zcf-focus": "restore-no",
+          onclick: () => {
+            confirming = false;
+            requestRender();
+          }
+        }, "Cancel")
+      );
     }
-    function build(rows) {
-      const s = settings.get();
+    function build() {
+      const [latest, ...older] = WHATS_NEW;
       return [
-        section("Utilities", h(
-          "div",
-          { class: "zcf-set-btns" },
-          h(
-            "button",
-            { class: "zcf-page-btn", type: "button", "data-zcf-focus": "mark", disabled: !!marking, onclick: markAll },
-            marking ? `Marking… ${marking.done}/${marking.total}` : "Mark all as read"
-          ),
-          h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "closeall", onclick: () => actions.closeAllDms() }, "Close all private chats")
-        )),
         section(
-          "Your chats",
-          rows.map((r) => h(
+          null,
+          h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`),
+          h(
             "div",
-            { class: "zcf-set-chat" },
-            h("i", {
-              class: `fas ${isLocked(r.entry) ? "fa-lock" : "fa-lock-open"} zcf-set-lock`,
-              role: "img",
-              title: isLocked(r.entry) ? "Locked" : "Unlocked",
-              "aria-label": isLocked(r.entry) ? "Locked" : "Unlocked"
-            }),
-            h("div", { class: "zcf-row-main" }, h("div", { class: "zcf-name" }, r.name), h("div", { class: "zcf-status" }, describeChat(r.entry))),
-            h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": `reset:${r.key}`, disabled: !r.entry, onclick: () => actions.resetChat(r.key) }, "Reset")
-          )),
-          h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, "Reset all chats")
+            { class: "zcf-set-line" },
+            h("button", { class: "zcf-mini", type: "button", "data-zcf-focus": "check", disabled: update.status === "checking", onclick: check }, "Check for updates"),
+            updateStatus()
+          )
         ),
-        section("Notifications", notifyBox.row, h("div", { class: "zcf-set-sub" }, friendsOnlyBox.row), note, titleBox.row),
-        section("Sounds", h("label", { class: "zcf-set-sound" }, h("span", null, "New private message"), select, play)),
-        section("Time", hoverLocalBox.row),
-        section("About", h("div", { class: "zcf-set-about" }, `Zed City Friends v${VERSION}`), whatsNew(), devLink())
+        section(
+          { icon: "star", label: `What's new in ${latest.version}` },
+          features(latest),
+          older.length ? h("button", {
+            class: "zcf-news-toggle",
+            type: "button",
+            "aria-expanded": String(showOlder),
+            "data-zcf-focus": "older",
+            onclick: () => {
+              showOlder = !showOlder;
+              requestRender();
+            }
+          }, `Earlier versions ${showOlder ? "▾" : "▸"}`) : null,
+          showOlder ? older.map((v) => [h("div", { class: "zcf-news-vh" }, `v${v.version}`, h("span", { class: "zcf-news-date" }, v.date)), features(v)]) : null
+        ),
+        section(
+          { icon: "save", label: "Your data" },
+          h("div", { class: "zcf-set-hint" }, "Friends, enemies, notes and these settings, in one file."),
+          h(
+            "div",
+            { class: "zcf-set-btns" },
+            h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "save", onclick: () => backup.save() }, "Save backup"),
+            h("button", { class: "zcf-page-btn", type: "button", "data-zcf-focus": "load", onclick: () => backup.load() }, "Load backup")
+          ),
+          restoreControls(),
+          h("div", { class: "zcf-set-hint" }, "Keeps your friends, enemies, pins and mutes.")
+        ),
+        section(null, devLink())
       ];
     }
+    return {
+      model,
+      build,
+      // The update result lasts until the window closes.
+      reset() {
+        update = { status: "idle" };
+        confirming = false;
+      }
+    };
+  }
+
+  // src/ui/settings-window.js
+  var TAB_LABELS = { general: "General", chats: "Chats", about: "About" };
+  function createSettingsWindow(services, { doc = document } = {}) {
+    const { store, settings, actions } = services;
+    let lastSig = null;
+    let lastTab = null;
+    const titleText = h("span", null, "Chat settings");
+    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-cog chat-icon", "aria-hidden": "true" }), titleText);
+    const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
+    const header = h("div", { class: "chat-header", onclick: () => actions.toggleSettings() }, title, toggle);
+    const tabButtons = SETTINGS_TABS.map((tab) => h("button", {
+      class: "zcf-pm-tab",
+      type: "button",
+      role: "tab",
+      "data-zcf-focus": `tab:${tab}`,
+      onclick: () => actions.setSettingsTab(tab)
+    }, TAB_LABELS[tab]));
+    const tabBar = h("div", { class: "zcf-pm-tabs", role: "tablist", "aria-label": "Chat settings" }, tabButtons);
+    const content = h("div", { class: "zcf-set", role: "tabpanel" });
+    const scroller = h("div", { class: "zcf-set-scroll" }, content);
+    const backup = createBackupFile({ doc, actions, toast: services.toast, playerId: services.playerId });
+    const body = h("div", { class: "chat-content zcf-body" }, h("div", { class: "zcf-set-main zcf-zoom" }, tabBar, scroller), backup.input);
+    const el = h("div", { class: "chat-container zcf zcf-settings", dataset: { zcfChat: "settings" } }, header, body);
+    const requestRender = () => render();
+    const tabs = {
+      general: createGeneralTab({ services, doc }),
+      chats: createChatsTab({ services, doc, requestRender }),
+      about: createAboutTab({ services, requestRender, backup })
+    };
     function render() {
       if (!store.get().dock.settingsOpen) return;
-      const s = settings.get();
-      select.value = s.sound;
-      play.disabled = s.sound === "off";
-      const blocked = permissionNote();
-      notifyBox.input.checked = s.notify;
-      notifyBox.input.disabled = !(services.notifier && services.notifier.supported);
-      friendsOnlyBox.input.checked = s.notifyFriendsOnly;
-      friendsOnlyBox.input.disabled = !s.notify;
-      titleBox.input.checked = s.titleCount;
-      hoverLocalBox.input.checked = s.hoverLocal;
-      note.textContent = blocked;
-      note.hidden = !blocked;
-      const rows = chatRows();
-      const sig = JSON.stringify([rows, marking, showNews, showOlder, Object.keys(s.chats).length]);
+      const tab = settings.get().settingsTab;
+      const t = tabs[tab] || tabs.general;
+      tabButtons.forEach((b, i) => {
+        const on = SETTINGS_TABS[i] === tab;
+        b.classList.toggle("zcf-pm-tab-on", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+      if (t.sync) t.sync();
+      const model = t.model();
+      const sig = JSON.stringify([tab, model]);
       if (sig === lastSig) return;
       lastSig = sig;
-      const focusKey = content.contains(doc.activeElement) && doc.activeElement.dataset ? doc.activeElement.dataset.zcfFocus : void 0;
-      const scrollTop = body.scrollTop;
+      const active = doc.activeElement;
+      const focusKey = el.contains(active) && active.dataset ? active.dataset.zcfFocus : void 0;
+      const scrollTop = tab === lastTab ? scroller.scrollTop : 0;
+      lastTab = tab;
       clear(content);
-      for (const node of build(rows)) content.appendChild(node);
-      body.scrollTop = scrollTop;
+      for (const node of t.build(model)) if (node) content.appendChild(node);
+      scroller.scrollTop = scrollTop;
       if (focusKey) {
-        const target = content.querySelector(`[data-zcf-focus="${focusKey}"]`);
-        if (target) target.focus();
+        const target = el.querySelector(`[data-zcf-focus="${focusKey}"]`);
+        if (target && target !== doc.activeElement) target.focus();
       }
     }
     function update() {
@@ -5864,7 +6335,11 @@ sandfish		/items/sandfish.webp`;
       toggle.hidden = !open;
       el.title = open ? "" : "Chat settings";
       if (open) render();
-      else lastSig = null;
+      else {
+        lastSig = null;
+        lastTab = null;
+        tabs.about.reset();
+      }
     }
     return {
       el,
@@ -6120,6 +6595,7 @@ sandfish		/items/sandfish.webp`;
   // src/ui/enemy-marks.js
   var ROW = ".msg-cont";
   var MAX_PENDING = 500;
+  var MAX_FRESH = 5;
   function createEnemyMarks({ doc = document, win = window, keeper = null, names, onRow = null }) {
     let dockEl = null;
     let observer = null;
@@ -6154,20 +6630,29 @@ sandfish		/items/sandfish.webp`;
       const set = names();
       const nodes = pending;
       pending = [];
+      const rows = [];
       for (const node of nodes) {
         if (!node.isConnected) continue;
         for (const row of rowsIn(node)) {
           if (handled.has(row) || !isGameRow(row)) continue;
           handled.add(row);
-          markRow(row, set);
-          if (onRow) onRow(row);
+          rows.push(row);
         }
+      }
+      const perChat = /* @__PURE__ */ new Map();
+      for (const row of rows) {
+        const chat = row.closest(".chat-container");
+        perChat.set(chat, (perChat.get(chat) || 0) + 1);
+      }
+      for (const row of rows) {
+        markRow(row, set);
+        if (onRow) onRow(row, { fresh: perChat.get(row.closest(".chat-container")) <= MAX_FRESH });
       }
     }
     function onMutations(records) {
       for (const r of records) {
         for (const n of r.addedNodes) {
-          if (n.nodeType === 1 && !n.classList.contains("zcf-enemy-mark")) pending.push(n);
+          if (n.nodeType === 1 && !n.classList.contains("zcf-enemy-mark") && !n.classList.contains("zcf-mention-flag")) pending.push(n);
         }
       }
       if (pending.length > MAX_PENDING) {
@@ -6183,7 +6668,7 @@ sandfish		/items/sandfish.webp`;
         if (!isGameRow(row)) continue;
         handled.add(row);
         markRow(row, set);
-        if (onRow) onRow(row);
+        if (onRow) onRow(row, { fresh: false });
       }
     }
     function ensure() {
@@ -6212,6 +6697,129 @@ sandfish		/items/sandfish.webp`;
         if (frame) win.cancelAnimationFrame(frame);
         frame = 0;
         dockEl = null;
+      }
+    };
+  }
+
+  // src/mentions.js
+  var escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function makeMatcher(words) {
+    const seen = /* @__PURE__ */ new Set();
+    const list = [];
+    for (const w of Array.isArray(words) ? words : []) {
+      const word = typeof w === "string" ? w.trim() : "";
+      if (!word || seen.has(word.toLowerCase())) continue;
+      seen.add(word.toLowerCase());
+      list.push(word);
+    }
+    if (!list.length) return null;
+    list.sort((a, b) => b.length - a.length);
+    const source = `(?<![\\p{L}\\p{N}_])(?:${list.map(escape).join("|")})(?![\\p{L}\\p{N}_])`;
+    const once = new RegExp(source, "iu");
+    return {
+      test: (text2) => once.test(String(text2)),
+      // [start, end) pairs of every match in `text`.
+      ranges(text2) {
+        const out = [];
+        for (const m of String(text2).matchAll(new RegExp(source, "giu"))) out.push([m.index, m.index + m[0].length]);
+        return out;
+      }
+    };
+  }
+
+  // src/ui/mention-marks.js
+  var FLAG = "zcf-mention-flag";
+  var HIGHLIGHT = "zcf-mention";
+  var CHATS = ".general-chat, .faction-chat";
+  var MAX_RANGES = 300;
+  function createMentionMarks({ doc = document, win = window, words, enabled, myName = "", onMention = () => {
+  } }) {
+    const registry = win.CSS && win.CSS.highlights && typeof win.Highlight === "function" ? win.CSS.highlights : null;
+    let highlight = null;
+    let ranges = /* @__PURE__ */ new Set();
+    let byRow = /* @__PURE__ */ new WeakMap();
+    let matcher = null;
+    let matcherKey = null;
+    const me = String(myName || "").trim().toLowerCase();
+    function currentMatcher() {
+      const list = words();
+      const key = JSON.stringify(list);
+      if (key !== matcherKey) {
+        matcherKey = key;
+        matcher = makeMatcher(list);
+      }
+      return matcher;
+    }
+    function clearRow(row) {
+      const old = byRow.get(row);
+      if (!old) return;
+      for (const r of old) {
+        ranges.delete(r);
+        if (highlight) highlight.delete(r);
+      }
+      byRow.delete(row);
+    }
+    function prune() {
+      for (const r of ranges) {
+        if (ranges.size > MAX_RANGES || !r.startContainer.isConnected) {
+          ranges.delete(r);
+          if (highlight) highlight.delete(r);
+        }
+      }
+    }
+    function addRanges(row, textEl, m) {
+      if (!registry) return;
+      if (!highlight) {
+        highlight = new win.Highlight();
+        registry.set(HIGHLIGHT, highlight);
+      }
+      const mine = [];
+      const walker = doc.createTreeWalker(textEl, 4);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (const [a, b] of m.ranges(node.nodeValue)) {
+          const r = doc.createRange();
+          r.setStart(node, a);
+          r.setEnd(node, b);
+          mine.push(r);
+          ranges.add(r);
+          highlight.add(r);
+        }
+      }
+      byRow.set(row, mine);
+      if (ranges.size > MAX_RANGES * 1.5) prune();
+    }
+    function setFlag2(line, on) {
+      const flag2 = line.querySelector(`:scope > .${FLAG}`);
+      if (on && !flag2) {
+        const i = doc.createElement("i");
+        i.className = FLAG;
+        i.hidden = true;
+        line.appendChild(i);
+      } else if (!on && flag2) flag2.remove();
+    }
+    function mark(row, { fresh = false } = {}) {
+      if (!row.closest(CHATS) || row.closest(".zcf-root")) return;
+      const sender = row.querySelector(".sender-name");
+      const line = sender && sender.parentElement;
+      const textEl = line && line.nextElementSibling;
+      if (!textEl) return;
+      clearRow(row);
+      const m = enabled() ? currentMatcher() : null;
+      const mine = !!me && sender.textContent.trim().toLowerCase() === me;
+      const hit = !!m && !mine && m.test(textEl.textContent);
+      setFlag2(line, hit);
+      if (!hit) return;
+      addRanges(row, textEl, m);
+      if (fresh) onMention(row);
+    }
+    return {
+      mark,
+      destroy() {
+        if (registry && highlight) registry.delete(HIGHLIGHT);
+        highlight = null;
+        ranges = /* @__PURE__ */ new Set();
+        byRow = /* @__PURE__ */ new WeakMap();
+        for (const f of doc.querySelectorAll(`.${FLAG}`)) f.remove();
       }
     };
   }
@@ -6987,7 +7595,7 @@ sandfish		/items/sandfish.webp`;
     const lock = h("button", { class: "zcf-cc-icon zcf-cc-lock", type: "button", onclick: stop(() => act.toggleLock(key)) }, glyph);
     lock.addEventListener("contextmenu", stop(() => act.openMenu(key, lock)));
     const el = h("span", { class: "zcf-cc", dataset: { zcfCc: key } }, inline, back, lock);
-    function sync(entry, width) {
+    function sync(entry, width, textAll = DEFAULT_TEXT) {
       const locked = isLocked(entry);
       lock.title = locked ? TITLE_LOCKED : TITLE_UNLOCKED;
       lock.setAttribute("aria-label", lock.title);
@@ -6995,7 +7603,7 @@ sandfish		/items/sandfish.webp`;
       lock.classList.toggle("zcf-cc-unlocked", !locked);
       glyph.className = `fas ${locked ? "fa-lock" : "fa-lock-open"}`;
       back.hidden = !isMoved(entry);
-      value.textContent = `${textOf(entry)}%`;
+      value.textContent = `${textOf(entry, textAll)}%`;
       inline.hidden = !(width >= HEADER_CONTROLS_MIN_WIDTH);
       reset.disabled = !(entry && (entry.w || entry.h));
     }
@@ -7253,8 +7861,13 @@ sandfish		/items/sandfish.webp`;
     return `body .chat-containers .zcf[data-zcf-chat="${key}"]`;
   }
   var zoomTargets = (key) => key.startsWith("game:") ? [".chat-content"] : [".zcf-zoom"];
-  function buildUserCss({ chats = {}, live = null, small = false, vw = 1280, vh = 800, sizes = {}, front = [] }) {
+  var ALL_ZOOM = [
+    `body .chat-containers > .chat-container:is(${GAME_CHATS.map((g) => `.${g.cls}`).join(",")}) .chat-content`,
+    "body .chat-containers .zcf[data-zcf-chat] .zcf-zoom"
+  ].join(",");
+  function buildUserCss({ chats = {}, textAll = DEFAULT_TEXT, live = null, small = false, vw = 1280, vh = 800, sizes = {}, front = [] }) {
     const rules = [];
+    if (textAll !== DEFAULT_TEXT) rules.push(`${ALL_ZOOM}{zoom:${textAll / 100}}`);
     const keys = new Set(Object.keys(chats));
     if (live) keys.add(live.key);
     for (const key of keys) {
@@ -7262,8 +7875,8 @@ sandfish		/items/sandfish.webp`;
       const entry = isLive ? { ...chats[key], ...live.entry } : chats[key];
       if (!entry) continue;
       const sel = chatSelector(key);
-      const text2 = textOf(entry);
-      if (text2 !== 100) rules.push(`${zoomTargets(key).map((t) => `${sel} ${t}`).join(",")}{zoom:${text2 / 100}}`);
+      const text2 = textOf(entry, textAll);
+      if (text2 !== textAll) rules.push(`${zoomTargets(key).map((t) => `${sel} ${t}`).join(",")}{zoom:${text2 / 100}}`);
       if (small) continue;
       const sized = [];
       if (entry.w) sized.push(`width:${Math.min(entry.w, Math.max(LIMITS.minW, vw))}px`, "min-width:0", "max-width:none");
@@ -7304,10 +7917,11 @@ sandfish		/items/sandfish.webp`;
     const saved = (key) => settings.get().chats[key];
     const entryOf = (key) => live && live.key === key ? { ...saved(key), ...live.entry } : saved(key);
     const save = (key, patch) => settings.update((s) => updateChat(s, key, patch));
+    const textAll = () => settings.get().textAll;
     const menu = createChatMenu({ doc, win });
     const act = {
       toggleLock: (key) => save(key, { locked: isLocked(saved(key)) ? false : null }),
-      stepText: (key, delta) => save(key, { text: clampText(textOf(saved(key)) + delta) }),
+      stepText: (key, delta) => save(key, { text: clampText(textOf(saved(key), textAll()) + delta) }),
       resetSize: (key) => save(key, { w: null, h: null }),
       returnToRow: (key) => save(key, { x: null, y: null }),
       openMenu: (key, anchor) => menu.open(anchor, key, menuModel(key))
@@ -7316,7 +7930,7 @@ sandfish		/items/sandfish.webp`;
       const entry = saved(key);
       const id = dmIdOf(key);
       const btn = (label, onclick, extra = {}) => h("button", { class: "zcf-cc-btn", type: "button", onclick, ...extra }, label);
-      const text2 = textOf(entry);
+      const text2 = textOf(entry, textAll());
       const rows = [
         {
           label: "Message size",
@@ -7347,7 +7961,7 @@ sandfish		/items/sandfish.webp`;
         const m = measure(c);
         if (m) sizes[c.key] = m;
       }
-      const css = buildUserCss({ chats: settings.get().chats, live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
+      const css = buildUserCss({ chats: settings.get().chats, textAll: textAll(), live, small: isSmall(), vw: win.innerWidth, vh: win.innerHeight, sizes, front });
       if (styleEl.textContent !== css) styleEl.textContent = css;
       if (!styleEl.isConnected) (doc.head || doc.documentElement).appendChild(styleEl);
     }
@@ -7360,7 +7974,7 @@ sandfish		/items/sandfish.webp`;
       const rec = records.get(key);
       if (!c || !rec) return;
       const entry = entryOf(key);
-      rec.controls.sync(entry, entry && entry.w || c.el.getBoundingClientRect().width);
+      rec.controls.sync(entry, entry && entry.w || c.el.getBoundingClientRect().width, textAll());
     }
     function refresh() {
       chats = findChats(doc);
@@ -7388,7 +8002,7 @@ sandfish		/items/sandfish.webp`;
           else c.header.appendChild(rec.controls.el);
         }
         const entry = entryOf(c.key);
-        rec.controls.sync(entry, !c.minimized && entry && entry.w || c.el.getBoundingClientRect().width);
+        rec.controls.sync(entry, !c.minimized && entry && entry.w || c.el.getBoundingClientRect().width, textAll());
         const { key, el } = c;
         const dirs = c.minimized ? [] : gripsFor({ locked: isLocked(entry), moved: isMoved(entry) });
         syncGrips(el, dirs, (dir, e) => resize.start(key, el, dir, isMoved(saved(key)), e));
@@ -7650,12 +8264,12 @@ sandfish		/items/sandfish.webp`;
       const m = minutesOf(printedOf(el));
       return m === null ? null : momentAt(m, printed());
     }
-    function rewrite(row, want) {
+    function rewrite(row, want, { h12 = false } = {}) {
       const el = row.matches && row.matches(TIME) ? row : row.querySelector(TIME);
       if (!el) return;
       const text2 = printedOf(el);
       const ts = momentOf(el);
-      const shown = ts === null || printed() === want ? text2 : formatClock(ts, want === "local");
+      const shown = ts === null || printed() === want && !h12 ? text2 : formatClock(ts, want === "local", h12);
       printedText.set(el, { printed: text2, shown });
       const node = el.firstChild;
       if (el.childNodes.length === 1 && node.nodeType === 3 && node.nodeValue.trim() !== shown) node.nodeValue = shown;
@@ -7668,7 +8282,7 @@ sandfish		/items/sandfish.webp`;
   var TAP_MS = 3e3;
   var OURS = "[data-zcf-ts]";
   var GAME = `.chat-container:not(.zcf) ${TIME}`;
-  function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock, showLocal = () => true }) {
+  function createTimeHover({ doc = document, win = window, now = () => Date.now(), gameClock, showLocal = () => true, clock12 = () => false }) {
     let tip = null;
     let shownFor = null;
     let waitingFor = null;
@@ -7679,8 +8293,8 @@ sandfish		/items/sandfish.webp`;
       return Number.isFinite(ts) && ts > 0 ? ts : null;
     }
     function linesFor(ts) {
-      const lines = [formatStamp(ts, false)];
-      if (showLocal() && new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true));
+      const lines = [formatStamp(ts, false, clock12())];
+      if (showLocal() && new Date(ts).getTimezoneOffset() !== 0) lines.push(formatStamp(ts, true, clock12()));
       lines.push(longAgo(ts, now()));
       return lines;
     }
@@ -7757,6 +8371,8 @@ sandfish		/items/sandfish.webp`;
   var INTERVALS = { threadsIdle: 15e3, threadsChatting: 5e3, activeDm: 2e3, activeDmBusy: 1e4, dmInfo: 6e4, presence: 6e4, hiddenNotify: 6e4 };
   var MAX_NOTIFY = 3;
   var PRESENCE_PER_SWEEP = 20;
+  var MENTION_RECENT_MS = 2 * 60 * 1e3;
+  var MENTION_GAP_MS = 5e3;
   function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }), notifier: notifierOpt = null }) {
     const store = createStore({ playerId, storage, win, now });
     const settings = createSettingsStore({ playerId, storage, win, now });
@@ -7822,8 +8438,8 @@ sandfish		/items/sandfish.webp`;
       // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
       onNewMail: (arrived) => {
         if (tabFocus.elsewhere()) return;
-        const name = settings.get().sound;
-        if (name !== "off") sound.play(name);
+        const s = settings.get();
+        if (s.sound !== "off") sound.play(s.sound, { volume: s.volume });
         notifyNewMail(arrived);
       }
     });
@@ -7971,6 +8587,25 @@ sandfish		/items/sandfish.webp`;
       },
       resetChat: (key) => settings.update((s) => resetChat(s, key)),
       resetAllChats: () => settings.update((s) => resetAllChats(s)),
+      setSettingsTab: (tab) => settings.update((s) => setSettingsTab(s, tab)),
+      setMentionSound(name) {
+        settings.update((s) => setMentionSound(s, name));
+        sound.unlock();
+      },
+      setVolume: (v) => settings.update((s) => setVolume(s, v)),
+      setMentions: (on) => settings.update((s) => setFlag(s, "mentions", on)),
+      // Returns the cleaned list, for the text field to show.
+      setMentionWords(text2) {
+        settings.update((s) => setMentionWords(s, text2));
+        return settings.get().mentionWords;
+      },
+      setClock12: (on) => settings.update((s) => setFlag(s, "clock12", on)),
+      setChatLocked: (key, locked) => settings.update((s) => updateChat(s, key, { locked: locked ? null : false })),
+      stepChatText: (key, delta) => settings.update((s) => updateChat(s, key, { text: clampText(textOf(s.chats[key], s.textAll) + delta) })),
+      returnChat: (key) => settings.update((s) => updateChat(s, key, { x: null, y: null })),
+      resetChatSize: (key) => settings.update((s) => updateChat(s, key, { w: null, h: null })),
+      stepTextAll: (delta) => settings.update((s) => setTextAll(s, s.textAll + delta)),
+      restoreDefaults: () => settings.update((s) => restoreDefaults(s)),
       async setNotify(on) {
         const ask = ++notifyAsk;
         const off = (message, opts) => {
@@ -8010,13 +8645,22 @@ sandfish		/items/sandfish.webp`;
       },
       removeEnemy: (id) => enemies.update((d) => removeEnemy(d, id)),
       setEnemyNote: (id, note) => enemies.update((d) => setEnemyNote(d, id, note)),
-      exportFriends: () => exportFriends(store.get(), playerId, enemies.get()),
-      importFriends(text2) {
+      exportBackup: () => exportFriends(store.get(), playerId, enemies.get(), settings.get()),
+      importBackup(text2) {
         const r = parseImport(text2, playerId);
         if (!r.ok) return r;
         const f = store.update((s) => mergeImport(s, r.friends, now()));
         const e = r.enemies.length ? enemies.update((d) => mergeEnemiesImport(d, r.enemies, now())) : { added: 0, notes: 0 };
-        return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes };
+        let restored;
+        if (r.settings) {
+          try {
+            settings.update((s) => applyBackupSettings(s, r.settings));
+            restored = "restored";
+          } catch {
+            restored = "unreadable";
+          }
+        }
+        return { ok: true, added: f.added, enemiesAdded: e.added, notes: f.notes + e.notes, settings: restored };
       }
     };
     const services = {
@@ -8076,10 +8720,38 @@ sandfish		/items/sandfish.webp`;
       myId: playerId
     });
     const gameClock = createGameClock({ doc, storage, key: `zcf:v1:${playerId}:gameClock`, now, onChange: () => marks.refresh() });
-    const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()), onRow: (row) => gameClock.rewrite(row, "game") });
+    let lastMentionSound = 0;
+    function onMention(row) {
+      const s = settings.get();
+      if (s.mentionSound === "off" || tabFocus.elsewhere()) return;
+      const el = row.querySelector(TIME);
+      const ts = el ? gameClock.momentOf(el) : null;
+      const t = now();
+      if (ts === null || t - ts > MENTION_RECENT_MS || t - lastMentionSound < MENTION_GAP_MS) return;
+      lastMentionSound = t;
+      sound.play(s.mentionSound, { volume: s.volume });
+    }
+    const mentionMarks = createMentionMarks({
+      doc,
+      win,
+      words: () => [playerName, ...settings.get().mentionWords].filter(Boolean),
+      enabled: () => settings.get().mentions,
+      myName: playerName || "",
+      onMention
+    });
+    const marks = createEnemyMarks({
+      doc,
+      win,
+      keeper,
+      names: () => enemyNames(enemies.get()),
+      onRow: (row, info2) => {
+        gameClock.rewrite(row, "game", { h12: settings.get().clock12 });
+        mentionMarks.mark(row, info2);
+      }
+    });
     const page = createFriendsPage(services, { doc, win, keeper });
     const titleCount = createTitleCount({ doc, win });
-    const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal });
+    const timeHover = createTimeHover({ doc, win, now, gameClock, showLocal: () => settings.get().hoverLocal, clock12: () => settings.get().clock12 });
     const syncTitle = () => {
       const s = settings.get();
       titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
@@ -8105,9 +8777,19 @@ sandfish		/items/sandfish.webp`;
       view.pm.syncBadge();
       syncTitle();
     });
+    const rowsSig = () => {
+      const s = settings.get();
+      return JSON.stringify([s.clock12, s.mentions, s.mentionWords]);
+    };
+    let lastRowsSig = rowsSig();
     settings.subscribe(() => {
       renderDock();
       syncTitle();
+      const sig = rowsSig();
+      if (sig !== lastRowsSig) {
+        lastRowsSig = sig;
+        marks.refresh();
+      }
     });
     enemies.subscribe(() => {
       renderDock();
@@ -8153,7 +8835,8 @@ sandfish		/items/sandfish.webp`;
     marks.start();
     custom.start();
     const unlockSound = () => {
-      if (settings.get().sound !== "off") sound.unlock();
+      const s = settings.get();
+      if (s.sound !== "off" || s.mentionSound !== "off") sound.unlock();
     };
     doc.addEventListener("pointerdown", unlockSound, { capture: true, once: true });
     const onVisible = () => {
@@ -8183,6 +8866,7 @@ sandfish		/items/sandfish.webp`;
         profileButton.destroy();
         enemyButton.destroy();
         marks.destroy();
+        mentionMarks.destroy();
         custom.destroy();
         titleCount.destroy();
         timeHover.destroy();
@@ -8245,38 +8929,78 @@ body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.f
 .zcf-pm-confirm .zcf-row-main{font-size:12.5px}
 .zcf-enemy-mark{color:#ef5350;font-size:.85em;margin-right:4px}
 .zcf-muted-mark{font-size:.85em;margin-left:5px;opacity:.5}
+.chat-containers > .chat-container:not(.zcf) .msg-cont:has(.zcf-mention-flag){background:#f2c03714;box-shadow:inset 3px 0 #f2c037}
+::highlight(zcf-mention){color:#f2c037}
 .chat-containers .zcf-settings{order:4}
-.zcf-settings:not(.chat-minimized) .chat-content{overflow-y:auto}
-.zcf-set{padding:2px 0 8px}
-.zcf-set-sec{padding:8px 12px;border-bottom:1px solid #ffffff0d}
+.zcf-settings:not(.chat-minimized){height:450px}
+.zcf-settings:not(.chat-minimized) .chat-content{overflow:hidden}
+.zcf-set-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.zcf-set-scroll{flex:1 1 auto;min-height:0;overflow-y:auto}
+.zcf-set{padding:0 0 8px}
+.zcf-set-sec{padding:10px 12px 6px;border-bottom:1px solid #ffffff0d}
 .zcf-set-sec:last-child{border-bottom:0}
-.zcf-set-h{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff59;margin-bottom:6px}
-.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px}
-.zcf-set-chat{display:flex;align-items:center;gap:8px;padding:4px 0}
-.zcf-set-lock{width:14px;flex:none;text-align:center;color:#9e9e9e;font-size:11px}
-.zcf-set-all{margin-top:6px}
-.zcf-set-sound{display:flex;align-items:center;gap:8px;font-size:12.5px}
-.zcf-set-sound span{flex:1}
-.zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
+.zcf-set-h{display:flex;align-items:center;gap:7px;font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#9e9e9e;margin-bottom:4px}
+.zcf-set-h i{width:14px;text-align:center;color:#6fb3c8;font-size:11px}
+.zcf-set-count{margin-left:auto;font-family:Roboto,sans-serif;letter-spacing:0;text-transform:none;font-size:11px;color:#6fb3c8}
+.zcf-set-line{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+.zcf-set-ind{padding-left:26px}
+.zcf-grow{flex:1;min-width:0}
+.zcf-set-toggle{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+.zcf-set-toggle:has(input:disabled){cursor:default}
+.zcf-set-text{display:flex;flex-direction:column;min-width:0}
+.zcf-set-subline{font-size:11px;color:#ffffff66;margin-top:1px}
+.zcf-set-toggle input:disabled ~ .zcf-set-text{opacity:.45}
+.zcf .zcf-check{appearance:none;-webkit-appearance:none;flex:none;box-sizing:border-box;width:16px;height:16px;margin:1px 0 0;border:2px solid #ffffffb3;border-radius:2px;background:transparent;display:inline-grid;place-content:center;cursor:pointer}
+.zcf .zcf-check:checked{background:#0a748f;border-color:#0a748f}
+.zcf .zcf-check:checked::after{content:"";width:8px;height:4px;border:solid #fff;border-width:0 0 2px 2px;transform:translateY(-1px) rotate(-45deg)}
+.zcf .zcf-check:disabled{opacity:.45;cursor:default}
+.zcf .zcf-check:focus-visible,.zcf .zcf-select:focus-visible,.zcf .zcf-set-input:focus-visible,.zcf .zcf-set-range:focus-visible{outline:2px solid #6fb3c8;outline-offset:2px}
+.zcf .zcf-select{appearance:none;-webkit-appearance:none;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0h8L4 5z' fill='%23ffffff99'/%3E%3C/svg%3E") no-repeat right 2px center;border:0;border-bottom:1px solid #ffffff4d;border-radius:0;color:#e6e6e6;font:inherit;font-size:12.5px;padding:2px 16px 2px 0;cursor:pointer}
+.zcf .zcf-select option{background:#16181c;color:#e0e0e0}
+.zcf .zcf-set-input{flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid #ffffff4d;border-radius:0;color:#e6e6e6;font:inherit;font-size:12.5px;padding:3px 0}
+.zcf .zcf-set-input::placeholder{color:#ffffff4d}
+.zcf .zcf-set-input:disabled{opacity:.45}
+.zcf .zcf-set-range{width:120px;margin:0;accent-color:#0a748f;cursor:pointer}
+.zcf-set-also{flex:none;font-size:12px;color:#bdbdbd}
+.zcf-set-hint{font-size:11px;color:#ffffff66;padding:0 0 4px}
+.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px;padding:3px 0 5px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
-.zcf-set-about{font-size:12px;opacity:.6}
-.zcf-set-toggle{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer}
-.zcf-set-toggle input{margin:0;accent-color:#0a748f;cursor:pointer}
-.zcf-set-toggle input:disabled{cursor:default}
-.zcf-set-toggle input:disabled + span{opacity:.45}
-.zcf-set-sub{padding-left:22px}
-.zcf-set-note{font-size:11px;color:#f2c037;padding:2px 0 4px 22px}
-.zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
+.zcf-set-note{font-size:11px;color:#f2c037;padding:0 0 4px 26px}
+.zcf-set-chat{display:flex;align-items:center;gap:8px;width:100%;padding:5px 0;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.zcf-set-chat .zcf-row-main{display:flex;flex-direction:column}
+.zcf-set-chat:hover .zcf-name{color:#fff}
+.zcf-set-lock{width:14px;flex:none;text-align:center;color:#ffffff59;font-size:11px}
+.zcf-set-lock.zcf-unlocked{color:#f2c037}
+.zcf-set-chev{flex:none;width:12px;text-align:center;color:#ffffff40;font-size:10px}
+.zcf-status.zcf-set-changed{color:#6fb3c8;opacity:1}
+.zcf-set-panel{background:#0f1114;margin:2px -12px 4px;padding:6px 12px 8px 34px;border-top:1px solid #000;border-bottom:1px solid #000}
+.zcf-set-pline{display:flex;align-items:center;gap:8px;min-height:26px;font-size:12px;color:#bdbdbd}
+.zcf-set-pline > span:first-child{flex:1;min-width:0}
+.zcf-set-pend{justify-content:flex-end}
+.zcf-set-stepper{flex:none;display:inline-flex;align-items:center;gap:3px}
+.zcf-set-value{min-width:38px;text-align:center;font-size:11.5px;color:#e6e6e6}
+.zcf-set-all{margin-top:6px}
+.zcf-set-mrow{display:flex;align-items:center;gap:8px;padding:4px 0}
+.zcf-set-mname{flex:1;min-width:0;background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:500;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zcf-set-mname:hover{text-decoration:underline}
+.zcf-set-empty{font-size:11.5px;color:#ffffff66;padding:2px 0 4px}
+.zcf-set-about{font-size:14px;font-weight:500;padding:2px 0 2px}
+.zcf-set-upd{font-size:11px;color:#ffffff99}
+.zcf-set-ok{color:#629464}
+.zcf-set-new{color:#f2c037}
+.zcf-set-fail{color:#ff8a8a}
+.zcf-set-link{color:#6fb3c8}
+.zcf-set-feat{display:flex;align-items:center;gap:8px;width:100%;padding:5px 0;background:none;border:0;border-top:1px solid #ffffff08;color:inherit;font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.zcf-set-feat i{font-size:9px;color:#ffffff40}
+.zcf-set-points{margin:0 0 4px;padding-left:16px;font-size:11.5px;color:#bdbdbd;line-height:1.45}
+.zcf-set-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;padding:3px 0}
+.zcf-set-dev{display:inline-block;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
 .zcf-set-dev:hover{opacity:1;text-decoration:underline}
 .zcf-set-dev i{font-size:10px}
-.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 2px;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .zcf-news-toggle:hover{text-decoration:underline}
-.zcf-news-ver{margin-top:8px}
-.zcf-news-vh{display:flex;gap:8px;align-items:baseline;font-size:12px;font-weight:700}
+.zcf-news-vh{display:flex;gap:8px;align-items:baseline;margin-top:8px;font-size:12px;font-weight:700}
 .zcf-news-date{font-size:11px;font-weight:400;opacity:.45}
-.zcf-news-f{margin-top:5px}
-.zcf-news-ft{font-size:12px;color:#e0e0e0}
-.zcf-news-f ul{margin:2px 0 0;padding-left:16px;font-size:11.5px;opacity:.75}
 .zcf-cc{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:400}
 .chat-container.chat-minimized .zcf-cc{display:none}
 .zcf-cc [hidden]{display:none!important}
@@ -8507,6 +9231,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
   }
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-pm:not(.chat-minimized){height:min(450px,60vh)}
+  .zcf-settings:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}
   .zcf-page-add-long{display:none}
   .zcf-page-add-short{display:inline}
