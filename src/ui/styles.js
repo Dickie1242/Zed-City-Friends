@@ -47,37 +47,75 @@ body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.f
 .chat-containers > .chat-container:not(.zcf) .msg-cont:has(.zcf-mention-flag){background:#f2c03714;box-shadow:inset 3px 0 #f2c037}
 ::highlight(zcf-mention){color:#f2c037}
 .chat-containers .zcf-settings{order:4}
-.zcf-settings:not(.chat-minimized) .chat-content{overflow-y:auto}
-.zcf-set{padding:2px 0 8px}
-.zcf-set-sec{padding:8px 12px;border-bottom:1px solid #ffffff0d}
+.zcf-settings:not(.chat-minimized){height:450px}
+.zcf-settings:not(.chat-minimized) .chat-content{overflow:hidden}
+.zcf-set-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.zcf-set-scroll{flex:1 1 auto;min-height:0;overflow-y:auto}
+.zcf-set{padding:0 0 8px}
+.zcf-set-sec{padding:10px 12px 6px;border-bottom:1px solid #ffffff0d}
 .zcf-set-sec:last-child{border-bottom:0}
-.zcf-set-h{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff59;margin-bottom:6px}
-.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px}
-.zcf-set-chat{display:flex;align-items:center;gap:8px;padding:4px 0}
-.zcf-set-lock{width:14px;flex:none;text-align:center;color:#9e9e9e;font-size:11px}
-.zcf-set-all{margin-top:6px}
-.zcf-set-sound{display:flex;align-items:center;gap:8px;font-size:12.5px}
-.zcf-set-sound span{flex:1}
-.zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
+.zcf-set-h{display:flex;align-items:center;gap:7px;font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#9e9e9e;margin-bottom:4px}
+.zcf-set-h i{width:14px;text-align:center;color:#6fb3c8;font-size:11px}
+.zcf-set-count{margin-left:auto;font-family:Roboto,sans-serif;letter-spacing:0;text-transform:none;font-size:11px;color:#6fb3c8}
+.zcf-set-line{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+.zcf-set-ind{padding-left:26px}
+.zcf-grow{flex:1;min-width:0}
+.zcf-set-toggle{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+.zcf-set-toggle:has(input:disabled){cursor:default}
+.zcf-set-text{display:flex;flex-direction:column;min-width:0}
+.zcf-set-subline{font-size:11px;color:#ffffff66;margin-top:1px}
+.zcf-set-toggle input:disabled ~ .zcf-set-text{opacity:.45}
+.zcf .zcf-check{appearance:none;-webkit-appearance:none;flex:none;box-sizing:border-box;width:16px;height:16px;margin:1px 0 0;border:2px solid #ffffffb3;border-radius:2px;background:transparent;display:inline-grid;place-content:center;cursor:pointer}
+.zcf .zcf-check:checked{background:#0a748f;border-color:#0a748f}
+.zcf .zcf-check:checked::after{content:"";width:8px;height:4px;border:solid #fff;border-width:0 0 2px 2px;transform:translateY(-1px) rotate(-45deg)}
+.zcf .zcf-check:disabled{opacity:.45;cursor:default}
+.zcf .zcf-check:focus-visible,.zcf .zcf-select:focus-visible,.zcf .zcf-set-input:focus-visible,.zcf .zcf-set-range:focus-visible{outline:2px solid #6fb3c8;outline-offset:2px}
+.zcf .zcf-select{appearance:none;-webkit-appearance:none;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0h8L4 5z' fill='%23ffffff99'/%3E%3C/svg%3E") no-repeat right 2px center;border:0;border-bottom:1px solid #ffffff4d;border-radius:0;color:#e6e6e6;font:inherit;font-size:12.5px;padding:2px 16px 2px 0;cursor:pointer}
+.zcf .zcf-select option{background:#16181c;color:#e0e0e0}
+.zcf .zcf-set-input{flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid #ffffff4d;border-radius:0;color:#e6e6e6;font:inherit;font-size:12.5px;padding:3px 0}
+.zcf .zcf-set-input::placeholder{color:#ffffff4d}
+.zcf .zcf-set-input:disabled{opacity:.45}
+.zcf .zcf-set-range{width:120px;margin:0;accent-color:#0a748f;cursor:pointer}
+.zcf-set-also{flex:none;font-size:12px;color:#bdbdbd}
+.zcf-set-hint{font-size:11px;color:#ffffff66;padding:0 0 4px}
+.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px;padding:3px 0 5px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
-.zcf-set-about{font-size:12px;opacity:.6}
-.zcf-set-toggle{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer}
-.zcf-set-toggle input{margin:0;accent-color:#0a748f;cursor:pointer}
-.zcf-set-toggle input:disabled{cursor:default}
-.zcf-set-toggle input:disabled + span{opacity:.45}
-.zcf-set-sub{padding-left:22px}
-.zcf-set-note{font-size:11px;color:#f2c037;padding:2px 0 4px 22px}
-.zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
+.zcf-set-note{font-size:11px;color:#f2c037;padding:0 0 4px 26px}
+.zcf-set-chat{display:flex;align-items:center;gap:8px;width:100%;padding:5px 0;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.zcf-set-chat .zcf-row-main{display:flex;flex-direction:column}
+.zcf-set-chat:hover .zcf-name{color:#fff}
+.zcf-set-lock{width:14px;flex:none;text-align:center;color:#ffffff59;font-size:11px}
+.zcf-set-lock.zcf-unlocked{color:#f2c037}
+.zcf-set-chev{flex:none;width:12px;text-align:center;color:#ffffff40;font-size:10px}
+.zcf-status.zcf-set-changed{color:#6fb3c8;opacity:1}
+.zcf-set-panel{background:#0f1114;margin:2px -12px 4px;padding:6px 12px 8px 34px;border-top:1px solid #000;border-bottom:1px solid #000}
+.zcf-set-pline{display:flex;align-items:center;gap:8px;min-height:26px;font-size:12px;color:#bdbdbd}
+.zcf-set-pline > span:first-child{flex:1;min-width:0}
+.zcf-set-pend{justify-content:flex-end}
+.zcf-set-stepper{flex:none;display:inline-flex;align-items:center;gap:3px}
+.zcf-set-value{min-width:38px;text-align:center;font-size:11.5px;color:#e6e6e6}
+.zcf-set-all{margin-top:6px}
+.zcf-set-mrow{display:flex;align-items:center;gap:8px;padding:4px 0}
+.zcf-set-mname{flex:1;min-width:0;background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:500;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zcf-set-mname:hover{text-decoration:underline}
+.zcf-set-empty{font-size:11.5px;color:#ffffff66;padding:2px 0 4px}
+.zcf-set-about{font-size:14px;font-weight:500;padding:2px 0 2px}
+.zcf-set-upd{font-size:11px;color:#ffffff99}
+.zcf-set-ok{color:#629464}
+.zcf-set-new{color:#f2c037}
+.zcf-set-fail{color:#ff8a8a}
+.zcf-set-link{color:#6fb3c8}
+.zcf-set-feat{display:flex;align-items:center;gap:8px;width:100%;padding:5px 0;background:none;border:0;border-top:1px solid #ffffff08;color:inherit;font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.zcf-set-feat i{font-size:9px;color:#ffffff40}
+.zcf-set-points{margin:0 0 4px;padding-left:16px;font-size:11.5px;color:#bdbdbd;line-height:1.45}
+.zcf-set-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;padding:3px 0}
+.zcf-set-dev{display:inline-block;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
 .zcf-set-dev:hover{opacity:1;text-decoration:underline}
 .zcf-set-dev i{font-size:10px}
-.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 2px;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .zcf-news-toggle:hover{text-decoration:underline}
-.zcf-news-ver{margin-top:8px}
-.zcf-news-vh{display:flex;gap:8px;align-items:baseline;font-size:12px;font-weight:700}
+.zcf-news-vh{display:flex;gap:8px;align-items:baseline;margin-top:8px;font-size:12px;font-weight:700}
 .zcf-news-date{font-size:11px;font-weight:400;opacity:.45}
-.zcf-news-f{margin-top:5px}
-.zcf-news-ft{font-size:12px;color:#e0e0e0}
-.zcf-news-f ul{margin:2px 0 0;padding-left:16px;font-size:11.5px;opacity:.75}
 .zcf-cc{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:400}
 .chat-container.chat-minimized .zcf-cc{display:none}
 .zcf-cc [hidden]{display:none!important}
@@ -308,6 +346,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
   }
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-pm:not(.chat-minimized){height:min(450px,60vh)}
+  .zcf-settings:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}
   .zcf-page-add-long{display:none}
   .zcf-page-add-short{display:inline}
