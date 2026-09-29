@@ -1,18 +1,10 @@
 // In-memory online/last-active cache. Never persisted.
-import { parseSentAt } from './time.js';
+import { pastTime } from './time.js';
 import { toId, warnOnce } from './util.js';
 
 // The API's `active` is seconds since the player was last active (the game's own TimeAgo
 // component subtracts it from now). Anything that looks like an absolute time is parsed as one.
-export function lastActive(value, now) {
-  if (value === null || value === undefined || value === '') return null;
-  const n = Number(value);
-  if (Number.isFinite(n)) {
-    if (n < 0) return null;
-    if (n < 1e9) return now - n * 1000;
-  }
-  return parseSentAt(value);
-}
+export const lastActive = pastTime;
 
 // Level, faction and the injured / traveling flags from a getProfile answer. The profile calls
 // the level `rank`; `traveling` may be a boolean or an object, so any truthy value counts.

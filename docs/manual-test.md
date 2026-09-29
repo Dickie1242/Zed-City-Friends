@@ -32,7 +32,7 @@ Record the answers in this file under "Findings", and fix the code only if an an
 10. **Traveling or exploring:** an open DM shows "Mail is unavailable while you are traveling/exploring."
 11. **Switch to another browser tab for a minute:** the Network tab shows no `api.zed.city` requests from the script until you return.
 12. **Export**, then remove a friend, then **Import**: the friend is back. Importing a file from another account is rejected.
-13. A game system-thread (`is_system` truthy) never pops up as a DM tab and never appears in the Private Messages Chats tab.
+13. A chat whose last message is a trade or activity invite (`is_system` on the thread) shows in the Chats tab as "Sent a trade invite" / "Sent an activity invite", counts as unread, and pops up for a friend like any message. Times in the Chats tab match the game's inbox (`last_reply` is seconds ago).
 14. Get into a fight (or start a trip), then let it end: the "Mail is unavailable while..." notice clears within about 10s of it ending, not up to a minute later.
 15. Navigate through a few different pages: our windows still match the game's chat look (same fonts/colors/spacing) — the game's own stylesheet order didn't push ours out of the cascade.
 16. With our windows present in the dock, the game's own Global/Faction chat still auto-scrolls on new messages, and the spacing between our last window and the first game chat looks right. (Global/Faction message rows use `.msg-cont`.)

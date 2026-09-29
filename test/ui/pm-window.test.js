@@ -62,12 +62,11 @@ describe('private messages window', () => {
     expect(el.querySelector('.zcf-body').hidden).toBe(true);
   });
 
-  it('opens on the Chats tab: newest first, previews, times, unread pills, no system threads', () => {
+  it('opens on the Chats tab: newest first, previews, times, unread pills', () => {
     const { services, el } = mount({
       threads: [
         thread(7, { username: 'Nyx', preview: 'see you there', senderId: ME, lastReply: NOW - 3 * 3600000 }),
         thread(9, { username: 'TradeGuy', preview: 'wanna buy ammo?', lastReply: NOW - 18 * 60000 }),
-        thread(3, { username: 'System', isSystem: true, lastReply: NOW }),
       ],
     });
     services.store.update((s) => { s.threads = { 9: { unread: 2 } }; });

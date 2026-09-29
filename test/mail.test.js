@@ -83,16 +83,17 @@ describe('mail', () => {
     expect(log.find((i) => i.key === 'm:2').grouped).toBe(false);
   });
 
-  it('finds unread mail newer than what was seen, from the other person only', () => {
+  it('finds unread mail newer than what was seen, from the other person only, invites included', () => {
     const threads = normalizeThreads([
       rawThread(10, { newMail: 1, lastReply: '2026-09-28 12:00:00' }),
       rawThread(11, { newMail: 1, senderId: 1 }),
-      rawThread(12, { newMail: 1, isSystem: 1 }),
+      rawThread(12, { newMail: 1, isSystem: 1, message: { cmd: 'activityInvite' } }),
       rawThread(13, { newMail: 0 }),
       rawThread(14, { newMail: 2, lastReply: '2026-09-28 12:00:00' }),
     ]);
     const seen = { 14: { lastSeenReply: Date.UTC(2026, 8, 28, 12) } };
-    expect(findNewMail(threads, seen, 1).map((t) => t.userId)).toEqual([10]);
+    expect(findNewMail(threads, seen, 1).map((t) => t.userId)).toEqual([10, 12]);
+    expect(threads.find((t) => t.userId === 12).preview).toBe('Sent an activity invite');
   });
 
   it('returns a thread seen before if there is newer mail since', () => {
@@ -216,5 +217,17 @@ describe('previewText', () => {
     const src = 'https://cdn.zed.city/?url=' + encodeURIComponent('https://static.klipy.com/a.gif');
     const [t] = normalizeThreads([rawThread(10, { message: `![hi](${src})` })]);
     expect(t.preview).toBe('GIF: hi');
+  });
+
+  it('reads a thread\'s last_reply as seconds ago, the way the game\'s inbox shows it', () => {
+    const now = Date.UTC(2026, 8, 29, 9, 0, 0);
+    const [a, b, c] = normalizeThreads([
+      rawThread(1, { lastReply: 90 }),
+      rawThread(2, { lastReply: '3600' }),
+      rawThread(3, { lastReply: '2026-09-29 08:00:00' }),
+    ], now);
+    expect(a.lastReply).toBe(now - 90000);
+    expect(b.lastReply).toBe(now - 3600000);
+    expect(c.lastReply).toBe(Date.UTC(2026, 8, 29, 8)); // an absolute time still reads as one
   });
 });

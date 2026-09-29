@@ -80,7 +80,9 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     if (!isExpanded(id)) return;
     const c = conversations.get(id);
     if (!c || !c.state.loaded) return;
-    const seen = Math.max(c.latestTs(), inbox.lastReply(id) || 0);
+    // The chat list's reply time is by our clock (it comes as seconds ago); message times are the server's.
+    // Compare like with like: prefer the chat list's, and fall back to the newest message off page 1.
+    const seen = inbox.lastReply(id) || c.latestTs();
     const t = store.get().threads[id];
     if (!t || t.unread > 0 || (t.lastSeenReply || 0) < seen) store.update((s) => markSeen(s, id, seen));
   }

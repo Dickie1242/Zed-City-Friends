@@ -1,4 +1,4 @@
-import { parseSentAt, utcDayKey, formatDayLabel } from './time.js';
+import { parseSentAt, pastTime, utcDayKey, formatDayLabel } from './time.js';
 import { asArray, toId } from './util.js';
 import { emojiParts } from './emoji.js';
 
@@ -81,7 +81,9 @@ export function normalizeMessages(data) {
   return asArray(data).map(normalizeMessage).filter(Boolean);
 }
 
-export function normalizeThread(raw) {
+// A chat-list row. `last_reply` is seconds ago (what the game's inbox feeds its TimeAgo), so it becomes a time
+// by our clock at `now`. `is_system` marks the last message as an invite (trade, activity), not a system account.
+export function normalizeThread(raw, now = Date.now()) {
   const userId = toId(raw && raw.other_user_id);
   if (!userId) return null;
   const other = raw.other_user && typeof raw.other_user === 'object' ? raw.other_user : {};
@@ -92,14 +94,14 @@ export function normalizeThread(raw) {
     avatar: typeof other.avatar === 'string' && other.avatar ? other.avatar : null,
     preview: previewText(messageText(raw.message)),
     senderId: toId(raw.sender_id),
-    lastReply: parseSentAt(raw.last_reply),
+    lastReply: pastTime(raw.last_reply, now),
     newMail: unread > 0 ? Math.floor(unread) : 0,
     isSystem: flag(raw.is_system),
   };
 }
 
-export function normalizeThreads(data) {
-  return asArray(data).map(normalizeThread).filter(Boolean);
+export function normalizeThreads(data, now = Date.now()) {
+  return asArray(data).map((raw) => normalizeThread(raw, now)).filter(Boolean);
 }
 
 // Turns messages (any order, duplicates allowed) into render items: day dividers + messages with a `grouped` flag.
@@ -130,7 +132,7 @@ export function buildLog(messages) {
 export function findNewMail(threads, seen, myId) {
   const out = [];
   for (const t of threads) {
-    if (t.isSystem || t.newMail <= 0 || t.senderId === myId) continue;
+    if (t.newMail <= 0 || t.senderId === myId) continue;
     const lastSeen = (seen[t.userId] && seen[t.userId].lastSeenReply) || 0;
     // <=, not <: the server may not mark a thread read (spec §12.6), so re-polling the same
     // lastReply (1-second precision) must not resurrect the badge on every poll.

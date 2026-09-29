@@ -7,12 +7,12 @@ const str = (v) => (typeof v === 'string' && v ? v : null);
 const truthy = (v) => v === true || Number(v) > 0;
 
 // Inbox page 1 (always fresh from the poll) plus the older pages loaded by scrolling: one row per player,
-// the newest thread winning when a player shows up on two pages, newest first, no system threads.
+// the newest thread winning when a player shows up on two pages, newest first.
 // `threads` is the saved thread state, for unread counts.
 export function buildChatRows({ page1 = [], older = [], threads = {} }) {
   const best = new Map();
   for (const t of [...page1, ...older.flat()]) {
-    if (!t || t.isSystem) continue;
+    if (!t) continue;
     const prev = best.get(t.userId);
     if (!prev || (t.lastReply || 0) > (prev.lastReply || 0)) best.set(t.userId, t);
   }

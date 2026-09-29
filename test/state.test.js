@@ -134,8 +134,8 @@ describe('state', () => {
     addFriend(s, { id: 2, username: 'b' }, 0);
     s.threads = { 1: { unread: 2 }, 2: { unread: 0 }, 3: { unread: 5 }, 4: { unread: 7 }, 8: { unread: 9 } };
     const inbox = [{ userId: 3, isSystem: false }, { userId: 4, isSystem: true }, { userId: 1, isSystem: false }];
-    // Friends always count; others only while their thread is in the Recent list; system threads never.
-    expect(chatsUnreadTotal(s, inbox)).toBe(7);
+    // Friends always count; others while their thread is on the first inbox page, invites included.
+    expect(chatsUnreadTotal(s, inbox)).toBe(14);
     expect(chatsUnreadTotal(s, [])).toBe(2);
   });
 

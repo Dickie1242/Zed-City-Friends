@@ -299,7 +299,7 @@
   }
   function chatsUnreadIds(state, inboxThreads, muted = []) {
     const ids = new Set(Object.keys(state.friends).map(Number));
-    for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
+    for (const t of inboxThreads) ids.add(t.userId);
     const skip = new Set(muted);
     return [...ids].filter((id) => !skip.has(id) && state.threads[id] && state.threads[id].unread > 0);
   }
@@ -890,6 +890,15 @@
     const t = Date.parse(s);
     return Number.isNaN(t) ? null : t;
   }
+  function pastTime(value, now) {
+    if (value === null || value === void 0 || value === "") return null;
+    const n = Number(value);
+    if (Number.isFinite(n)) {
+      if (n < 0) return null;
+      if (n < 1e9) return now - n * 1e3;
+    }
+    return parseSentAt(value);
+  }
   function utcDayKey(ts) {
     const d = new Date(ts);
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
@@ -946,15 +955,7 @@
   }
 
   // src/presence.js
-  function lastActive(value, now) {
-    if (value === null || value === void 0 || value === "") return null;
-    const n = Number(value);
-    if (Number.isFinite(n)) {
-      if (n < 0) return null;
-      if (n < 1e9) return now - n * 1e3;
-    }
-    return parseSentAt(value);
-  }
+  var lastActive = pastTime;
   function profileDetails(data) {
     const level = Number(data.rank ?? data.level);
     const f = data.faction && typeof data.faction === "object" ? data.faction : null;
@@ -3340,7 +3341,7 @@ sandfish		/items/sandfish.webp`;
   function normalizeMessages(data) {
     return asArray(data).map(normalizeMessage).filter(Boolean);
   }
-  function normalizeThread(raw) {
+  function normalizeThread(raw, now = Date.now()) {
     const userId = toId(raw && raw.other_user_id);
     if (!userId) return null;
     const other = raw.other_user && typeof raw.other_user === "object" ? raw.other_user : {};
@@ -3351,13 +3352,13 @@ sandfish		/items/sandfish.webp`;
       avatar: typeof other.avatar === "string" && other.avatar ? other.avatar : null,
       preview: previewText(messageText(raw.message)),
       senderId: toId(raw.sender_id),
-      lastReply: parseSentAt(raw.last_reply),
+      lastReply: pastTime(raw.last_reply, now),
       newMail: unread > 0 ? Math.floor(unread) : 0,
       isSystem: flag(raw.is_system)
     };
   }
-  function normalizeThreads(data) {
-    return asArray(data).map(normalizeThread).filter(Boolean);
+  function normalizeThreads(data, now = Date.now()) {
+    return asArray(data).map((raw) => normalizeThread(raw, now)).filter(Boolean);
   }
   function buildLog(messages) {
     const byId = /* @__PURE__ */ new Map();
@@ -3378,7 +3379,7 @@ sandfish		/items/sandfish.webp`;
   function findNewMail(threads, seen, myId) {
     const out = [];
     for (const t of threads) {
-      if (t.isSystem || t.newMail <= 0 || t.senderId === myId) continue;
+      if (t.newMail <= 0 || t.senderId === myId) continue;
       const lastSeen = seen[t.userId] && seen[t.userId].lastSeenReply || 0;
       if (t.lastReply !== null && t.lastReply <= lastSeen) continue;
       out.push(t);
@@ -3638,6 +3639,7 @@ sandfish		/items/sandfish.webp`;
   }
 
   // src/inbox.js
+  var SAME_REPLY_MS = 5e3;
   function recentSignature(list) {
     return JSON.stringify(list.map((t) => [t.userId, t.username, t.avatar, t.preview, t.lastReply, t.newMail, t.isSystem]));
   }
@@ -3661,7 +3663,13 @@ sandfish		/items/sandfish.webp`;
     async function poll() {
       const r = await api.getChats(1);
       if (!r.ok) return r;
-      threads = normalizeThreads(r.data);
+      threads = normalizeThreads(r.data, now());
+      if (previous) {
+        for (const t of threads) {
+          const prev = previous.get(t.userId);
+          if (prev != null && t.lastReply != null && Math.abs(t.lastReply - prev) <= SAME_REPLY_MS) t.lastReply = prev;
+        }
+      }
       const byId = new Map(threads.map((t) => [t.userId, t]));
       const state = store.get();
       const fresh = findNewMail(threads, state.threads, myId);
@@ -3736,7 +3744,7 @@ sandfish		/items/sandfish.webp`;
       async fetchPage(page) {
         const r = await api.getChats(page);
         if (!r.ok) return r;
-        return { ok: true, threads: normalizeThreads(r.data) };
+        return { ok: true, threads: normalizeThreads(r.data, now()) };
       },
       subscribe(fn) {
         subs.add(fn);
@@ -4186,7 +4194,7 @@ sandfish		/items/sandfish.webp`;
   function buildChatRows({ page1 = [], older = [], threads = {} }) {
     const best = /* @__PURE__ */ new Map();
     for (const t of [...page1, ...older.flat()]) {
-      if (!t || t.isSystem) continue;
+      if (!t) continue;
       const prev = best.get(t.userId);
       if (!prev || (t.lastReply || 0) > (prev.lastReply || 0)) best.set(t.userId, t);
     }
@@ -7141,7 +7149,7 @@ sandfish		/items/sandfish.webp`;
       if (!isExpanded(id)) return;
       const c = conversations.get(id);
       if (!c || !c.state.loaded) return;
-      const seen = Math.max(c.latestTs(), inbox.lastReply(id) || 0);
+      const seen = inbox.lastReply(id) || c.latestTs();
       const t = store.get().threads[id];
       if (!t || t.unread > 0 || (t.lastSeenReply || 0) < seen) store.update((s) => markSeen(s, id, seen));
     }
@@ -7502,7 +7510,8 @@ sandfish		/items/sandfish.webp`;
 .zcf-body{position:relative;font-size:13px}
 .zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
-.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#3d8b40!important}
+.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#629464!important}
+.chat-container.zcf-pm .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 .chat-containers .zcf-pm{order:2}
 .zcf-pm:not(.chat-minimized){height:450px}
 .zcf-pm-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}

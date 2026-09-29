@@ -15,7 +15,8 @@ export const CSS = `
 .zcf-body{position:relative;font-size:13px}
 .zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
-.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#3d8b40!important}
+.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#629464!important}
+.chat-container.zcf-pm .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 .chat-containers .zcf-pm{order:2}
 .zcf-pm:not(.chat-minimized){height:450px}
 .zcf-pm-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}

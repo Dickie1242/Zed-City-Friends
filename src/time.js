@@ -21,6 +21,18 @@ export function parseSentAt(value) {
   return Number.isNaN(t) ? null : t;
 }
 
+// A past moment the API gives either as seconds ago (profiles' `active`, the chat list's `last_reply`: the
+// game's own TimeAgo subtracts it from now) or as an absolute time. Returns ms, or null.
+export function pastTime(value, now) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (Number.isFinite(n)) {
+    if (n < 0) return null;
+    if (n < 1e9) return now - n * 1000;
+  }
+  return parseSentAt(value);
+}
+
 export function utcDayKey(ts) {
   const d = new Date(ts);
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;

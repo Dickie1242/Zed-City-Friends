@@ -30,7 +30,7 @@ const thread = (id, min, message, { mine = false, unread = 0, system = false } =
   other_user: { username: system ? 'Zed City' : PLAYERS[id].username },
   message,
   sender_id: mine ? ME : id,
-  last_reply: ago(min),
+  last_reply: min * 60, // seconds ago, as the game sends it
   new_mail: unread,
   is_system: system ? 1 : 0,
 });

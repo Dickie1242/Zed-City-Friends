@@ -164,11 +164,11 @@ export function closeAllDms(state) {
   state.dock.dms = [];
 }
 
-// Chats with unread messages that the Private Messages window lists: all friends, plus the other
-// (non-system) threads on the first inbox page. Muted conversations are left out (spec §D.1).
+// Chats with unread messages that the Private Messages window lists: all friends, plus the other threads on
+// the first inbox page. Muted conversations are left out (spec §D.1).
 export function chatsUnreadIds(state, inboxThreads, muted = []) {
   const ids = new Set(Object.keys(state.friends).map(Number));
-  for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
+  for (const t of inboxThreads) ids.add(t.userId);
   const skip = new Set(muted);
   return [...ids].filter((id) => !skip.has(id) && state.threads[id] && state.threads[id].unread > 0);
 }

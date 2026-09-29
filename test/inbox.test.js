@@ -193,13 +193,13 @@ describe('inbox', () => {
     expect(store.get().threads[5].unread).toBe(2);
   });
 
-  it('reports new mail from others once per poll, never on the first poll, for system threads, your own sends or muted chats', async () => {
+  it('reports new mail from others once per poll, never on the first poll, your own sends or muted chats', async () => {
     const onNewMail = vi.fn();
     const { inbox } = setup([
       [rawThread(5, { newMail: 1, lastReply: '2026-09-28 10:00:00' })],
       [rawThread(5, { newMail: 2, lastReply: '2026-09-28 10:01:00' }), rawThread(6, { newMail: 1, lastReply: '2026-09-28 10:01:00' })],
       [rawThread(5, { newMail: 2, lastReply: '2026-09-28 10:01:00' })],
-      [rawThread(7, { newMail: 1, isSystem: 1 }), rawThread(8, { newMail: 1, senderId: ME }), rawThread(9, { newMail: 1 })],
+      [rawThread(8, { newMail: 1, senderId: ME }), rawThread(9, { newMail: 1 })],
     ], { onNewMail, isMuted: (id) => id === 9 });
     await inbox.poll();
     expect(onNewMail).not.toHaveBeenCalled();
@@ -209,5 +209,39 @@ describe('inbox', () => {
     await inbox.poll();
     await inbox.poll();
     expect(onNewMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a reply\'s time steady while its seconds-ago count ticks up between polls', async () => {
+    let t = 1000000000000;
+    const rows = [
+      [rawThread(5, { newMail: 1, lastReply: 30 })],
+      [rawThread(5, { newMail: 1, lastReply: 46 })], // 15s later by our clock, 16s by the server's
+      [rawThread(5, { newMail: 2, lastReply: 3 })], // a new reply
+    ];
+    const api = fakeApi({ getChats: vi.fn(async () => ({ ok: true, data: rows.shift() || [] })) });
+    const store = createStore({ playerId: ME, storage: memoryStorage() });
+    const onThreadChanged = vi.fn();
+    const onNewMail = vi.fn();
+    const inbox = createInbox({ api, store, myId: ME, now: () => t, onThreadChanged, onNewMail });
+    await inbox.poll();
+    const first = inbox.lastReply(5);
+    expect(first).toBe(t - 30000);
+    t += 15000;
+    await inbox.poll();
+    expect(inbox.lastReply(5)).toBe(first);
+    expect(onThreadChanged).not.toHaveBeenCalled();
+    expect(onNewMail).not.toHaveBeenCalled();
+    t += 15000;
+    await inbox.poll();
+    expect(inbox.lastReply(5)).toBe(t - 3000);
+    expect(onThreadChanged).toHaveBeenCalledWith(5);
+    expect(onNewMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists and counts a chat whose last message is an invite', async () => {
+    const { store, inbox } = setup([[rawThread(6, { newMail: 1, isSystem: 1, message: { cmd: 'tradeInvite' } })]]);
+    await inbox.poll();
+    expect(store.get().threads[6].unread).toBe(1);
+    expect(inbox.threads()[0].preview).toBe('Sent a trade invite');
   });
 });

@@ -137,10 +137,10 @@ describe('styles against the game dock CSS', () => {
     settings.destroy();
   });
 
-  it('colors the Private Messages envelope green over the game rule that forces icons to currentColor', () => {
+  it('colors the Private Messages envelope a soft green over the game rule that forces icons to currentColor', () => {
     renderDock(STATES[0]);
     const icon = document.querySelector('.zcf-pm .chat-icon');
-    for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#3d8b40');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#629464');
   });
 
   it('hides the cog on phones while a window is open, so the open one keeps its room', () => {

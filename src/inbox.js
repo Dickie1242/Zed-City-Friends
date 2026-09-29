@@ -3,6 +3,10 @@ import { normalizeThreads, findNewMail } from './mail.js';
 import { openDm, threadEntry } from './state.js';
 import { warnOnce } from './util.js';
 
+// last_reply arrives as seconds ago, so one reply's time by our clock wobbles a second or two between polls
+// (whole seconds, request timing). Within this much of the last poll's value it counts as the same reply.
+const SAME_REPLY_MS = 5000;
+
 // The fields the Recent list renders, in list order; used to skip emit() when none of them moved.
 function recentSignature(list) {
   return JSON.stringify(list.map((t) => [t.userId, t.username, t.avatar, t.preview, t.lastReply, t.newMail, t.isSystem]));
@@ -27,7 +31,13 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
   async function poll() {
     const r = await api.getChats(1);
     if (!r.ok) return r;
-    threads = normalizeThreads(r.data);
+    threads = normalizeThreads(r.data, now());
+    if (previous) {
+      for (const t of threads) {
+        const prev = previous.get(t.userId);
+        if (prev != null && t.lastReply != null && Math.abs(t.lastReply - prev) <= SAME_REPLY_MS) t.lastReply = prev;
+      }
+    }
     const byId = new Map(threads.map((t) => [t.userId, t]));
     const state = store.get();
     const fresh = findNewMail(threads, state.threads, myId);
@@ -124,7 +134,7 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
     async fetchPage(page) {
       const r = await api.getChats(page);
       if (!r.ok) return r;
-      return { ok: true, threads: normalizeThreads(r.data) };
+      return { ok: true, threads: normalizeThreads(r.data, now()) };
     },
     subscribe(fn) {
       subs.add(fn);

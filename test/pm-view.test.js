@@ -4,13 +4,13 @@ import { buildChatRows, previewLine, buildFactionRows, buildBlockedRows } from '
 const T = (userId, lastReply, o = {}) => ({ userId, username: `U${userId}`, avatar: null, preview: 'hi', senderId: userId, lastReply, newMail: 0, isSystem: false, ...o });
 
 describe('pm view', () => {
-  it('merges page 1 with older pages: newest per player, newest first, no system threads', () => {
+  it('merges page 1 with older pages: newest per player, newest first, invites included', () => {
     const rows = buildChatRows({
       page1: [T(1, 500), T(2, 900), T(3, 999, { isSystem: true })],
       older: [[T(1, 100), T(4, 50)], [T(5, 700)]],
       threads: { 2: { unread: 3 } },
     });
-    expect(rows.map((r) => [r.userId, r.lastReply, r.unread])).toEqual([[2, 900, 3], [5, 700, 0], [1, 500, 0], [4, 50, 0]]);
+    expect(rows.map((r) => [r.userId, r.lastReply, r.unread])).toEqual([[3, 999, 0], [2, 900, 3], [5, 700, 0], [1, 500, 0], [4, 50, 0]]);
   });
 
   it('prefixes the preview with You or the sender name', () => {
