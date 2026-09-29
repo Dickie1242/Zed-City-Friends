@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSentAt, formatMessageTime, formatDayLabel, timeAgo, statusText, utcDayKey } from '../src/time.js';
+import { parseSentAt, formatMessageTime, formatDayLabel, timeAgo, statusText, utcDayKey, dayKey, formatClock } from '../src/time.js';
 
 const T = Date.UTC(2026, 8, 28, 14, 3, 11); // 2026-09-28 14:03:11 UTC
 
@@ -74,5 +74,16 @@ describe('longAgo', () => {
     expect(longStatusText({ online: true, active: now - H }, now)).toBe('Online');
     expect(longStatusText({ online: false, active: now - 18 * M }, now)).toBe('Active 18 min ago');
     expect(longStatusText({ online: false, active: null }, now)).toBe('Offline');
+  });
+
+  it('can show message times in local time instead of game time', () => {
+    const ts = Date.UTC(2026, 8, 29, 23, 30);
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    expect(formatClock(ts, true)).toBe(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    expect(dayKey(ts, true)).toBe(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    expect(dayKey(ts)).toBe('2026-09-29');
+    expect(formatMessageTime(ts, ts + 60000, true)).toBe(formatClock(ts, true));
+    expect(formatDayLabel(ts, true)).toContain(String(d.getDate()));
   });
 });

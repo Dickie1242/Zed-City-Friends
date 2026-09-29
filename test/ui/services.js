@@ -3,7 +3,7 @@ import { vi } from 'vitest';
 import { createStore, createSettingsStore, createEnemiesStore } from '../../src/store.js';
 import { createConversations } from '../../src/conversation.js';
 import { addFriend, removeFriend, openDm, setDmOpen, closeDm, setFriendsOpen, setFriendNote, setSettingsOpen, closeAllDms } from '../../src/state.js';
-import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats } from '../../src/settings.js';
+import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats, togglePinned, setFlag } from '../../src/settings.js';
 import { addEnemy, removeEnemy, setEnemyNote, isEnemy } from '../../src/enemies.js';
 import { exportFriends, parseImport, mergeImport } from '../../src/backup.js';
 import { fakeApi, memoryStorage } from '../helpers.js';
@@ -36,6 +36,11 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     setSound: vi.fn((name) => settings.update((s) => setSound(s, name))),
     toggleMute: vi.fn((id) => settings.update((s) => setMuted(s, id, !isMuted(s, id)))),
     markAllRead: vi.fn(async () => 0),
+    togglePin: vi.fn((id) => settings.update((s) => togglePinned(s, id))),
+    setNotify: vi.fn((on) => settings.update((s) => setFlag(s, 'notify', on))),
+    setNotifyFriendsOnly: vi.fn((on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on))),
+    setTitleCount: vi.fn((on) => settings.update((s) => setFlag(s, 'titleCount', on))),
+    setLocalTime: vi.fn((on) => settings.update((s) => setFlag(s, 'localTime', on))),
     addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
     removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
     setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),
@@ -56,6 +61,8 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
     isMuted: (id) => isMuted(settings.get(), id),
+    isLocalTime: () => settings.get().localTime,
+    notifier: { supported: true, permission: vi.fn(() => 'default'), request: vi.fn(async () => 'granted'), show: vi.fn() },
     sound: { play: vi.fn(() => true), unlock: vi.fn() },
     storage,
     actions,

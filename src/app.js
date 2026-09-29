@@ -1,6 +1,7 @@
 // Wires the modules together: stores, pollers, dock UI, profile buttons and pages.
 import { createStore, createSettingsStore, createEnemiesStore } from './store.js';
-import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats } from './settings.js';
+import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats, togglePinned, setFlag } from './settings.js';
+import { createNotifier } from './notify.js';
 import { createSound } from './sound.js';
 import { markAllRead } from './mark-read.js';
 import { createRouter } from './router.js';
@@ -25,6 +26,7 @@ import {
   setSettingsOpen,
   closeAllDms,
   chatsUnreadIds,
+  chatsUnreadTotal,
 } from './state.js';
 import { createDock } from './ui/dock.js';
 import { createDockView } from './ui/dock-view.js';
@@ -35,19 +37,26 @@ import { createKeeper } from './ui/keeper.js';
 import { createTopbarButton } from './ui/topbar-button.js';
 import { createFriendsPage } from './ui/friends-page.js';
 import { createChatCustom } from './ui/chat-custom/index.js';
+import { createTitleCount } from './ui/title-count.js';
+import { avatarUrl } from './ui/dom.js';
 import { statsPlayer } from './util.js';
 
 export const CHATTING_MS = 5 * 60 * 1000;
-export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, activeDmBusy: 10000, dmInfo: 60000, presence: 60000 };
+export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, activeDmBusy: 10000, dmInfo: 60000, presence: 60000, hiddenNotify: 60000 };
+// At most this many desktop notifications from one check.
+const MAX_NOTIFY = 3;
 export const PRESENCE_PER_SWEEP = 20;
 
-export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }) }) {
+export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }), notifier: notifierOpt = null }) {
   const store = createStore({ playerId, storage, win, now });
   const settings = createSettingsStore({ playerId, storage, win, now });
   const enemies = createEnemiesStore({ playerId, storage, win, now });
   const router = createRouter({ win, doc });
   const toast = createToaster(doc);
   const players = createPlayers({ api, now });
+  // Created here, not as a default parameter, so its click can reach `actions` below.
+  const notifier = notifierOpt || createNotifier({ win, onOpen: (id) => actions.openDm(id, { expand: true }) });
+  const notificationsOn = () => settings.get().notify && notifier.permission() === 'granted';
   let stopped = false;
   let activeDmId = null;
   let chattingUntil = 0;
@@ -111,12 +120,25 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       if (c) c.fetchNew();
     },
     isMuted: (id) => isMuted(settings.get(), id),
-    // New mail from another player, at most once per poll; silent unless a sound is chosen in Chat settings.
-    onNewMail: () => {
+    // New mail from another player, at most once per poll: the sound chosen in Chat settings, and desktop
+    // notifications when they're on and the game isn't in focus (0.6 spec §1.1).
+    onNewMail: (arrived) => {
       const name = settings.get().sound;
       if (name !== 'off') sound.play(name);
+      notifyNewMail(arrived);
     },
   });
+
+  function notifyNewMail(arrived) {
+    const s = settings.get();
+    if (!notificationsOn() || (typeof doc.hasFocus === 'function' && doc.hasFocus())) return;
+    const friends = store.get().friends;
+    const list = arrived
+      .filter((t) => !s.notifyFriendsOnly || friends[t.userId])
+      .sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0))
+      .slice(0, MAX_NOTIFY);
+    for (const t of list) notifier.show({ id: t.userId, title: t.username, body: (t.preview || '').slice(0, 120), icon: avatarUrl(t.avatar) });
+  }
 
   function pickActive() {
     if (activeDmId && isExpanded(activeDmId)) return activeDmId;
@@ -129,6 +151,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const threadsPoller = makePoller({
     run: () => inbox.poll(),
     interval: () => (isChatting() ? INTERVALS.threadsChatting : INTERVALS.threadsIdle),
+    // While the tab is hidden, a slow check keeps notifications coming; with them off it stops as before.
+    hiddenInterval: () => (notificationsOn() ? INTERVALS.hiddenNotify : null),
     onAuthLost,
     doc,
   });
@@ -258,6 +282,23 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     },
     resetChat: (key) => settings.update((s) => resetChat(s, key)),
     resetAllChats: () => settings.update((s) => resetAllChats(s)),
+    async setNotify(on) {
+      if (on) {
+        const answer = await notifier.request();
+        if (answer !== 'granted') {
+          settings.update((s) => setFlag(s, 'notify', false));
+          toast(answer === 'unsupported' ? 'This browser has no desktop notifications.' : "Notifications are blocked for zed.city in your browser's site settings.", { error: true });
+          return;
+        }
+      }
+      settings.update((s) => setFlag(s, 'notify', on));
+    },
+    setNotifyFriendsOnly: (on) => settings.update((s) => setFlag(s, 'notifyFriendsOnly', on)),
+    setTitleCount: (on) => settings.update((s) => setFlag(s, 'titleCount', on)),
+    setLocalTime: (on) => settings.update((s) => setFlag(s, 'localTime', on)),
+    togglePin(id) {
+      if (!settings.update((s) => togglePinned(s, id))) toast('You can pin up to 20 chats.');
+    },
     markAllRead: (onProgress) => markAllRead({
       ids: chatsUnreadIds(store.get(), inbox.threads(), settings.get().muted),
       api,
@@ -292,6 +333,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
     isMuted: (id) => isMuted(settings.get(), id),
+    isLocalTime: () => settings.get().localTime,
+    notifier,
     sound,
     playerId,
     myId: playerId,
@@ -344,10 +387,16 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   });
   const marks = createEnemyMarks({ doc, win, keeper, names: () => enemyNames(enemies.get()) });
   const page = createFriendsPage(services, { doc, win, keeper });
+  const titleCount = createTitleCount({ doc, win });
+  const syncTitle = () => {
+    const s = settings.get();
+    titleCount.set(chatsUnreadTotal(store.get(), inbox.threads(), s.muted), s.titleCount);
+  };
   const topbar = createTopbarButton({ doc, keeper, router });
 
   store.subscribe(() => {
     renderDock();
+    syncTitle();
     syncPollers();
     profileButton.refresh();
     page.scheduleRender();
@@ -363,8 +412,12 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   inbox.subscribe(() => {
     view.pm.scheduleList();
     view.pm.syncBadge();
+    syncTitle();
   });
-  settings.subscribe(() => renderDock());
+  settings.subscribe(() => {
+    renderDock();
+    syncTitle();
+  });
   enemies.subscribe(() => {
     renderDock();
     enemyButton.refresh();
@@ -419,6 +472,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   doc.addEventListener('pointerdown', unlockSound, { capture: true, once: true });
   if (dock.isSmall()) enforcePhoneRule();
   renderDock();
+  syncTitle();
   profileButton.onRoute(router.path);
   enemyButton.onRoute(router.path);
   page.onRoute(router.path);
@@ -441,6 +495,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       enemyButton.destroy();
       marks.destroy();
       custom.destroy();
+      titleCount.destroy();
+      view.destroy();
       doc.removeEventListener('pointerdown', unlockSound, true);
       page.destroy();
       topbar.destroy();

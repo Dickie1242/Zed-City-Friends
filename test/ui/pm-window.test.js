@@ -370,4 +370,20 @@ describe('private messages window', () => {
     await flush();
     expect(rowNames(el)).toEqual(['U4', 'U1', 'U2', 'U3']);
   });
+
+  it('pins a chat from its row without opening it, and lists pins first, even ones not loaded', () => {
+    const { services, el } = mount({ threads: [thread(1), thread(2)] });
+    services.store.update((s) => addFriend(s, { id: 9, username: 'Grim' }, 0));
+    const pin = list(el).querySelectorAll('.zcf-row')[1].querySelector('.zcf-pm-pin');
+    expect(pin.getAttribute('aria-pressed')).toBe('false');
+    pin.click();
+    expect(services.actions.togglePin).toHaveBeenCalledWith(2);
+    expect(services.actions.openDm).not.toHaveBeenCalled();
+    expect(rowNames(el)).toEqual(['U2', 'U1']);
+    expect(list(el).querySelector('.zcf-row .zcf-pm-pin').classList.contains('zcf-pinned')).toBe(true);
+    services.actions.togglePin(9);
+    expect(rowNames(el)).toEqual(['U2', 'Grim', 'U1']); // a pin with no loaded messages sorts last among pins
+    list(el).querySelectorAll('.zcf-row')[1].click();
+    expect(services.actions.openDm).toHaveBeenCalledWith(9, { expand: true, username: 'Grim', avatar: null });
+  });
 });

@@ -49,5 +49,12 @@ export function createDockView({ root, services }) {
     pm,
     settings: settingsWin,
     dmWindow: (id) => dms.get(id) || null,
+    // Stops every window's timers and document listeners (the Faction poller among them).
+    destroy() {
+      for (const w of dms.values()) w.destroy();
+      dms.clear();
+      pm.destroy();
+      settingsWin.destroy();
+    },
   };
 }

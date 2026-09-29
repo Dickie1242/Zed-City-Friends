@@ -1,28 +1,45 @@
-// The settings document (spec §B.5): the Private Messages tab, the new-PM sound, per-chat customizations
-// and muted conversations. Pure; store.js reads and writes it as its own localStorage document.
+// The settings document (spec §B.5, 0.6 spec Part 3): the Private Messages tab, the new-PM sound, per-chat
+// customizations, muted and pinned conversations, and the notification, tab-title and time switches. Pure;
+// store.js reads and writes it as its own localStorage document.
 import { normalizeChats, normalizeChatEntry, isChatKey } from './chat-custom/chats.js';
 import { toId } from './util.js';
 
 export const PM_TABS = ['chats', 'friends', 'faction', 'blocked'];
 export const SOUNDS = ['off', 'chirp', 'ping', 'bell'];
 export const MAX_MUTED = 500;
+export const MAX_PINNED = 20;
+// On/off switches: notifications and Friends only (off by default), the tab-title count (on), local time (off).
+export const FLAGS = ['notify', 'notifyFriendsOnly', 'titleCount', 'localTime'];
 
 export function defaultSettings() {
-  return { v: 1, pmTab: 'chats', sound: 'off', chats: {}, muted: [] };
+  return {
+    v: 1,
+    pmTab: 'chats',
+    sound: 'off',
+    chats: {},
+    muted: [],
+    pinned: [],
+    notify: false,
+    notifyFriendsOnly: false,
+    titleCount: true,
+    localTime: false,
+  };
 }
 
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 
-// Positive integer ids, no duplicates, at most MAX_MUTED (the first ones win: newest first).
-export function normalizeMuted(list) {
+// Positive integer ids, no duplicates, at most `max` (the first ones win: newest first).
+function normalizeIdList(list, max) {
   const out = [];
   for (const v of Array.isArray(list) ? list : []) {
-    if (out.length >= MAX_MUTED) break;
+    if (out.length >= max) break;
     const id = toId(v);
     if (id && !out.includes(id)) out.push(id);
   }
   return out;
 }
+
+export const normalizeMuted = (list) => normalizeIdList(list, MAX_MUTED);
 
 // Throws for a document that isn't ours, so the store falls back to the defaults.
 export function normalizeSettings(doc) {
@@ -33,6 +50,11 @@ export function normalizeSettings(doc) {
     sound: SOUNDS.includes(doc.sound) ? doc.sound : 'off',
     chats: normalizeChats(doc.chats),
     muted: normalizeMuted(doc.muted),
+    pinned: normalizeIdList(doc.pinned, MAX_PINNED),
+    notify: doc.notify === true,
+    notifyFriendsOnly: doc.notifyFriendsOnly === true,
+    titleCount: doc.titleCount !== false,
+    localTime: doc.localTime === true,
   };
 }
 
@@ -51,6 +73,25 @@ export function setMuted(s, id, on) {
   if (!n) return;
   const rest = s.muted.filter((x) => x !== n);
   s.muted = normalizeMuted(on ? [n, ...rest] : rest);
+}
+
+export const isPinned = (s, id) => s.pinned.includes(Number(id));
+
+// Pins newest first; returns false (and changes nothing) when the list is already full.
+export function togglePinned(s, id) {
+  const n = toId(id);
+  if (!n) return true;
+  if (s.pinned.includes(n)) {
+    s.pinned = s.pinned.filter((x) => x !== n);
+    return true;
+  }
+  if (s.pinned.length >= MAX_PINNED) return false;
+  s.pinned = [n, ...s.pinned];
+  return true;
+}
+
+export function setFlag(s, key, on) {
+  if (FLAGS.includes(key)) s[key] = !!on;
 }
 
 // Merges `patch` into one chat's entry. A null field goes back to its default, and an entry left with

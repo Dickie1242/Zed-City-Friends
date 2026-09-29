@@ -96,7 +96,7 @@ describe('chat settings window', () => {
     expect(services.settings.get().sound).toBe('ping');
     expect(play.disabled).toBe(false);
     play.click();
-    expect(services.sound.play).toHaveBeenCalledWith('ping');
+    expect(services.sound.play).toHaveBeenCalledWith('ping', { fromUser: true });
   });
 
   it("shows the version and a collapsed What's new, as text only", () => {
@@ -124,5 +124,50 @@ describe('chat settings window', () => {
     expect(click.defaultPrevented).toBe(true);
     expect(services.router.navigate).toHaveBeenCalledWith(`/profile/${DEV_PROFILE_ID}`);
     expect(el.querySelector('.zcf-set-sec:last-child').lastElementChild).toBe(link);
+  });
+
+  it('has notification switches, off by default, with Friends only waiting on notifications', () => {
+    const { services, el } = mount();
+    const box = (label) => [...el.querySelectorAll('.zcf-set-toggle')].find((l) => l.textContent.trim() === label).querySelector('input');
+    expect(box('Desktop notifications').checked).toBe(false);
+    expect(box('Friends only').disabled).toBe(true);
+    expect(box('Unread count in the browser tab').checked).toBe(true);
+    box('Desktop notifications').click();
+    expect(services.actions.setNotify).toHaveBeenCalledWith(true);
+    expect(box('Friends only').disabled).toBe(false);
+    box('Friends only').click();
+    expect(services.actions.setNotifyFriendsOnly).toHaveBeenCalledWith(true);
+    box('Unread count in the browser tab').click();
+    expect(services.actions.setTitleCount).toHaveBeenCalledWith(false);
+  });
+
+  it('explains when the browser blocks notifications or has none', () => {
+    const { services, el, w } = mount();
+    services.notifier.permission.mockReturnValue('denied');
+    services.settings.update((s) => { s.sound = 'ping'; }); // any change redraws
+    expect(el.querySelector('.zcf-set-note').textContent).toContain('blocked');
+    services.notifier.supported = false;
+    services.notifier.permission.mockReturnValue('unsupported');
+    w.update();
+    services.settings.update((s) => { s.sound = 'bell'; });
+    expect(el.querySelector('.zcf-set-note').textContent).toContain('Not supported');
+  });
+
+  it('picks game or local time for messages', () => {
+    const { services, el } = mount();
+    const select = el.querySelector('select[aria-label="Message times"]');
+    expect(select.value).toBe('game');
+    select.value = 'local';
+    select.dispatchEvent(new Event('change'));
+    expect(services.actions.setLocalTime).toHaveBeenCalledWith(true);
+    expect(select.value).toBe('local');
+  });
+
+  it('keeps focus on the sound picker when the window redraws', () => {
+    const { services, el } = mount();
+    const select = el.querySelector('select[aria-label="New private message sound"]');
+    select.focus();
+    services.settings.update((s) => updateChat(s, 'pm', { text: 120 })); // changes the chat list, so it redraws
+    expect(document.activeElement).toBe(select);
   });
 });

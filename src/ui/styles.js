@@ -53,6 +53,12 @@ export const CSS = `
 .zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
 .zcf-set-play:disabled{opacity:.4;cursor:default}
 .zcf-set-about{font-size:12px;opacity:.6}
+.zcf-set-toggle{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer}
+.zcf-set-toggle input{margin:0;accent-color:#0a748f;cursor:pointer}
+.zcf-set-toggle input:disabled{cursor:default}
+.zcf-set-toggle input:disabled + span{opacity:.45}
+.zcf-set-sub{padding-left:22px}
+.zcf-set-note{font-size:11px;color:#f2c037;padding:2px 0 4px 22px}
 .zcf-set-dev{display:inline-block;margin-top:8px;color:#6fb3c8;font-size:11px;text-decoration:none;opacity:.8}
 .zcf-set-dev:hover{opacity:1;text-decoration:underline}
 .zcf-set-dev i{font-size:10px}

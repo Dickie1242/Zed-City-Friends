@@ -17,6 +17,8 @@ export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const isEnemy = services.isEnemy || (() => false);
   const isMuted = services.isMuted || (() => false);
+  const localTime = () => !!(services.isLocalTime && services.isLocalTime());
+  let drawnLocal = null; // the time mode the log was last drawn in
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -198,7 +200,7 @@ export function createDmWindow(services, userId) {
     if (item.type === 'divider') return h('div', { class: 'zcf-divider' }, item.label);
     const m = item.msg;
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
-    const time = m.ts ? formatMessageTime(m.ts) : '';
+    const time = m.ts ? formatMessageTime(m.ts, Date.now(), localTime()) : '';
     if (item.grouped) return h('div', { class: cls, title: time }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
     const mine = m.senderId === myId;
     const sender = mine
@@ -232,7 +234,8 @@ export function createDmWindow(services, userId) {
   function renderConversation() {
     renderNotice();
     loader.hidden = !(conv.state.loading || conv.state.loadingOlder);
-    const items = buildLog(conv.messages());
+    const items = buildLog(conv.messages(), { local: localTime() });
+    drawnLocal = localTime();
     const keys = items.map((i) => i.key);
     const isAppend = renderedKeys.length > 0 && keys.length >= renderedKeys.length && renderedKeys.every((k, i) => keys[i] === k);
     const prepended = !isAppend && renderedKeys.length > 0 && keys[keys.length - 1] === renderedKeys[renderedKeys.length - 1];
@@ -289,6 +292,11 @@ export function createDmWindow(services, userId) {
     if (open && !wasOpen) {
       conv.ensureLoaded();
       atBottom = true;
+      renderConversation();
+    } else if (open && drawnLocal !== null && drawnLocal !== localTime()) {
+      // Game time ↔ local time: every time and day divider changes, so draw the log afresh.
+      renderedKeys = [];
+      clear(log);
       renderConversation();
     }
     if (!open) {

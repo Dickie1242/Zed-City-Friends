@@ -251,4 +251,45 @@ describe('poller', () => {
     expect(vi.getTimerCount()).toBe(1);
     p.destroy();
   });
+
+  it('keeps checking at the hidden interval while the tab is hidden, only when one is given', async () => {
+    const run = vi.fn(async () => ({ ok: true }));
+    let hidden = 60000;
+    const p = newPoller({ run, interval: 15000, hiddenInterval: () => hidden });
+    setVisibility('hidden');
+    p.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59000);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(run).toHaveBeenCalledTimes(2);
+    hidden = null; // notifications turned off meanwhile: no more checks while hidden
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(run).toHaveBeenCalledTimes(2);
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(3);
+  });
+
+  it('switches to the hidden interval when the tab is hidden mid-way', async () => {
+    const run = vi.fn(async () => ({ ok: true }));
+    const p = newPoller({ run, interval: 15000, hiddenInterval: () => 60000 });
+    p.start();
+    await vi.advanceTimersByTimeAsync(0);
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(59000);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('still stops while hidden without a hidden interval', async () => {
+    const run = vi.fn(async () => ({ ok: true }));
+    const p = newPoller({ run, interval: 15000 });
+    setVisibility('hidden');
+    p.start();
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(run).not.toHaveBeenCalled();
+  });
 });

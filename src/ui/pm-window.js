@@ -250,6 +250,27 @@ export function createPmWindow(services, { doc = document } = {}) {
   const item = (sig, build) => ({ sig, build });
   const note = (text) => item(['note', text], () => h('div', { class: 'zcf-empty' }, text));
   const knownName = (id, name) => (name === `#${id}` ? undefined : name);
+  // A name and avatar for a pinned player whose thread isn't loaded: a friend, an open DM or an enemy.
+  function knownPlayer(id) {
+    const s = store.get();
+    const dm = s.dock.dms.find((d) => d.id === id);
+    const enemy = services.enemies ? services.enemies.get().enemies[id] : null;
+    return s.friends[id] || (dm && dm.username ? dm : null) || enemy || null;
+  }
+  function pinButton(t) {
+    return h('button', {
+      class: `zcf-pm-pin${t.pinned ? ' zcf-pinned' : ''}`,
+      type: 'button',
+      title: t.pinned ? 'Unpin' : 'Pin to the top',
+      'aria-label': t.pinned ? `Unpin ${t.username}` : `Pin ${t.username} to the top`,
+      'aria-pressed': String(!!t.pinned),
+      'data-zcf-focus': `pin:${t.userId}`,
+      onclick: (e) => {
+        e.stopPropagation();
+        actions.togglePin(t.userId);
+      },
+    }, icon('thumbtack'));
+  }
   const openChat = (id, username, av) => actions.openDm(id, { expand: true, username: knownName(id, username), avatar: av });
 
   function rowEl(focusKey, onOpen, children) {
@@ -272,17 +293,17 @@ export function createPmWindow(services, { doc = document } = {}) {
 
   function chatItems(s, now) {
     rememberPage1();
-    const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads });
+    const rows = buildChatRows({ page1: inbox.threads(), older: [...older, [...seenOnPage1.values()]], threads: s.threads, pinned: settings.get().pinned, stub: knownPlayer });
     const items = rows.map((t) => {
       const p = presence.get(t.userId);
       const muted = isMuted(t.userId);
       const when = t.lastReply ? longAgo(t.lastReply, now) : '';
       const line = previewLine(t, myId);
-      return item(['chat', t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy(t.userId), muted], () =>
+      return item(['chat', t.userId, t.username, t.avatar, line, when, t.unread, onDot(p), isEnemy(t.userId), muted, !!t.pinned], () =>
         rowEl(`row:${t.userId}`, () => openChat(t.userId, t.username, t.avatar), [
           avatar({ avatar: t.avatar, online: onDot(p), size: 30 }),
           h('div', { class: 'zcf-row-main' },
-            h('div', { class: 'zcf-pm-line' }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h('span', { class: 'zcf-pm-time' }, when)),
+            h('div', { class: 'zcf-pm-line' }, nameEl(t.userId, t.username, muted ? mutedMark() : null), pill(t.unread, muted), h('span', { class: 'zcf-pm-time' }, when), pinButton(t)),
             h('div', { class: `zcf-status zcf-pm-preview${t.unread > 0 ? ' zcf-unread' : ''}` }, line || ' ')),
         ]));
     });

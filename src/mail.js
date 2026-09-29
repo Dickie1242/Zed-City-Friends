@@ -1,4 +1,4 @@
-import { parseSentAt, pastTime, utcDayKey, formatDayLabel } from './time.js';
+import { parseSentAt, pastTime, dayKey, formatDayLabel } from './time.js';
 import { asArray, toId } from './util.js';
 import { emojiParts } from './emoji.js';
 
@@ -105,16 +105,17 @@ export function normalizeThreads(data, now = Date.now()) {
 }
 
 // Turns messages (any order, duplicates allowed) into render items: day dividers + messages with a `grouped` flag.
-export function buildLog(messages) {
+// `local`: group and label days in the player's time zone instead of game time.
+export function buildLog(messages, { local = false } = {}) {
   const byId = new Map();
   for (const m of messages) byId.set(m.id, m);
   const sorted = [...byId.values()].sort((a, b) => a.id - b.id);
   const items = [];
   let prev = null;
   for (const m of sorted) {
-    const day = m.ts !== null ? utcDayKey(m.ts) : null;
-    const prevDay = prev && prev.ts !== null ? utcDayKey(prev.ts) : null;
-    if (day && day !== prevDay) items.push({ type: 'divider', key: `d:${day}`, label: formatDayLabel(m.ts) });
+    const day = m.ts !== null ? dayKey(m.ts, local) : null;
+    const prevDay = prev && prev.ts !== null ? dayKey(prev.ts, local) : null;
+    if (day && day !== prevDay) items.push({ type: 'divider', key: `d:${day}`, label: formatDayLabel(m.ts, local) });
     const grouped =
       !!prev &&
       prev.senderId === m.senderId &&

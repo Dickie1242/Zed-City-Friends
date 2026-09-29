@@ -33,28 +33,39 @@ export function pastTime(value, now) {
   return parseSentAt(value);
 }
 
-export function utcDayKey(ts) {
+// [year, month (0-11), day, hours, minutes] in game time (UTC, the game's ZCT) or, with `local`, the
+// player's own time zone (0.6 spec §2.2).
+function parts(ts, local) {
   const d = new Date(ts);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  return local
+    ? [d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]
+    : [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes()];
 }
 
-export function formatClock(ts) {
-  const d = new Date(ts);
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+export function dayKey(ts, local = false) {
+  const [y, m, d] = parts(ts, local);
+  return `${y}-${pad(m + 1)}-${pad(d)}`;
 }
 
-export function formatMessageTime(ts, now = Date.now()) {
-  const clock = formatClock(ts);
-  const day = utcDayKey(ts);
-  if (day === utcDayKey(now)) return clock;
-  if (day === utcDayKey(now - DAY_MS)) return `Yesterday at ${clock}`;
-  const d = new Date(ts);
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} at ${clock}`;
+export const utcDayKey = (ts) => dayKey(ts, false);
+
+export function formatClock(ts, local = false) {
+  const [, , , h, mi] = parts(ts, local);
+  return `${pad(h)}:${pad(mi)}`;
 }
 
-export function formatDayLabel(ts) {
-  const d = new Date(ts);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+export function formatMessageTime(ts, now = Date.now(), local = false) {
+  const clock = formatClock(ts, local);
+  const day = dayKey(ts, local);
+  if (day === dayKey(now, local)) return clock;
+  if (day === dayKey(now - DAY_MS, local)) return `Yesterday at ${clock}`;
+  const [y, m, d] = parts(ts, local);
+  return `${pad(d)}/${pad(m + 1)}/${y} at ${clock}`;
+}
+
+export function formatDayLabel(ts, local = false) {
+  const [y, m, d] = parts(ts, local);
+  return `${MONTHS[m]} ${d}, ${y}`;
 }
 
 export function timeAgo(ts, now = Date.now()) {

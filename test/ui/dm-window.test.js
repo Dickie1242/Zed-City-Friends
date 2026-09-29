@@ -370,4 +370,17 @@ describe('dm window', () => {
     expect(bell.getAttribute('aria-pressed')).toBe('true');
     expect(services.store.get().dock.dms[0].open).toBe(true);
   });
+
+  it('switches message times to local time when that option changes', async () => {
+    const sent = '2026-09-28 14:02:00';
+    const { el, services, win } = mount({ getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', sent)] }) });
+    await flush();
+    const ts = Date.UTC(2026, 8, 28, 14, 2);
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    expect(el.querySelector('.zcf-time').textContent).toContain('14:02');
+    services.settings.update((s) => { s.localTime = true; });
+    win.update();
+    expect(el.querySelector('.zcf-time').textContent).toContain(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+  });
 });

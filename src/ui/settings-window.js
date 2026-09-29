@@ -26,12 +26,33 @@ export function createSettingsWindow(services, { doc = document } = {}) {
   const body = h('div', { class: 'chat-content zcf-body' }, content);
   const el = h('div', { class: 'chat-container zcf zcf-settings', dataset: { zcfChat: 'settings' } }, header, body);
 
-  // Built once and moved into each redraw, so the sound picker keeps its state and focus.
-  const select = h('select', { class: 'zcf-set-select', 'aria-label': 'New private message sound' },
+  // Built once and moved into each redraw, so these controls keep their state; their focus keys hand focus
+  // back after a redraw.
+  const select = h('select', { class: 'zcf-set-select', 'aria-label': 'New private message sound', 'data-zcf-focus': 'sound' },
     SOUNDS.map((k) => h('option', { value: k }, SOUND_LABELS[k])));
-  const play = h('button', { class: 'zcf-mini zcf-set-play', type: 'button', title: 'Play it', 'aria-label': 'Play the sound' }, '▶');
+  const play = h('button', { class: 'zcf-mini zcf-set-play', type: 'button', title: 'Play it', 'aria-label': 'Play the sound', 'data-zcf-focus': 'play' }, '▶');
   select.addEventListener('change', () => actions.setSound(select.value));
-  play.addEventListener('click', () => sound.play(select.value));
+  play.addEventListener('click', () => sound.play(select.value, { fromUser: true }));
+
+  const checkbox = (label, focusKey, onChange) => {
+    const input = h('input', { type: 'checkbox', class: 'zcf-set-check', 'data-zcf-focus': focusKey });
+    input.addEventListener('change', () => onChange(input.checked));
+    return { input, row: h('label', { class: 'zcf-set-toggle' }, input, h('span', null, label)) };
+  };
+  const notifyBox = checkbox('Desktop notifications', 'notify', (on) => actions.setNotify(on));
+  const friendsOnlyBox = checkbox('Friends only', 'notify-friends', (on) => actions.setNotifyFriendsOnly(on));
+  const titleBox = checkbox('Unread count in the browser tab', 'title-count', (on) => actions.setTitleCount(on));
+  const note = h('div', { class: 'zcf-set-note' });
+  const timeSelect = h('select', { class: 'zcf-set-select', 'aria-label': 'Message times', 'data-zcf-focus': 'times' },
+    h('option', { value: 'game' }, 'Game time (ZCT)'), h('option', { value: 'local' }, 'Your local time'));
+  timeSelect.addEventListener('change', () => actions.setLocalTime(timeSelect.value === 'local'));
+
+  // What the browser allows, in words, or '' when notifications can simply be switched on.
+  function permissionNote() {
+    const n = services.notifier;
+    if (!n || !n.supported) return 'Not supported in this browser.';
+    return n.permission() === 'denied' ? "Notifications are blocked for zed.city in your browser's site settings." : '';
+  }
 
   function dmName(id) {
     const s = store.get();
@@ -132,7 +153,9 @@ export function createSettingsWindow(services, { doc = document } = {}) {
           h('div', { class: 'zcf-row-main' }, h('div', { class: 'zcf-name' }, r.name), h('div', { class: 'zcf-status' }, describeChat(r.entry))),
           h('button', { class: 'zcf-mini', type: 'button', 'data-zcf-focus': `reset:${r.key}`, disabled: !r.entry, onclick: () => actions.resetChat(r.key) }, 'Reset'))),
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !Object.keys(s.chats).length, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
+      section('Notifications', notifyBox.row, h('div', { class: 'zcf-set-sub' }, friendsOnlyBox.row), note, titleBox.row),
       section('Sounds', h('label', { class: 'zcf-set-sound' }, h('span', null, 'New private message'), select, play)),
+      section('Display', h('label', { class: 'zcf-set-sound' }, h('span', null, 'Message times'), timeSelect)),
       section('About', h('div', { class: 'zcf-set-about' }, `Zed City Friends v${VERSION}`), whatsNew(), devLink()),
     ];
   }
@@ -142,6 +165,15 @@ export function createSettingsWindow(services, { doc = document } = {}) {
     const s = settings.get();
     select.value = s.sound;
     play.disabled = s.sound === 'off';
+    const blocked = permissionNote();
+    notifyBox.input.checked = s.notify;
+    notifyBox.input.disabled = !(services.notifier && services.notifier.supported);
+    friendsOnlyBox.input.checked = s.notifyFriendsOnly;
+    friendsOnlyBox.input.disabled = !s.notify;
+    titleBox.input.checked = s.titleCount;
+    timeSelect.value = s.localTime ? 'local' : 'game';
+    note.textContent = blocked;
+    note.hidden = !blocked;
     const rows = chatRows();
     const sig = JSON.stringify([rows, marking, showNews, showOlder, Object.keys(s.chats).length]);
     if (sig === lastSig) return;

@@ -10,6 +10,10 @@ import {
   resetChat,
   resetAllChats,
   MAX_MUTED,
+  togglePinned,
+  isPinned,
+  setFlag,
+  MAX_PINNED,
 } from '../src/settings.js';
 
 describe('settings document', () => {
@@ -21,6 +25,11 @@ describe('settings document', () => {
       sound: 'bell',
       chats: { pm: { w: 380 } },
       muted: [3, 4],
+      pinned: [],
+      notify: false,
+      notifyFriendsOnly: false,
+      titleCount: true,
+      localTime: false,
     });
     expect(normalizeSettings({ v: 1, pmTab: 'nope', sound: 'siren' })).toMatchObject({ pmTab: 'chats', sound: 'off' });
     expect(() => normalizeSettings({ v: 2 })).toThrow();
@@ -65,5 +74,39 @@ describe('settings document', () => {
     expect(Object.keys(s.chats)).toEqual(['game:general']);
     resetAllChats(s);
     expect(s.chats).toEqual({});
+  });
+
+  it('reads the 0.6 options strictly, with notifications off and the tab count on by default', () => {
+    expect(defaultSettings()).toMatchObject({ pinned: [], notify: false, notifyFriendsOnly: false, titleCount: true, localTime: false });
+    expect(normalizeSettings({ v: 1, notify: 'yes', notifyFriendsOnly: 1, titleCount: 0, localTime: true, pinned: [5, '5', 7, 'x'] })).toMatchObject({
+      notify: false,
+      notifyFriendsOnly: false,
+      titleCount: true,
+      localTime: true,
+      pinned: [5, 7],
+    });
+    expect(normalizeSettings({ v: 1, titleCount: false }).titleCount).toBe(false);
+  });
+
+  it('pins newest first, unpins, and refuses a pin past the cap', () => {
+    const s = defaultSettings();
+    expect(togglePinned(s, 5)).toBe(true);
+    togglePinned(s, '6');
+    expect(s.pinned).toEqual([6, 5]);
+    expect(isPinned(s, 5)).toBe(true);
+    togglePinned(s, 5);
+    expect(s.pinned).toEqual([6]);
+    for (let id = 100; s.pinned.length < MAX_PINNED; id += 1) togglePinned(s, id);
+    const full = [...s.pinned];
+    expect(togglePinned(s, 999)).toBe(false);
+    expect(s.pinned).toEqual(full);
+  });
+
+  it('sets only the known switches', () => {
+    const s = defaultSettings();
+    setFlag(s, 'notify', 1);
+    setFlag(s, 'titleCount', false);
+    setFlag(s, 'pmTab', 'x');
+    expect(s).toMatchObject({ notify: true, titleCount: false, pmTab: 'chats' });
   });
 });

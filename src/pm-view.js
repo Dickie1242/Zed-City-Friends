@@ -7,18 +7,25 @@ const str = (v) => (typeof v === 'string' && v ? v : null);
 const truthy = (v) => v === true || Number(v) > 0;
 
 // Inbox page 1 (always fresh from the poll) plus the older pages loaded by scrolling: one row per player,
-// the newest thread winning when a player shows up on two pages, newest first.
+// the newest thread winning when a player shows up on two pages, newest first. Pinned chats come first
+// (0.6 spec §1.4); a pinned player with no loaded thread gets a stub row, named by `stub(id)` when it can.
 // `threads` is the saved thread state, for unread counts.
-export function buildChatRows({ page1 = [], older = [], threads = {} }) {
+export function buildChatRows({ page1 = [], older = [], threads = {}, pinned = [], stub = null }) {
   const best = new Map();
   for (const t of [...page1, ...older.flat()]) {
     if (!t) continue;
     const prev = best.get(t.userId);
     if (!prev || (t.lastReply || 0) > (prev.lastReply || 0)) best.set(t.userId, t);
   }
+  for (const id of pinned) {
+    if (best.has(id)) continue;
+    const known = (stub && stub(id)) || {};
+    best.set(id, { userId: id, username: known.username || `#${id}`, avatar: known.avatar || null, preview: '', senderId: null, lastReply: null, newMail: 0, isSystem: false, stub: true });
+  }
+  const pins = new Set(pinned);
   return [...best.values()]
-    .map((t) => ({ ...t, unread: (threads[t.userId] && threads[t.userId].unread) || 0 }))
-    .sort((a, b) => (b.lastReply || 0) - (a.lastReply || 0) || a.userId - b.userId);
+    .map((t) => ({ ...t, unread: (threads[t.userId] && threads[t.userId].unread) || 0, pinned: pins.has(t.userId) }))
+    .sort((a, b) => (b.pinned - a.pinned) || (b.lastReply || 0) - (a.lastReply || 0) || a.userId - b.userId);
 }
 
 // "You: …" when your message was the last one, "Name: …" when theirs was.

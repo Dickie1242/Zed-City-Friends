@@ -2,7 +2,9 @@ import { warnOnce } from './util.js';
 
 // A timer loop that pauses while the tab is hidden, never overlaps runs, and backs off on errors.
 // `run` resolves to an api-style result ({ ok, kind }) or undefined. `interval` may be a function (read before every wait).
-export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 60000, onAuthLost, doc = document }) {
+// `hiddenInterval` (ms, or a function returning ms or null) keeps it running while the tab is hidden, at that
+// slower pace; without one it stops while hidden.
+export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 60000, onAuthLost, doc = document, hiddenInterval = null }) {
   let active = false;
   let timer = null;
   let running = false;
@@ -11,6 +13,11 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
 
   const base = () => (typeof interval === 'function' ? interval() : interval);
   const visible = () => doc.visibilityState !== 'hidden';
+  const hiddenMs = () => {
+    const v = typeof hiddenInterval === 'function' ? hiddenInterval() : hiddenInterval;
+    return typeof v === 'number' && v > 0 ? v : null;
+  };
+  const canRun = () => visible() || hiddenMs() !== null;
 
   function clear() {
     if (timer) {
@@ -21,12 +28,14 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
 
   function schedule(ms) {
     clear();
-    if (active && visible()) timer = setTimeout(tick, ms);
+    if (!active) return;
+    if (visible()) timer = setTimeout(tick, ms);
+    else if (hiddenMs() !== null) timer = setTimeout(tick, Math.max(ms, hiddenMs()));
   }
 
   async function tick() {
     clear();
-    if (!active || !visible()) return;
+    if (!active || !canRun()) return;
     if (running) {
       rerun = true;
       return;
@@ -80,6 +89,7 @@ export function makePoller({ run, interval, maxBackoff = 300000, busyInterval = 
   function onVisibility() {
     if (!active) return;
     if (visible()) tick();
+    else if (hiddenMs() !== null) schedule(hiddenMs());
     else clear();
   }
   doc.addEventListener('visibilitychange', onVisibility);

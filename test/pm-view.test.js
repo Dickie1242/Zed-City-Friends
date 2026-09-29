@@ -44,4 +44,16 @@ describe('pm view', () => {
       { id: 2, username: 'zed', avatar: null },
     ]);
   });
+
+  it('puts pinned chats first, newest first among themselves, with stub rows for pins not loaded', () => {
+    const rows = buildChatRows({
+      page1: [T(1, 900), T(2, 800), T(3, 700)],
+      threads: {},
+      pinned: [3, 9, 2],
+      stub: (id) => (id === 9 ? { username: 'Grim', avatar: 'g.png' } : null),
+    });
+    expect(rows.map((r) => [r.userId, !!r.pinned])).toEqual([[2, true], [3, true], [9, true], [1, false]]);
+    expect(rows[2]).toMatchObject({ userId: 9, username: 'Grim', avatar: 'g.png', preview: '', lastReply: null, stub: true });
+    expect(buildChatRows({ page1: [], pinned: [4] })[0]).toMatchObject({ userId: 4, username: '#4', stub: true });
+  });
 });

@@ -362,4 +362,103 @@ describe('app', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.getProfile.mock.calls.map((c) => c[0])).toEqual([5, 9]);
   });
+
+  describe('0.6 notifications, tab title and pins', () => {
+    const fakeNotifier = (permission = 'granted') => ({
+      supported: true,
+      permission: vi.fn(() => permission),
+      request: vi.fn(async () => permission),
+      show: vi.fn(),
+    });
+    const settingsDoc = (extra) => ({ [`zcf:v1:${ME}:settings`]: JSON.stringify({ v: 1, ...extra }) });
+    const setVisibility = (state) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    afterEach(() => setVisibility('visible'));
+
+    it('notifies new messages while the game is out of focus, never for muted chats, friends only when chosen', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      const notifier = fakeNotifier();
+      const rows = [
+        [],
+        [rawThread(6, { username: 'Nyx', newMail: 1, message: 'see you at the bunker', lastReply: 10 }), rawThread(8, { newMail: 1, lastReply: 5 })],
+        [rawThread(7, { username: 'Zed', newMail: 1, lastReply: 3 }), rawThread(5, { username: 'Spike', newMail: 1, lastReply: 2 })],
+      ];
+      const api = fakeApi({ getChats: vi.fn(async () => ({ ok: true, data: rows.shift() || [] })) });
+      const storage = storageWith({ friends: friends(5) });
+      storage.setItem(`zcf:v1:${ME}:settings`, JSON.stringify({ v: 1, notify: true, muted: [8] }));
+      app = createApp({ api, playerId: ME, playerName: 'Me', storage, notifier });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+      expect(notifier.show).toHaveBeenCalledTimes(1);
+      expect(notifier.show.mock.calls[0][0]).toMatchObject({ id: 6, title: 'Nyx', body: 'see you at the bunker' });
+      app.actions.setNotifyFriendsOnly(true);
+      await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+      expect(notifier.show.mock.calls.map((c) => c[0].id)).toEqual([6, 5]);
+    });
+
+    it('stays quiet while the game has focus', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const notifier = fakeNotifier();
+      const rows = [[], [rawThread(6, { newMail: 1, lastReply: 10 })]];
+      const api = fakeApi({ getChats: vi.fn(async () => ({ ok: true, data: rows.shift() || [] })) });
+      app = createApp({ api, playerId: ME, playerName: 'Me', storage: memoryStorage(settingsDoc({ notify: true })), notifier });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+      expect(notifier.show).not.toHaveBeenCalled();
+    });
+
+    it('keeps checking once a minute while hidden, only with notifications on and allowed', async () => {
+      vi.useFakeTimers();
+      const api = fakeApi();
+      app = createApp({ api, playerId: ME, playerName: 'Me', storage: memoryStorage(settingsDoc({ notify: true })), notifier: fakeNotifier() });
+      await vi.advanceTimersByTimeAsync(0);
+      setVisibility('hidden');
+      const before = api.getChats.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(INTERVALS.hiddenNotify * 2);
+      expect(api.getChats.mock.calls.length - before).toBe(2);
+      app.destroy();
+      setVisibility('visible');
+      const api2 = fakeApi();
+      app = createApp({ api: api2, playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier: fakeNotifier() });
+      await vi.advanceTimersByTimeAsync(0);
+      setVisibility('hidden');
+      const before2 = api2.getChats.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(INTERVALS.hiddenNotify * 2);
+      expect(api2.getChats.mock.calls.length).toBe(before2);
+    });
+
+    it('turns notifications on only when the browser allows them', async () => {
+      const notifier = fakeNotifier('denied');
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier });
+      await app.actions.setNotify(true);
+      expect(app.settings.get().notify).toBe(false);
+      expect(document.querySelector('.zcf-toast').textContent).toContain('blocked');
+      app.destroy();
+      const ok = fakeNotifier('granted');
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(), notifier: ok });
+      await app.actions.setNotify(true);
+      expect(app.settings.get().notify).toBe(true);
+    });
+
+    it('shows the unread count in the tab title, and not when turned off', () => {
+      document.title = 'Zed City';
+      const storage = storageWith({ friends: friends(5), threads: { 5: { unread: 2 } } });
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage, notifier: fakeNotifier() });
+      expect(document.title).toBe('(2) Zed City');
+      app.actions.setTitleCount(false);
+      expect(document.title).toBe('Zed City');
+    });
+
+    it('says so when the pin list is full', () => {
+      const pinned = Array.from({ length: 20 }, (_, i) => 100 + i);
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage(settingsDoc({ pinned })), notifier: fakeNotifier() });
+      app.actions.togglePin(5);
+      expect(app.settings.get().pinned).toHaveLength(20);
+      expect(document.querySelector('.zcf-toast').textContent).toBe('You can pin up to 20 chats.');
+    });
+  });
 });
