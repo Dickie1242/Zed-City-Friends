@@ -263,7 +263,7 @@ For comparison, the game's own `/mail/{id}` view makes 60 requests a minute.
 - **Every entry point is wrapped:** observer callbacks, event handlers, and poller ticks run inside `try/catch`. Errors log once per message key with the prefix `[ZCF]`, and nothing is thrown into the game's code.
 - **Missing DOM:** if a selector we rely on (`.chat-containers`, the profile Mail button, `.msg-cont .sender-name`) isn't found where we expect it, that feature quietly does nothing and a single warning is logged. The rest keeps working.
 - **Blocked or unmessageable user:** the DM shows "You can't message this player." and the input is disabled.
-- **Player not found / invalid ID** (profile or add-friend): a toast says so. The list is unchanged.
+- **Player not found:** the add-friend pop-out shows "No players found." inline, in place of the results. A profile or ID lookup that finds nobody shows a toast instead. The list is unchanged.
 - **Removing a friend** doesn't close an existing DM entry with them. The conversation just stops popping up for new mail.
 
 ## 8. Performance budget

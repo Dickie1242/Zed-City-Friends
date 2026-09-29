@@ -4,7 +4,7 @@ import { debounce } from '../util.js';
 
 export const MAX_RESULTS = 8;
 
-export function createAddFriendPopover({ players, isFriend, onAdd }) {
+export function createAddFriendPopover({ players, isFriend, onAdd, onClose }) {
   let seq = 0;
   let results = [];
 
@@ -27,6 +27,7 @@ export function createAddFriendPopover({ players, isFriend, onAdd }) {
             e.stopPropagation();
             onAdd(p);
             render();
+            input.focus();
           },
         }, 'Add');
     return h('div', { class: 'zcf-result' },
@@ -44,9 +45,15 @@ export function createAddFriendPopover({ players, isFriend, onAdd }) {
     for (const p of results) list.appendChild(row(p));
   }
 
-  const search = debounce(async (q) => {
-    const mine = ++seq;
-    const r = await players.search(q);
+  // `mine` is snapshotted per keystroke (below), not per debounced call, so a request already in
+  // flight is dropped as soon as the query moves on, even before the next debounce fires.
+  const search = debounce(async (mine, q) => {
+    let r;
+    try {
+      r = await players.search(q);
+    } catch {
+      r = { ok: false };
+    }
     if (mine !== seq) return;
     if (!r.ok) {
       message('Search failed. Try again.');
@@ -58,22 +65,25 @@ export function createAddFriendPopover({ players, isFriend, onAdd }) {
 
   input.addEventListener('input', () => {
     const q = input.value.trim();
+    seq += 1;
+    const mine = seq;
     if (q.length >= 2 || /^\d+$/.test(q)) {
       message('Searching…');
-      search(q);
+      search(mine, q);
     } else {
       search.cancel();
-      seq += 1;
       results = [];
       message(q ? 'Keep typing…' : '');
     }
   });
-  input.addEventListener('keydown', (e) => {
+  // Capture phase, so Escape closes the pop-out no matter which of its children (input, a result's
+  // Add button, …) currently has focus.
+  el.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();
     }
-  });
+  }, true);
 
   function open() {
     el.hidden = false;
@@ -87,6 +97,7 @@ export function createAddFriendPopover({ players, isFriend, onAdd }) {
     el.hidden = true;
     search.cancel();
     seq += 1;
+    if (onClose) onClose();
   }
 
   return {

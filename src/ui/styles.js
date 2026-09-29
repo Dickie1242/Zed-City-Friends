@@ -31,6 +31,7 @@ export const CSS = `
 .zcf-pill{background:#ff4242;color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px}
 .zcf-row-actions{display:none;gap:4px}
 .zcf-row:hover .zcf-row-actions,.zcf-row:focus-within .zcf-row-actions{display:flex}
+@media (hover:none){.zcf-row-actions{display:flex}}
 .zcf-mini{background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font-size:10.5px;padding:3px 6px;cursor:pointer}
 .zcf-mini:hover{background:#ffffff1f;color:#fff}
 .zcf-mini.zcf-danger{background:#ff42421f;color:#ff8a8a}

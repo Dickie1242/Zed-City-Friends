@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFriendsWindow } from '../../src/ui/friends-window.js';
-import { addFriend } from '../../src/state.js';
+import { addFriend, openDm } from '../../src/state.js';
 import { makeServices } from './services.js';
 
 function mount(opts) {
@@ -136,5 +136,196 @@ describe('friends window', () => {
     });
     expect(el.querySelector('.zcf-row b')).toBeNull();
     expect(names(el)).toEqual(['<b>bold</b>']);
+  });
+
+  describe('no-op redraws', () => {
+    it('keeps the same row nodes when a store update changes nothing visible', () => {
+      const { services, el } = mount();
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const before = el.querySelector('.zcf-row');
+      services.store.update((s) => {
+        s.dock.dms.push({ id: 99, open: false, lastUsed: 5 }); // unrelated to anything the Friends list shows
+      });
+      expect(el.querySelector('.zcf-row')).toBe(before);
+    });
+
+    it('keeps the same row nodes when a presence update reports the same status', async () => {
+      const presenceMap = { 5: { online: true } };
+      const { services, win, el } = mount({ presence: presenceMap });
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const before = el.querySelector('.zcf-row');
+      presenceMap[5] = { online: true }; // a redundant presence refresh, same status
+      win.scheduleList();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(el.querySelector('.zcf-row')).toBe(before);
+    });
+
+    it('rebuilds the row when presence flips from offline to online', async () => {
+      const presenceMap = { 5: { online: false, active: Date.now() } };
+      const { services, win, el } = mount({ presence: presenceMap });
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const before = el.querySelector('.zcf-row');
+      presenceMap[5] = { online: true };
+      win.scheduleList();
+      await new Promise((r) => setTimeout(r, 50));
+      const after = el.querySelector('.zcf-row');
+      expect(after).not.toBe(before);
+      expect(el.querySelector('.zcf-status').textContent).toBe('Online');
+    });
+
+    it('restores focus to the same row after a real rebuild', async () => {
+      const presenceMap = { 5: { online: false, active: Date.now() } };
+      const { services, win, el } = mount({ presence: presenceMap });
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const before = el.querySelector('.zcf-row');
+      before.focus();
+      presenceMap[5] = { online: true };
+      win.scheduleList();
+      await new Promise((r) => setTimeout(r, 50));
+      const after = el.querySelector('.zcf-row');
+      expect(after).not.toBe(before);
+      expect(document.activeElement).toBe(after);
+    });
+  });
+
+  describe('add-friend search race', () => {
+    it("drops a stale search result that resolves after the user typed a newer query", async () => {
+      vi.useFakeTimers();
+      let resolveFirst;
+      const pending = new Promise((resolve) => { resolveFirst = resolve; });
+      const { services, el } = mount();
+      services.players.search.mockImplementation((q) => (q === 'zo' ? pending : Promise.resolve({ ok: true, data: [] })));
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      el.querySelector('.zcf-iconbtn').click();
+      const pop = el.querySelector('.zcf-pop');
+      const input = pop.querySelector('input');
+      input.value = 'zo';
+      input.dispatchEvent(new Event('input'));
+      await vi.advanceTimersByTimeAsync(300); // the "zo" search fires
+      input.value = 'zombieK';
+      input.dispatchEvent(new Event('input')); // a newer query is queued but hasn't fired yet
+      resolveFirst({ ok: true, data: [{ id: 3, username: 'Zorro', avatar: null }] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pop.querySelector('.zcf-results').textContent).not.toContain('Zorro');
+    });
+
+    it('shows a failure message instead of leaving "Searching…" forever when the search rejects', async () => {
+      vi.useFakeTimers();
+      const { services, el } = mount();
+      services.players.search.mockRejectedValueOnce(new Error('boom'));
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      el.querySelector('.zcf-iconbtn').click();
+      const pop = el.querySelector('.zcf-pop');
+      const input = pop.querySelector('input');
+      input.value = 'zo';
+      input.dispatchEvent(new Event('input'));
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pop.querySelector('.zcf-results').textContent).toBe('Search failed. Try again.');
+    });
+  });
+
+  describe('import', () => {
+    it('rejects an oversized file without reading it', async () => {
+      const { services, el } = mount();
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      const importSpy = vi.spyOn(services.actions, 'importFriends');
+      const fileInput = el.querySelector('input[type=file]');
+      const big = { size: 2 * 1024 * 1024, name: 'huge.json', text: vi.fn().mockResolvedValue('{}') };
+      Object.defineProperty(fileInput, 'files', { configurable: true, get: () => [big] });
+      fileInput.dispatchEvent(new Event('change'));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(big.text).not.toHaveBeenCalled();
+      expect(importSpy).not.toHaveBeenCalled();
+      expect(services.toast).toHaveBeenCalledWith('That file is too large to be a friends export.', { error: true });
+    });
+
+    it('toasts when the picked file cannot be read', async () => {
+      const { services, el } = mount();
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      const fileInput = el.querySelector('input[type=file]');
+      const bad = { size: 10, name: 'x.json', text: () => Promise.reject(new Error('NotReadableError')) };
+      Object.defineProperty(fileInput, 'files', { configurable: true, get: () => [bad] });
+      fileInput.dispatchEvent(new Event('change'));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(services.toast).toHaveBeenCalledWith("Couldn't read that file.", { error: true });
+    });
+  });
+
+  describe('keyboard', () => {
+    it('opens a DM when Enter is pressed on a focused row', () => {
+      const { services, el } = mount();
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const row = el.querySelector('.zcf-row');
+      row.focus();
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(services.actions.openDm).toHaveBeenCalledWith(5, { expand: true, username: 'Spike', avatar: null });
+    });
+
+    it('focuses the Cancel button after clicking Remove', () => {
+      const { services, el } = mount();
+      services.store.update((s) => {
+        addFriend(s, { id: 5, username: 'Spike' }, 0);
+        s.dock.friendsOpen = true;
+      });
+      const remove = [...el.querySelectorAll('.zcf-row-actions button')].find((b) => b.textContent === 'Remove');
+      remove.click();
+      const cancel = [...el.querySelectorAll('.zcf-row button')].find((b) => b.textContent === 'Cancel');
+      expect(document.activeElement).toBe(cancel);
+    });
+
+    it('closes the pop-out on Escape dispatched from a child other than the input', async () => {
+      vi.useFakeTimers();
+      const { services, el } = mount({ searchResults: [{ id: 7, username: 'ZombieKing', avatar: null }] });
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      el.querySelector('.zcf-iconbtn').click();
+      const pop = el.querySelector('.zcf-pop');
+      const input = pop.querySelector('input');
+      input.value = 'zo';
+      input.dispatchEvent(new Event('input'));
+      await vi.advanceTimersByTimeAsync(300);
+      const add = pop.querySelector('.zcf-add');
+      add.focus();
+      add.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(pop.hidden).toBe(true);
+    });
+  });
+
+  describe('minor fixes', () => {
+    it('clears zcf-active on the add button when the pop-out closes itself via Escape', () => {
+      const { services, el } = mount();
+      services.store.update((s) => { s.dock.friendsOpen = true; });
+      const addBtn = el.querySelector('.zcf-iconbtn');
+      addBtn.click();
+      expect(addBtn.classList.contains('zcf-active')).toBe(true);
+      const pop = el.querySelector('.zcf-pop');
+      pop.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(addBtn.classList.contains('zcf-active')).toBe(false);
+    });
+
+    it('does not overwrite a real DM name with a Recent row\'s #id placeholder', () => {
+      const { services, el } = mount({ threads: [{ userId: 9, username: '#9', preview: 'hi', lastReply: 1, isSystem: false, avatar: null }] });
+      services.store.update((s) => {
+        openDm(s, 9, { username: 'TradeGuy', now: 1 });
+        s.dock.friendsOpen = true;
+      });
+      el.querySelector('.zcf-row').click();
+      expect(services.store.get().dock.dms.find((d) => d.id === 9).username).toBe('TradeGuy');
+    });
   });
 });
