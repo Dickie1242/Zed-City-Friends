@@ -4,7 +4,7 @@ import { toId } from './util.js';
 export const MAX_DMS = 4;
 
 export function emptyState() {
-  return { v: 1, friends: {}, threads: {}, dock: { friendsOpen: false, dms: [] } };
+  return { v: 1, friends: {}, threads: {}, dock: { friendsOpen: false, settingsOpen: false, dms: [] } };
 }
 
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
@@ -19,6 +19,7 @@ export function normalizeState(doc) {
     threads: isObj(doc.threads) ? doc.threads : {},
     dock: {
       friendsOpen: !!dock.friendsOpen,
+      settingsOpen: !!dock.settingsOpen,
       dms: Array.isArray(dock.dms) ? dock.dms.filter((d) => isObj(d) && toId(d.id)) : [],
     },
   };
@@ -88,6 +89,7 @@ export function markSeen(state, id, lastReply) {
 function collapseOthers(state, keep) {
   for (const d of state.dock.dms) if (d !== keep) d.open = false;
   state.dock.friendsOpen = false;
+  state.dock.settingsOpen = false;
 }
 
 // Adds (or refreshes) a DM entry in the dock. `exclusive` is used on phones where only one window may be open.
@@ -137,23 +139,40 @@ export function closeDm(state, id) {
 
 export function setFriendsOpen(state, open, { exclusive = false } = {}) {
   state.dock.friendsOpen = !!open;
-  if (open && exclusive) for (const d of state.dock.dms) d.open = false;
+  if (open && exclusive) {
+    for (const d of state.dock.dms) d.open = false;
+    state.dock.settingsOpen = false;
+  }
+}
+
+export function setSettingsOpen(state, open, { exclusive = false } = {}) {
+  state.dock.settingsOpen = !!open;
+  if (open && exclusive) {
+    for (const d of state.dock.dms) d.open = false;
+    state.dock.friendsOpen = false;
+  }
 }
 
 export function collapseAll(state) {
   state.dock.friendsOpen = false;
+  state.dock.settingsOpen = false;
   for (const d of state.dock.dms) d.open = false;
 }
 
-// Unread messages in every chat the Private Messages window lists: all friends, plus the other
-// (non-system) threads in its Recent list, i.e. on the first page of the inbox.
-export function chatsUnreadTotal(state, inboxThreads) {
+// Chat settings → Close all private chats. Their per-chat settings live elsewhere and are kept.
+export function closeAllDms(state) {
+  state.dock.dms = [];
+}
+
+// Chats with unread messages that the Private Messages window lists: all friends, plus the other
+// (non-system) threads on the first inbox page. Muted conversations are left out (spec §D.1).
+export function chatsUnreadIds(state, inboxThreads, muted = []) {
   const ids = new Set(Object.keys(state.friends).map(Number));
   for (const t of inboxThreads) if (!t.isSystem) ids.add(t.userId);
-  let n = 0;
-  for (const id of ids) {
-    const t = state.threads[id];
-    if (t && t.unread > 0) n += t.unread;
-  }
-  return n;
+  const skip = new Set(muted);
+  return [...ids].filter((id) => !skip.has(id) && state.threads[id] && state.threads[id].unread > 0);
+}
+
+export function chatsUnreadTotal(state, inboxThreads, muted = []) {
+  return chatsUnreadIds(state, inboxThreads, muted).reduce((n, id) => n + state.threads[id].unread, 0);
 }

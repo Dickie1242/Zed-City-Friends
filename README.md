@@ -9,6 +9,10 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 - **Friends page.** A friends icon in the top bar opens a full Friends page at `zed.city/friends`. It's a sortable table with level, online status, injured/traveling icons and faction, plus private notes that only you can see.
 - **Enemies.** A second list beside Friends: the page title switches between **FRIENDS | ENEMIES** (`zed.city/enemies`), and profiles get an **Add Enemy** button right after Add Friend. Enemies get private notes too, and a red skull marks them in chats, including the game's Global, Faction and Activity chats. A player can be on both lists.
 
+- **Customize any chat.** Every chat in the dock, the game's Global, Faction and Activity included, gets a padlock. Unlock it to drag the chat anywhere by its header, resize it from its edges, and lock it there; the return arrow sends it back to the row. Right-click a padlock for its menu: message size (80–200%, one chat at a time), size reset, return to row, and mute for a DM. Each chat remembers its own size, spot and message size, and your other game tabs follow along. Desktop only; on phones only message size applies.
+- **Chat settings.** The cog in the bottom-right corner: mark all chats read, close all private chats, every chat's settings with a Reset, an optional sound for new private messages, the version, and what's new.
+- **Mute.** The bell in a DM header mutes that conversation: no pop-up tab, no sound, and it's left out of the green count.
+
 DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
 
 ## Install
@@ -56,10 +60,13 @@ npm run build     # writes dist/zed-city-friends.user.js
 | `src/poller.js` | Visibility-aware timers with backoff |
 | `src/presence.js`, `src/players.js` | Online status cache, player search/lookup |
 | `src/router.js` | Page-change events and navigation via the game's router |
+| `src/settings.js`, `src/enemies.js` | The settings and enemies documents (kept beside the main one) |
+| `src/chat-custom/*` | Pure per-chat customization: keys and limits, geometry, the user stylesheet |
+| `src/ui/chat-custom/*` | Padlocks, grips, drags and the chat menu in every chat |
 | `src/app.js` | Wiring and polling policy |
 | `src/ui/*` | Dock mounting, Private Messages window, DM windows, profile button |
 
-Design spec: `docs/superpowers/specs/2026-09-28-zed-city-friends-design.md`
+Design specs: `docs/superpowers/specs/` (0.5.0: `2026-09-29-private-messages-and-chat-settings-design.md`)
 
 ## For the Zed City devs
 

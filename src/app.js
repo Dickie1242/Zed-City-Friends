@@ -1,6 +1,8 @@
 // Wires the modules together: stores, pollers, dock UI, profile buttons and pages.
 import { createStore, createSettingsStore, createEnemiesStore } from './store.js';
-import { setPmTab } from './settings.js';
+import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats } from './settings.js';
+import { createSound } from './sound.js';
+import { markAllRead } from './mark-read.js';
 import { createRouter } from './router.js';
 import { createPlayers } from './players.js';
 import { createPresence } from './presence.js';
@@ -20,6 +22,9 @@ import {
   setFriendsOpen,
   collapseAll,
   setFriendNote,
+  setSettingsOpen,
+  closeAllDms,
+  chatsUnreadIds,
 } from './state.js';
 import { createDock } from './ui/dock.js';
 import { createDockView } from './ui/dock-view.js';
@@ -29,13 +34,14 @@ import { createEnemyMarks } from './ui/enemy-marks.js';
 import { createKeeper } from './ui/keeper.js';
 import { createTopbarButton } from './ui/topbar-button.js';
 import { createFriendsPage } from './ui/friends-page.js';
+import { createChatCustom } from './ui/chat-custom/index.js';
 import { statsPlayer } from './util.js';
 
 export const CHATTING_MS = 5 * 60 * 1000;
 export const INTERVALS = { threadsIdle: 15000, threadsChatting: 5000, activeDm: 2000, activeDmBusy: 10000, dmInfo: 60000, presence: 60000 };
 export const PRESENCE_PER_SWEEP = 20;
 
-export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now() }) {
+export function createApp({ api, playerId, playerName, doc = document, win = window, storage = win.localStorage, now = () => Date.now(), sound = createSound({ win }) }) {
   const store = createStore({ playerId, storage, win, now });
   const settings = createSettingsStore({ playerId, storage, win, now });
   const enemies = createEnemiesStore({ playerId, storage, win, now });
@@ -101,6 +107,12 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       if (id === activeDmId || !isExpanded(id)) return;
       const c = conversations.get(id);
       if (c) c.fetchNew();
+    },
+    isMuted: (id) => isMuted(settings.get(), id),
+    // New mail from another player, at most once per poll; silent unless a sound is chosen in Chat settings.
+    onNewMail: () => {
+      const name = settings.get().sound;
+      if (name !== 'off') sound.play(name);
     },
   });
 
@@ -227,6 +239,30 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       if (open && small) dock.minimizeGameChats();
     },
     setPmTab: (tab) => settings.update((s) => setPmTab(s, tab)),
+    toggleSettings() {
+      const open = !store.get().dock.settingsOpen;
+      const small = dock.isSmall();
+      store.update((s) => setSettingsOpen(s, open, { exclusive: small }));
+      if (open && small) dock.minimizeGameChats();
+    },
+    closeAllDms() {
+      store.update((s) => closeAllDms(s));
+      activeDmId = null;
+    },
+    toggleMute: (id) => settings.update((s) => setMuted(s, id, !isMuted(s, id))),
+    setSound(name) {
+      settings.update((s) => setSound(s, name));
+      sound.unlock(); // a change event is a user gesture, so the browser lets audio start now
+    },
+    resetChat: (key) => settings.update((s) => resetChat(s, key)),
+    resetAllChats: () => settings.update((s) => resetAllChats(s)),
+    markAllRead: (onProgress) => markAllRead({
+      ids: chatsUnreadIds(store.get(), inbox.threads(), settings.get().muted),
+      api,
+      markSeen: (id) => store.update((s) => markSeen(s, id, inbox.lastReply(id))),
+      onProgress,
+      toast,
+    }),
     setActiveDm(id) {
       if (activeDmId === id) return;
       activeDmId = id;
@@ -253,6 +289,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     settings,
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
+    isMuted: (id) => isMuted(settings.get(), id),
+    sound,
     playerId,
     myId: playerId,
     myName: playerName,
@@ -269,6 +307,27 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   };
 
   const view = createDockView({ root: dock.root, services });
+  const custom = createChatCustom({
+    doc,
+    win,
+    keeper,
+    settings,
+    isSmall: dock.isSmall,
+    dm: {
+      name(id) {
+        const s = store.get();
+        const d = s.dock.dms.find((x) => x.id === id);
+        return (d && d.username) || (s.friends[id] && s.friends[id].username) || null;
+      },
+      isMuted: (id) => isMuted(settings.get(), id),
+      toggleMute: (id) => actions.toggleMute(id),
+    },
+  });
+  // Our windows come and go with the store; their chat controls follow at once rather than a frame later.
+  const renderDock = () => {
+    view.render();
+    custom.refresh();
+  };
   const profileButton = createProfileButton({ doc, win, store, actions, players, toast });
   const enemyButton = createProfileButton({
     doc,
@@ -286,7 +345,7 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   const topbar = createTopbarButton({ doc, keeper, router });
 
   store.subscribe(() => {
-    view.render();
+    renderDock();
     syncPollers();
     profileButton.refresh();
     page.scheduleRender();
@@ -303,9 +362,9 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     view.pm.scheduleList();
     view.pm.syncBadge();
   });
-  settings.subscribe(() => view.render());
+  settings.subscribe(() => renderDock());
   enemies.subscribe(() => {
-    view.render();
+    renderDock();
     enemyButton.refresh();
     page.scheduleRender();
     marks.refresh();
@@ -322,28 +381,37 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
   function enforcePhoneRule() {
     const s = store.get();
     const openDms = s.dock.dms.filter((d) => d.open).length;
-    const openCount = openDms + (s.dock.friendsOpen ? 1 : 0);
+    const openCount = openDms + (s.dock.friendsOpen ? 1 : 0) + (s.dock.settingsOpen ? 1 : 0);
     if (!openCount) return;
     if (openCount > 1) {
       const keepId = openDms ? pickActive() : null;
       store.update((st) => {
         for (const d of st.dock.dms) d.open = d.id === keepId;
-        if (keepId !== null) st.dock.friendsOpen = false;
+        if (keepId !== null) {
+          st.dock.friendsOpen = false;
+          st.dock.settingsOpen = false;
+        } else if (st.dock.friendsOpen) st.dock.settingsOpen = false;
       });
     }
     dock.minimizeGameChats();
   }
   dock.onSmallChange((small) => {
     if (small) enforcePhoneRule();
-    view.render();
+    renderDock();
   });
 
   dock.start();
   page.start();
   topbar.start();
   marks.start();
+  custom.start();
+  // Browsers only start audio after the player has interacted with the page (spec §B.4).
+  const unlockSound = () => {
+    if (settings.get().sound !== 'off') sound.unlock();
+  };
+  doc.addEventListener('pointerdown', unlockSound, { capture: true, once: true });
   if (dock.isSmall()) enforcePhoneRule();
-  view.render();
+  renderDock();
   profileButton.onRoute(router.path);
   enemyButton.onRoute(router.path);
   page.onRoute(router.path);
@@ -365,6 +433,8 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
       profileButton.destroy();
       enemyButton.destroy();
       marks.destroy();
+      custom.destroy();
+      doc.removeEventListener('pointerdown', unlockSound, true);
       page.destroy();
       topbar.destroy();
       keeper.destroy();

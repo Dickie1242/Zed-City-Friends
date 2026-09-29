@@ -37,6 +37,53 @@ export const CSS = `
 .zcf-pm-confirm .zcf-row-main{font-size:12.5px}
 .zcf-enemy-mark{color:#ef5350;font-size:.85em;margin-right:4px}
 .zcf-muted-mark{font-size:.85em;margin-left:5px;opacity:.5}
+.chat-containers .zcf-settings{order:4}
+.zcf-settings:not(.chat-minimized) .chat-content{overflow-y:auto}
+.zcf-set{padding:2px 0 8px}
+.zcf-set-sec{padding:8px 12px;border-bottom:1px solid #ffffff0d}
+.zcf-set-sec:last-child{border-bottom:0}
+.zcf-set-h{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff59;margin-bottom:6px}
+.zcf-set-btns{display:flex;flex-wrap:wrap;gap:6px}
+.zcf-set-chat{display:flex;align-items:center;gap:8px;padding:4px 0}
+.zcf-set-lock{width:14px;flex:none;text-align:center;color:#9e9e9e;font-size:11px}
+.zcf-set-all{margin-top:6px}
+.zcf-set-sound{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.zcf-set-sound span{flex:1}
+.zcf-set-select{background:#14171a;border:1px solid #ffffff14;border-radius:3px;color:#d9d9d9;font:inherit;font-size:12px;padding:3px 6px}
+.zcf-set-play:disabled{opacity:.4;cursor:default}
+.zcf-set-about{font-size:12px;opacity:.6}
+.zcf-news-toggle{display:block;background:none;border:0;padding:6px 0 0;color:#6fb3c8;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.zcf-news-toggle:hover{text-decoration:underline}
+.zcf-news-ver{margin-top:8px}
+.zcf-news-vh{display:flex;gap:8px;align-items:baseline;font-size:12px;font-weight:700}
+.zcf-news-date{font-size:11px;font-weight:400;opacity:.45}
+.zcf-news-f{margin-top:5px}
+.zcf-news-ft{font-size:12px;color:#e0e0e0}
+.zcf-news-f ul{margin:2px 0 0;padding-left:16px;font-size:11.5px;opacity:.75}
+.zcf-cc{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:400}
+.chat-container.chat-minimized .zcf-cc{display:none}
+.zcf-cc [hidden]{display:none!important}
+.zcf-cc-icon{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0;background:none;border:0;color:#ffffff4d;font-size:11px;cursor:pointer}
+.zcf-cc-icon:hover{color:#ffffffb3}
+.zcf-cc-lock.zcf-cc-unlocked{color:#f2c037}
+.zcf-cc-inline{display:inline-flex;align-items:center;gap:3px;margin-right:4px;color:#d9d9d9;font-size:11px}
+.zcf-cc-step,.zcf-cc-btn{height:18px;min-width:18px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;background:#ffffff0f;border:0;border-radius:3px;color:#ffffffa6;font:inherit;font-size:11px;line-height:1;cursor:pointer}
+.zcf-cc-step:hover,.zcf-cc-btn:hover{background:#ffffff1f;color:#fff}
+.zcf-cc-btn:disabled,.zcf-cc-step:disabled{opacity:.4;cursor:default}
+.zcf-cc-value{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+.zcf-grip{position:absolute;z-index:10;background:transparent;touch-action:none;user-select:none}
+.zcf-grip:hover{background:#0a748f59}
+.zcf-grip-n{top:0;left:0;right:0;height:6px;cursor:ns-resize}
+.zcf-grip-s{bottom:0;left:0;right:0;height:6px;cursor:ns-resize}
+.zcf-grip-nw{top:0;left:0;width:12px;height:12px;cursor:nwse-resize;z-index:11}
+.zcf-grip-se{right:0;bottom:0;width:12px;height:12px;cursor:nwse-resize;z-index:11}
+html.zcf-dragging,html.zcf-dragging *{cursor:grabbing!important;user-select:none!important}
+html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
+.zcf-cmenu{position:fixed;z-index:4000;min-width:210px;padding:6px 0;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 10px 24px #000000a0;color:#d9d9d9;font-size:12.5px}
+.zcf-cmenu[hidden]{display:none}
+.zcf-cmenu-title{padding:2px 12px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#ffffff66}
+.zcf-cmenu-row{display:flex;align-items:center;gap:6px;padding:4px 12px}
+.zcf-cmenu-label{flex:1}
 .zcf-toolbar{display:flex;gap:6px;align-items:center;background:#ffffff05;border-bottom:1px solid #ffffff1a;min-height:42px;padding:7px 8px}
 .zcf-search{flex:1;display:flex;align-items:center;gap:6px;background:#14171a;border:1px solid #ffffff14;border-radius:3px;padding:0 7px}
 .zcf-search i{opacity:.45;font-size:11px}
@@ -227,6 +274,7 @@ export const CSS = `
   .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
 }
 @media (max-width:599.98px){
+  .zcf-cc,.zcf-grip{display:none!important}
   .chat-containers .zcf.zcf-open{order:3;flex:1 1 340px;width:auto;min-width:0;max-width:340px}
   .zcf-dm:not(.chat-minimized){height:min(450px,60vh)}
   .zcf-page-back{display:none}

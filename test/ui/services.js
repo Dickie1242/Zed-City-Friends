@@ -2,8 +2,8 @@
 import { vi } from 'vitest';
 import { createStore, createSettingsStore, createEnemiesStore } from '../../src/store.js';
 import { createConversations } from '../../src/conversation.js';
-import { addFriend, removeFriend, openDm, setDmOpen, closeDm, setFriendsOpen, setFriendNote } from '../../src/state.js';
-import { setPmTab } from '../../src/settings.js';
+import { addFriend, removeFriend, openDm, setDmOpen, closeDm, setFriendsOpen, setFriendNote, setSettingsOpen, closeAllDms } from '../../src/state.js';
+import { setPmTab, setSound, setMuted, isMuted, resetChat, resetAllChats } from '../../src/settings.js';
 import { addEnemy, removeEnemy, setEnemyNote, isEnemy } from '../../src/enemies.js';
 import { exportFriends, parseImport, mergeImport } from '../../src/backup.js';
 import { fakeApi, memoryStorage } from '../helpers.js';
@@ -29,6 +29,13 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     togglePm: vi.fn(() => store.update((s) => setFriendsOpen(s, !s.dock.friendsOpen))),
     setPmTab: vi.fn((tab) => settings.update((s) => setPmTab(s, tab))),
     setActiveDm: vi.fn(),
+    toggleSettings: vi.fn(() => store.update((s) => setSettingsOpen(s, !s.dock.settingsOpen))),
+    closeAllDms: vi.fn(() => store.update((s) => closeAllDms(s))),
+    resetChat: vi.fn((key) => settings.update((s) => resetChat(s, key))),
+    resetAllChats: vi.fn(() => settings.update((s) => resetAllChats(s))),
+    setSound: vi.fn((name) => settings.update((s) => setSound(s, name))),
+    toggleMute: vi.fn((id) => settings.update((s) => setMuted(s, id, !isMuted(s, id)))),
+    markAllRead: vi.fn(async () => 0),
     addEnemy: vi.fn((p) => enemies.update((d) => addEnemy(d, p, 0))),
     removeEnemy: vi.fn((id) => enemies.update((d) => removeEnemy(d, id))),
     setEnemyNote: vi.fn((id, note) => enemies.update((d) => setEnemyNote(d, id, note))),
@@ -48,6 +55,8 @@ export function makeServices({ api = fakeApi(), threads = [], presence = {}, sea
     settings,
     enemies,
     isEnemy: (id) => isEnemy(enemies.get(), id),
+    isMuted: (id) => isMuted(settings.get(), id),
+    sound: { play: vi.fn(() => true), unlock: vi.fn() },
     storage,
     actions,
     conversations,

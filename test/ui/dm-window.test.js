@@ -348,4 +348,26 @@ describe('dm window', () => {
     expect(el.querySelector('.zcf-them .zcf-enemy-mark')).not.toBeNull();
     expect(el.querySelectorAll('.zcf-sender:not(.zcf-them) .zcf-enemy-mark')).toHaveLength(0);
   });
+
+  it('is a customizable chat keyed by its player, with message size on its messages and typing box', () => {
+    const { el } = mount();
+    expect(el.dataset.zcfChat).toBe(`dm:${THEM}`);
+    expect(el.querySelector('.zcf-scroll').classList.contains('zcf-zoom')).toBe(true);
+    expect(el.querySelector('.zcf-composer').classList.contains('zcf-zoom')).toBe(true);
+  });
+
+  it('mutes and unmutes the conversation from the bell, without toggling the window', () => {
+    const { el, services, win } = mount();
+    services.settings.subscribe(() => win.update());
+    const bell = el.querySelector('.zcf-bell');
+    expect(bell.title).toBe('Mute Spike');
+    expect(bell.querySelector('i').className).toBe('fas fa-bell');
+    bell.click();
+    expect(services.actions.toggleMute).toHaveBeenCalledWith(THEM);
+    expect(services.settings.get().muted).toEqual([THEM]);
+    expect(bell.title).toBe('Unmute Spike');
+    expect(bell.querySelector('i').className).toBe('fas fa-bell-slash');
+    expect(bell.getAttribute('aria-pressed')).toBe('true');
+    expect(services.store.get().dock.dms[0].open).toBe(true);
+  });
 });

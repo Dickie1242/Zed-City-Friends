@@ -8,6 +8,10 @@ import { createFriendsPage } from '../../src/ui/friends-page.js';
 import { createTopbarButton } from '../../src/ui/topbar-button.js';
 import { GAME_DOCK_CSS } from '../fixtures/game-dock-css.js';
 import { specificity, parseCss, mediaApplies, matches, winner } from './cascade.js';
+import { createChatCustom } from '../../src/ui/chat-custom/index.js';
+import { createSettingsStore } from '../../src/store.js';
+import { updateChat } from '../../src/settings.js';
+import { memoryStorage } from '../helpers.js';
 
 const GAME = parseCss(GAME_DOCK_CSS);
 const OURS = parseCss(CSS);
@@ -17,11 +21,11 @@ const WIDTHS = [1280, 800, 400];
 
 // Every window state we draw: open and minimized DMs, and the Friends window both ways.
 const STATES = [
-  { friendsOpen: true, dms: [[5, true], [6, false]] },
-  { friendsOpen: false, dms: [[5, false], [6, true]] },
+  { friendsOpen: true, settingsOpen: true, dms: [[5, true], [6, false]] },
+  { friendsOpen: false, settingsOpen: false, dms: [[5, false], [6, true]] },
 ];
 
-function renderDock({ friendsOpen, dms }) {
+function renderDock({ friendsOpen, settingsOpen, dms }) {
   document.body.innerHTML = DOCK_HTML;
   const root = document.createElement('div');
   root.className = 'zcf-root';
@@ -34,6 +38,7 @@ function renderDock({ friendsOpen, dms }) {
       setDmOpen(s, id, open);
     }
     setFriendsOpen(s, friendsOpen);
+    s.dock.settingsOpen = !!settingsOpen;
   });
   createDockView({ root, services }).render();
   return root;
@@ -97,7 +102,7 @@ describe('styles against the game dock CSS', () => {
     for (const state of STATES) {
       const root = renderDock(state);
       for (const body of root.querySelectorAll('.zcf.chat-container:not(.chat-minimized) > .chat-content')) {
-        checked.add(body.parentElement.classList.contains('zcf-dm') ? 'dm' : 'pm');
+        checked.add(body.parentElement.dataset.zcfChat.split(':')[0]);
         for (const width of WIDTHS) {
           for (const sheets of [OURS_LAST, OURS_FIRST]) {
             expect(winner(body, 'display', width, sheets).value, `${describeEl(body.parentElement)} at ${width}px`).toBe('flex');
@@ -106,7 +111,7 @@ describe('styles against the game dock CSS', () => {
         }
       }
     }
-    expect([...checked].sort()).toEqual(['dm', 'pm']);
+    expect([...checked].sort()).toEqual(['dm', 'pm', 'settings']);
   });
 
   it('sits the dock flush against the right edge on desktop only', () => {
@@ -116,6 +121,26 @@ describe('styles against the game dock CSS', () => {
       expect(winner(dock, 'right', 1280, sheets).value).toBe('0');
       expect(winner(dock, 'right', 400, sheets).value).toBe('10px');
     }
+  });
+
+  it('keeps the chat controls and grips we put in the game chats order-independent', () => {
+    renderDock(STATES[0]);
+    const settings = createSettingsStore({ playerId: 1, storage: memoryStorage(), win: new EventTarget() });
+    settings.update((s) => updateChat(s, 'game:general', { locked: false, x: 5, y: 5 }));
+    const custom = createChatCustom({ settings, isSmall: () => false });
+    custom.start();
+    const general = document.querySelector('.general-chat');
+    const ours = [general.querySelector('.zcf-cc'), ...general.querySelectorAll(':scope > .zcf-grip')];
+    expect(ours).toHaveLength(5);
+    expect(ours.flatMap((n) => orderProblems(n))).toEqual([]);
+    custom.destroy();
+    settings.destroy();
+  });
+
+  it('colors the Private Messages envelope green over the game rule that forces icons to currentColor', () => {
+    renderDock(STATES[0]);
+    const icon = document.querySelector('.zcf-pm .chat-icon');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#3d8b40');
   });
 
   it('parses specificity the way browsers count it', () => {

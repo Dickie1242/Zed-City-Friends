@@ -34,6 +34,7 @@ export function bundle({ write = true } = {}) {
     legalComments: 'none',
     banner: { js: HEADER },
     outfile: OUTFILE,
+    define: { __ZCF_VERSION__: JSON.stringify(pkg.version) },
     write,
   });
 }

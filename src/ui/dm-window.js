@@ -16,6 +16,7 @@ const BUSY_TEXT = {
 export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
   const isEnemy = services.isEnemy || (() => false);
+  const isMuted = services.isMuted || (() => false);
   const conv = conversations.acquire(userId);
   let renderedKeys = [];
   let atBottom = true;
@@ -31,13 +32,15 @@ export function createDmWindow(services, userId) {
   const inboxBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'Open in inbox', 'aria-label': 'Open in inbox' }, icon('external-link-alt'));
   const minBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'Minimize', 'aria-label': 'Minimize' }, icon('minus'));
   const closeBtn = h('button', { class: 'zcf-hbtn zcf-close', type: 'button', title: 'Close', 'aria-label': 'Close' }, icon('times'));
-  const header = h('div', { class: 'chat-header', onclick: () => actions.toggleDm(userId) }, title, inboxBtn, minBtn, closeBtn);
+  const bellIcon = h('i', { class: 'fas fa-bell', 'aria-hidden': 'true' });
+  const bellBtn = h('button', { class: 'zcf-hbtn zcf-bell', type: 'button' }, bellIcon);
+  const header = h('div', { class: 'chat-header', onclick: () => actions.toggleDm(userId) }, title, bellBtn, inboxBtn, minBtn, closeBtn);
 
   const notice = h('div', { class: 'zcf-notice', hidden: true });
   const loader = h('div', { class: 'zcf-loader', hidden: true }, 'Loading…');
   const log = h('div', { class: 'zcf-log' });
   const pendingEl = h('div', { class: 'zcf-pending' });
-  const scroller = h('div', { class: 'zcf-scroll' }, loader, log, pendingEl);
+  const scroller = h('div', { class: 'zcf-scroll zcf-zoom' }, loader, log, pendingEl);
   const newChip = h('button', { class: 'zcf-newchip', type: 'button', hidden: true }, 'New messages ↓');
   const input = h('textarea', { class: 'zcf-input zcf-compose', rows: 1, placeholder: 'Message…', 'aria-label': 'Message' });
   const emojiBtn = h('button', { class: 'zcf-emojibtn', type: 'button', title: 'Insert an emoji', 'aria-label': 'Insert an emoji', 'aria-expanded': 'false' }, h('i', { class: 'far fa-smile', 'aria-hidden': 'true' }));
@@ -61,7 +64,7 @@ export function createDmWindow(services, userId) {
       insertAtCaret(picked.src ? `:${picked.name}:` : picked.emoji);
     },
   });
-  const composer = h('div', { class: 'zcf-composer' }, input, emojiBtn, gifBtn, sendBtn);
+  const composer = h('div', { class: 'zcf-composer zcf-zoom' }, input, emojiBtn, gifBtn, sendBtn);
   const body = h('div', { class: 'chat-content zcf-body zcf-dm-body' }, notice, scroller, newChip, emojiPicker.el, gifPicker.el, composer);
   const el = h('div', { class: 'chat-container zcf zcf-dm', dataset: { zcfDm: String(userId), zcfChat: `dm:${userId}` } }, header, body);
 
@@ -98,6 +101,7 @@ export function createDmWindow(services, userId) {
     e.stopPropagation();
     router.navigate(`/profile/${userId}`);
   });
+  bellBtn.addEventListener('click', stop(() => actions.toggleMute(userId)));
   inboxBtn.addEventListener('click', stop(() => router.navigate(`/mail/${userId}`)));
   minBtn.addEventListener('click', stop(() => actions.minimizeDm(userId)));
   closeBtn.addEventListener('click', stop(() => actions.closeDm(userId)));
@@ -264,6 +268,7 @@ export function createDmWindow(services, userId) {
     statusEl.hidden = !open;
     inboxBtn.hidden = !open;
     minBtn.hidden = !open;
+    bellBtn.hidden = !open;
     const p = presence.get(userId);
     clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : undefined, size: open ? 18 : 24 }));
     nameEl.textContent = displayName();
@@ -271,6 +276,11 @@ export function createDmWindow(services, userId) {
     const enemy = isEnemy(userId);
     headMark.hidden = !enemy;
     el.classList.toggle('zcf-enemy', enemy);
+    const muted = isMuted(userId);
+    bellIcon.className = `fas ${muted ? 'fa-bell-slash' : 'fa-bell'}`;
+    bellBtn.title = `${muted ? 'Unmute' : 'Mute'} ${displayName()}`;
+    bellBtn.setAttribute('aria-label', bellBtn.title);
+    bellBtn.setAttribute('aria-pressed', String(muted));
     statusEl.textContent = statusText(p);
     statusEl.classList.toggle('zcf-status-on', !!(p && p.online));
     el.title = open ? '' : displayName();

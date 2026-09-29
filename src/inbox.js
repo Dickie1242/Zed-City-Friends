@@ -8,7 +8,7 @@ function recentSignature(list) {
   return JSON.stringify(list.map((t) => [t.userId, t.username, t.avatar, t.preview, t.lastReply, t.newMail, t.isSystem]));
 }
 
-export function createInbox({ api, store, myId, now = () => Date.now(), onActivity = () => {}, onThreadChanged = () => {} }) {
+export function createInbox({ api, store, myId, now = () => Date.now(), onActivity = () => {}, onThreadChanged = () => {}, isMuted = () => false, onNewMail = () => {} }) {
   let threads = [];
   let previous = null; // Map userId -> lastReply from the previous poll; null until the first poll
   let lastSignature = null; // Recent-list signature from the previous poll; null until the first poll
@@ -41,7 +41,7 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
     const changes = [];
     for (const t of sortedFresh) {
       const seen = state.threads[t.userId] || {};
-      const pop = !!state.friends[t.userId] && (t.lastReply || 0) > (seen.lastNotifiedReply || 0);
+      const pop = !!state.friends[t.userId] && !isMuted(t.userId) && (t.lastReply || 0) > (seen.lastNotifiedReply || 0);
       if (seen.unread !== t.newMail || pop) changes.push({ t, pop });
     }
     // Threads we still show as unread but that were read elsewhere (e.g. in the game's inbox).
@@ -73,6 +73,16 @@ export function createInbox({ api, store, myId, now = () => Date.now(), onActivi
     const prevBaseline = previous;
     previous = new Map(threads.map((t) => [t.userId, t.lastReply]));
     if (prevBaseline) {
+      // New unread mail from another player since the last poll (never on the first poll, so a reload is
+      // quiet): the new-message sound, at most once per poll (spec §B.4, §D.1).
+      const arrived = fresh.filter((t) => !isMuted(t.userId) && prevBaseline.get(t.userId) !== t.lastReply);
+      if (arrived.length) {
+        try {
+          onNewMail(arrived);
+        } catch (e) {
+          warnOnce('inbox-callback', e);
+        }
+      }
       let chatting = false;
       for (const t of threads) {
         if (prevBaseline.has(t.userId) && prevBaseline.get(t.userId) === t.lastReply) continue;

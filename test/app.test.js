@@ -291,4 +291,60 @@ describe('app', () => {
     app.actions.removeEnemy(9);
     expect(app.actions.importFriends(text)).toEqual({ ok: true, added: 0, enemiesAdded: 1, notes: 0 });
   });
+
+  it('adds the Chat settings cog after Private Messages, and padlocks to the game chats', () => {
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
+    const root = document.querySelector('.zcf-root');
+    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['pm', 'settings']);
+    expect(document.querySelector('.general-chat .chat-header .zcf-cc-lock')).not.toBeNull();
+    expect(document.getElementById('zcf-user-settings')).not.toBeNull();
+    app.actions.toggleSettings();
+    expect(root.querySelector('.zcf-settings').classList.contains('zcf-open')).toBe(true);
+  });
+
+  it('keeps one window open on phones with Chat settings in the mix', async () => {
+    const mql = fakeMql(false);
+    window.matchMedia = vi.fn(() => mql);
+    app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: storageWith({ friends: friends(5) }) });
+    app.actions.togglePm();
+    app.actions.toggleSettings();
+    mql.set(true);
+    await flush();
+    let d = app.store.get().dock;
+    expect([d.friendsOpen, d.settingsOpen]).toEqual([true, false]);
+    app.actions.toggleSettings();
+    d = app.store.get().dock;
+    expect([d.friendsOpen, d.settingsOpen]).toEqual([false, true]);
+  });
+
+  it('plays the new-message sound once per poll when it is on, and never for a muted chat', async () => {
+    vi.useFakeTimers();
+    const sound = { play: vi.fn(), unlock: vi.fn() };
+    const rows = [
+      [],
+      [rawThread(6, { newMail: 1, lastReply: '2026-09-28 10:01:00' }), rawThread(7, { newMail: 1, lastReply: '2026-09-28 10:01:00' })],
+      [rawThread(8, { newMail: 1, lastReply: '2026-09-28 10:02:00' })],
+    ];
+    const api = fakeApi({ getChats: vi.fn(async () => ({ ok: true, data: rows.shift() || [] })) });
+    const storage = memoryStorage({ [`zcf:v1:${ME}:settings`]: JSON.stringify({ v: 1, sound: 'chirp', muted: [8] }) });
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage, sound });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+    expect(sound.play).toHaveBeenCalledTimes(1);
+    expect(sound.play).toHaveBeenCalledWith('chirp');
+    await vi.advanceTimersByTimeAsync(INTERVALS.threadsIdle);
+    expect(sound.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('mutes a chat out of the green count and marks the rest read one at a time', async () => {
+    const storage = storageWith({ friends: friends(5, 6), threads: { 5: { unread: 2 }, 6: { unread: 1 } } });
+    const api = fakeApi();
+    app = createApp({ api, playerId: ME, playerName: 'Me', storage });
+    app.actions.toggleMute(6);
+    expect(app.settings.get().muted).toEqual([6]);
+    expect(document.querySelector('.zcf-pm .unread-badge').textContent).toBe('2');
+    await app.actions.markAllRead();
+    expect(api.getChatMessages.mock.calls.map((c) => c[0])).toEqual([5]);
+    expect(app.store.get().threads[5].unread).toBe(0);
+  });
 });

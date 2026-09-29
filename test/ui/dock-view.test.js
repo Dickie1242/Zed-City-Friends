@@ -18,7 +18,7 @@ describe('dock view', () => {
     expect(visibleDms(dms, true).map((d) => d.id).sort()).toEqual([1, 2]);
   });
 
-  it('orders DM windows (store order) before the Private Messages window and removes closed ones', () => {
+  it('orders DM windows (store order) before Private Messages and Chat settings, and removes closed ones', () => {
     const services = makeServices();
     const root = document.createElement('div');
     const view = createDockView({ root, services });
@@ -27,15 +27,16 @@ describe('dock view', () => {
       openDm(s, 8, { now: 2 });
     });
     view.render();
-    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['dm:7', 'dm:8', 'pm']);
+    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['dm:7', 'dm:8', 'pm', 'settings']);
     services.store.update((s) => { s.dock.dms = s.dock.dms.filter((d) => d.id !== 7); });
     view.render();
-    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['dm:8', 'pm']);
+    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['dm:8', 'pm', 'settings']);
     expect(services.conversations.get(7)).toBeNull();
   });
 
   it('tucks Private Messages into the corner with CSS order, beyond an open window on phones', () => {
     expect(CSS).toContain('.chat-containers .zcf-pm{order:2}');
+    expect(CSS).toContain('.chat-containers .zcf-settings{order:4}');
     expect(CSS).toContain('.chat-containers .zcf.zcf-open{order:3');
   });
 });

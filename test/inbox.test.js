@@ -6,13 +6,13 @@ import { fakeApi, memoryStorage, rawThread } from './helpers.js';
 
 const ME = 1;
 
-function setup(rowsSequence) {
+function setup(rowsSequence, extra = {}) {
   const rows = [...rowsSequence];
   const api = fakeApi({ getChats: vi.fn(() => Promise.resolve({ ok: true, data: rows.shift() || [] })) });
   const store = createStore({ playerId: ME, storage: memoryStorage() });
   const onActivity = vi.fn();
   const onThreadChanged = vi.fn();
-  const inbox = createInbox({ api, store, myId: ME, now: () => 1000, onActivity, onThreadChanged });
+  const inbox = createInbox({ api, store, myId: ME, now: () => 1000, onActivity, onThreadChanged, ...extra });
   return { api, store, inbox, onActivity, onThreadChanged };
 }
 
@@ -183,5 +183,31 @@ describe('inbox', () => {
     });
     await inbox.poll();
     expect(store.get().dock.dms.find((d) => d.id === 5).username).toBe('Spike');
+  });
+
+  it('skips the pop-up for a muted friend, but still counts their unread mail', async () => {
+    const { store, inbox } = setup([[rawThread(5, { newMail: 2 })]], { isMuted: (id) => id === 5 });
+    store.update((s) => addFriend(s, { id: 5, username: 'Spike' }, 0));
+    await inbox.poll();
+    expect(store.get().dock.dms).toEqual([]);
+    expect(store.get().threads[5].unread).toBe(2);
+  });
+
+  it('reports new mail from others once per poll, never on the first poll, for system threads, your own sends or muted chats', async () => {
+    const onNewMail = vi.fn();
+    const { inbox } = setup([
+      [rawThread(5, { newMail: 1, lastReply: '2026-09-28 10:00:00' })],
+      [rawThread(5, { newMail: 2, lastReply: '2026-09-28 10:01:00' }), rawThread(6, { newMail: 1, lastReply: '2026-09-28 10:01:00' })],
+      [rawThread(5, { newMail: 2, lastReply: '2026-09-28 10:01:00' })],
+      [rawThread(7, { newMail: 1, isSystem: 1 }), rawThread(8, { newMail: 1, senderId: ME }), rawThread(9, { newMail: 1 })],
+    ], { onNewMail, isMuted: (id) => id === 9 });
+    await inbox.poll();
+    expect(onNewMail).not.toHaveBeenCalled();
+    await inbox.poll();
+    expect(onNewMail).toHaveBeenCalledTimes(1);
+    expect(onNewMail.mock.calls[0][0].map((t) => t.userId)).toEqual([5, 6]);
+    await inbox.poll();
+    await inbox.poll();
+    expect(onNewMail).toHaveBeenCalledTimes(1);
   });
 });

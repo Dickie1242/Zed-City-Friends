@@ -16,6 +16,9 @@ import {
   setFriendNote,
   MAX_DMS,
   MAX_NOTE,
+  setSettingsOpen,
+  closeAllDms,
+  chatsUnreadIds,
 } from '../src/state.js';
 
 describe('state', () => {
@@ -134,5 +137,35 @@ describe('state', () => {
     // Friends always count; others only while their thread is in the Recent list; system threads never.
     expect(chatsUnreadTotal(s, inbox)).toBe(7);
     expect(chatsUnreadTotal(s, [])).toBe(2);
+  });
+
+  it('keeps the Chat settings window in the dock state and the one-open rules', () => {
+    const s = emptyState();
+    expect(s.dock.settingsOpen).toBe(false);
+    expect(normalizeState({ v: 1, dock: { settingsOpen: 1 } }).dock.settingsOpen).toBe(true);
+    openDm(s, 1, { expand: true });
+    setFriendsOpen(s, true);
+    setSettingsOpen(s, true, { exclusive: true });
+    expect([s.dock.dms[0].open, s.dock.friendsOpen, s.dock.settingsOpen]).toEqual([false, false, true]);
+    setFriendsOpen(s, true, { exclusive: true });
+    expect([s.dock.friendsOpen, s.dock.settingsOpen]).toEqual([true, false]);
+    setSettingsOpen(s, true);
+    openDm(s, 1, { expand: true, exclusive: true });
+    expect([s.dock.friendsOpen, s.dock.settingsOpen]).toEqual([false, false]);
+    setSettingsOpen(s, true);
+    collapseAll(s);
+    expect(s.dock.settingsOpen).toBe(false);
+    closeAllDms(s);
+    expect(s.dock.dms).toEqual([]);
+  });
+
+  it('leaves muted chats out of the unread chats', () => {
+    const s = emptyState();
+    addFriend(s, { id: 1, username: 'a' }, 0);
+    s.threads = { 1: { unread: 2 }, 3: { unread: 5 } };
+    const inbox = [{ userId: 3, isSystem: false }];
+    expect(chatsUnreadIds(s, inbox)).toEqual([1, 3]);
+    expect(chatsUnreadIds(s, inbox, [3])).toEqual([1]);
+    expect(chatsUnreadTotal(s, inbox, [3])).toBe(2);
   });
 });

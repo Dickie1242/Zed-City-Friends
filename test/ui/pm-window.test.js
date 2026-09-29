@@ -347,4 +347,15 @@ describe('private messages window', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(list(el).querySelector('.zcf-row .zcf-enemy-mark')).not.toBeNull();
   });
+
+  it('marks a muted chat with a bell-slash and a dimmed pill, and leaves it out of the green count', () => {
+    const { services, el } = mount({ threads: [thread(9), thread(8)] }, { open: false });
+    services.store.update((s) => { s.threads = { 9: { unread: 2 }, 8: { unread: 1 } }; });
+    services.settings.update((s) => { s.muted = [9]; });
+    expect(el.querySelector('.unread-badge').textContent).toBe('1');
+    services.store.update((s) => { s.dock.friendsOpen = true; });
+    const row9 = [...list(el).querySelectorAll('.zcf-row')].find((r) => r.textContent.includes('U9'));
+    expect(row9.querySelector('.zcf-muted-mark')).not.toBeNull();
+    expect(row9.querySelector('.zcf-pill').classList.contains('zcf-pill-dim')).toBe(true);
+  });
 });

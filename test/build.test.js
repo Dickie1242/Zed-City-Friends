@@ -11,8 +11,11 @@ describe('build', () => {
     expect(text).toContain('// @match        https://www.zed.city/*');
     expect(text).toContain('// @grant        none');
     expect(text).not.toMatch(/\bimport\s*[{*]/);
-    // ~205 KB readable today (Greasy Fork forbids minified code): the ~50 KB emoji table, and
-    // since 0.4.0 the Friends page. The cap catches accidental bloat, not the readable source itself.
-    expect(Buffer.byteLength(text)).toBeLessThan(256 * 1024);
+    // ~272 KB readable in 0.5.0 (Greasy Fork forbids minified code): the ~50 KB emoji table, the
+    // Friends/Enemies page, and since 0.5.0 Private Messages, Chat settings and per-chat customization.
+    // The cap catches accidental bloat, not the readable source itself.
+    expect(Buffer.byteLength(text)).toBeLessThan(320 * 1024);
+    expect(text).toContain('Zed City Friends v');
+    expect(text).not.toContain('__ZCF_VERSION__');
   }, 30000);
 });
