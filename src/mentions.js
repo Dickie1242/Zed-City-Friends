@@ -14,14 +14,19 @@ export function makeMatcher(words) {
   }
   if (!list.length) return null;
   list.sort((a, b) => b.length - a.length); // "Moth Man" before "Moth"
-  const source = `(?<![\\p{L}\\p{N}_])(?:${list.map(escape).join('|')})(?![\\p{L}\\p{N}_])`;
+  // The character before a word is matched (group 1) rather than looked behind at: Safari before 16.4 can't
+  // parse a lookbehind, and would stop the whole script.
+  const source = `(^|[^\\p{L}\\p{N}_])(${list.map(escape).join('|')})(?![\\p{L}\\p{N}_])`;
   const once = new RegExp(source, 'iu');
   return {
     test: (text) => once.test(String(text)),
     // [start, end) pairs of every match in `text`.
     ranges(text) {
       const out = [];
-      for (const m of String(text).matchAll(new RegExp(source, 'giu'))) out.push([m.index, m.index + m[0].length]);
+      for (const m of String(text).matchAll(new RegExp(source, 'giu'))) {
+        const start = m.index + m[1].length;
+        out.push([start, start + m[2].length]);
+      }
       return out;
     },
   };

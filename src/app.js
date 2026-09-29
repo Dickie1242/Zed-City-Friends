@@ -478,6 +478,11 @@ export function createApp({ api, playerId, playerName, doc = document, win = win
     enabled: () => settings.get().mentions,
     myName: playerName || '',
     onMention,
+    // The moment behind a row's time, which doesn't change with the clock it's shown in.
+    timeOf: (row) => {
+      const el = row.querySelector(TIME);
+      return el ? gameClock.momentOf(el) : null;
+    },
   });
   const marks = createEnemyMarks({
     doc,

@@ -20,7 +20,7 @@ describe('update check', () => {
   it('fetches the update URL once, without the cache, and says whether a newer version is out', async () => {
     const fetchImpl = vi.fn(() => res('// @version      0.7.1\n'));
     expect(await checkForUpdate({ current: '0.7.0', fetchImpl })).toEqual({ status: 'newer', latest: '0.7.1' });
-    expect(fetchImpl).toHaveBeenCalledWith(UPDATE_URL, { cache: 'no-store', credentials: 'omit' });
+    expect(fetchImpl).toHaveBeenCalledWith(UPDATE_URL, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
     expect(await checkForUpdate({ current: '0.7.1', fetchImpl })).toEqual({ status: 'current' });
     expect(await checkForUpdate({ current: '0.8.0', fetchImpl })).toEqual({ status: 'current' });
   });

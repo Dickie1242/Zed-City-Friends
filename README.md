@@ -10,12 +10,13 @@ A userscript that adds a **friends list** and **Torn-style DM chat windows** to 
 - **Enemies.** A second list beside Friends: the page title switches between **FRIENDS | ENEMIES** (`zed.city/enemies`), and profiles get an **Add Enemy** button right after Add Friend. Enemies get private notes too, and a red skull marks them in chats, including the game's Global, Faction and Activity chats. A player can be on both lists.
 
 - **Customize any chat.** Every chat in the dock, the game's Global, Faction and Activity included, gets a padlock. Unlock it to drag the chat anywhere by its header, resize it from its edges, and lock it there; the return arrow sends it back to the row. Right-click a padlock for its menu: message size (80–200%, one chat at a time), size reset, return to row, and mute for a DM. Each chat remembers its own size, spot and message size, and your other game tabs follow along. Desktop only; on phones only message size applies.
-- **Chat settings.** The cog in the bottom-right corner: mark all chats read, close all private chats, every chat's settings with a Reset, an optional sound for new private messages, the version, and what's new.
+- **Chat settings.** The cog in the bottom-right corner, in three tabs. **General:** desktop notifications (with a Test button), the unread count in the tab title, sounds for new private messages and mentions with a volume, mentions, a 12-hour clock, mark all read and close all private chats. **Chats:** one text size for every chat, then every chat as a row you tap to lock it, change its text size, send it back to the dock or reset it, and your muted chats. **About:** the version and Check for updates, what's new, backup and restore default settings.
+- **Mentions.** Messages in Global and Faction that say your name, or words you add in Chat settings, get a yellow bar and the words turn yellow. An optional mention sound plays for new ones (off until you pick one).
 - **Mute.** The bell in a DM header mutes that conversation: no pop-up tab, no sound, and it's left out of the green count.
 - **Never miss a message.** Optional desktop notifications for new private messages while the game isn't in focus (off until you turn them on in Chat settings, with a Friends only switch), and your unread count in the browser tab's title. Pin conversations to the top of the Chats tab.
 - **One clock everywhere.** Every chat time shows Zed City time (ZCT), the game's Global, Faction and Activity chats included. Rest the pointer on one (or tap it) for the full date and time in ZCT and in your own time zone, and how long ago it was; Chat settings can leave your own time out. Opening a DM with unread messages puts a "New" line above the first one, and when moved chats overlap, the one you click comes to the front.
 
-DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. Nothing leaves `zed.city`: there's no external server, and your friends list is stored in your browser, separately for each player account.
+DMs are sent through the game's own **Mail** system. The other player gets your messages in their normal inbox, whether or not they have the script. There's no external server: your friends list and settings are stored in your browser, separately for each player account. The only request that leaves `zed.city` is **Check for updates** in Chat settings, and only when you click it: it reads the script's version from GitHub, the same file your userscript manager checks.
 
 ## Install
 
@@ -40,7 +41,7 @@ While the Private Messages window or Friends page is open, it also refreshes onl
 
 ## Backup
 
-In the Private Messages window, **⋯ → Export friends** downloads your list as JSON. **Import friends** merges a file back in; it only adds friends and never removes any. Enemies and notes travel in the same file.
+**Save backup** (in Chat settings → About, or the Private Messages window's **⋯** menu) downloads one JSON file with your friends, enemies, notes and settings. **Load backup** merges a file back in: it only adds friends and enemies, never removes any, and restores the settings (keeping chats you've muted or pinned since). Files exported by older versions still load.
 
 ## Development
 

@@ -37,13 +37,27 @@ describe('mention marks', () => {
     expect(flag.parentElement.querySelector('.sender-name')).not.toBeNull();
   });
 
-  it('calls onMention only for fresh rows', () => {
-    const { onMention } = setup();
-    const nyx = rows()[0];
-    mm.mark(nyx, { fresh: false });
+  it('calls onMention only for fresh rows, and once per message', () => {
+    const { onMention } = setup({ words: ['Moth', 'DWR'] });
+    const [nyx, , , grim] = rows();
+    mm.mark(grim, { fresh: false });
+    mm.mark(grim, { fresh: true }); // first seen as history: never sounds
     expect(onMention).not.toHaveBeenCalled();
     mm.mark(nyx, { fresh: true });
+    expect(onMention).toHaveBeenCalledTimes(1);
     expect(onMention).toHaveBeenCalledWith(nyx);
+    const copy = () => {
+      const c = nyx.cloneNode(true);
+      c.querySelector(`.${FLAG}`).remove();
+      nyx.after(c);
+      return c;
+    };
+    mm.mark(copy(), { fresh: true }); // the same message drawn again
+    expect(onMention).toHaveBeenCalledTimes(1);
+    const later = copy();
+    later.querySelector('.msg-time').textContent = '14:21'; // the same words, sent again
+    mm.mark(later, { fresh: true });
+    expect(onMention).toHaveBeenCalledTimes(2);
   });
 
   it('takes flags away when switched off or when the words change, without duplicating them', () => {

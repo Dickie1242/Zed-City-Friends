@@ -541,4 +541,72 @@ describe('app', () => {
     app.actions.setChatLocked('pm', true);
     expect(app.settings.get().chats.pm).toBeUndefined();
   });
+
+  describe('mention sound', () => {
+    const line = (name, time, text) => `<div class="msg-cont"><div><div><div><div><span class="sender-name">${name}</span><span class="msg-time">${time}</span></div><div>${text}</div></div></div></div></div>`;
+    let t;
+    let sound;
+    let storage;
+    let panel;
+    beforeEach(() => {
+      t = Date.UTC(2026, 8, 29, 18, 30); // the game prints ZCT here (remembered below)
+      sound = { play: vi.fn(() => true), unlock: vi.fn() };
+      storage = memoryStorage({ [`zcf:v1:${ME}:gameClock`]: 'game' });
+      app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage, now: () => t, sound });
+      app.settings.update((s) => { s.mentionSound = 'bell'; s.volume = 60; });
+      panel = document.querySelector('.general-chat .message-panel');
+    });
+    const settle = async () => {
+      await flush();
+      await flush();
+    };
+    const say = async (...rows) => {
+      panel.insertAdjacentHTML('beforeend', rows.join(''));
+      await settle();
+    };
+
+    it('plays for a mention sent in the last 2 minutes, at the volume, at most every 5 seconds', async () => {
+      await say(line('Nyx', '18:20', 'me? that was ages ago'));
+      expect(sound.play).not.toHaveBeenCalled();
+      await say(line('Nyx', '18:29', 'hey Me'));
+      expect(sound.play).toHaveBeenCalledTimes(1);
+      expect(sound.play).toHaveBeenCalledWith('bell', { volume: 60 });
+      t += 3000;
+      await say(line('Rust', '18:30', 'Me, you there?'));
+      expect(sound.play).toHaveBeenCalledTimes(1);
+      t += 3000;
+      await say(line('Grim', '18:30', 'Me!'));
+      expect(sound.play).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays quiet while another game tab has focus, or with the mention sound off', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storage.setItem(`zcf:v1:${ME}:focus`, JSON.stringify({ tab: 'other', at: t }));
+      await say(line('Nyx', '18:29', 'hey Me'));
+      expect(sound.play).not.toHaveBeenCalled();
+      storage.removeItem(`zcf:v1:${ME}:focus`);
+      app.settings.update((s) => { s.mentionSound = 'off'; });
+      await say(line('Rust', '18:30', 'Me, you there?'));
+      expect(sound.play).not.toHaveBeenCalled();
+    });
+
+    it('never plays again when the chat draws the same messages again', async () => {
+      await say(line('Nyx', '18:29', 'hey Me'));
+      expect(sound.play).toHaveBeenCalledTimes(1);
+      t += 6000;
+      const html = panel.innerHTML.replace(/<i class="zcf-mention-flag"[^>]*><\/i>/g, '');
+      panel.innerHTML = ''; // minimized and opened again
+      await settle();
+      panel.innerHTML = html;
+      await settle();
+      expect(sound.play).toHaveBeenCalledTimes(1);
+      t += 6000;
+      const last = panel.lastElementChild;
+      last.remove(); // the game draws its newest row again
+      await settle();
+      panel.appendChild(last.cloneNode(true));
+      await settle();
+      expect(sound.play).toHaveBeenCalledTimes(1);
+    });
+  });
 });

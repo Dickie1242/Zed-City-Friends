@@ -12,8 +12,8 @@ const MAX_PENDING = 500;
 const MAX_FRESH = 5;
 
 // names(): the Set of lower-cased enemy usernames (enemies.js enemyNames). onRow(row, { fresh }): anything
-// else done to each game chat row as it appears (fresh when it arrived while you watched: at most MAX_FRESH
-// new rows in its chat in one pass) and on refresh() (never fresh).
+// else done to each game chat row as it appears (fresh when it arrived while you watched, see arrived()) and
+// on refresh() (never fresh).
 export function createEnemyMarks({ doc = document, win = window, keeper = null, names, onRow = null }) {
   let dockEl = null;
   let observer = null;
@@ -33,6 +33,21 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
     const want = set.has(sender.textContent.trim().toLowerCase());
     if (want && !has) sender.parentNode.insertBefore(enemyMark(), sender);
     else if (!want && has) prev.remove();
+  }
+
+  // Whether a chat's new rows (`added`, one pass) are messages arriving while you watch: at most MAX_FRESH,
+  // and all of them below rows the chat already had. A chat drawing its history, drawing its rows again
+  // (opened after being minimized) or loading older ones above them doesn't count.
+  function arrived(chat, added) {
+    if (!chat || added.size > MAX_FRESH) return false;
+    let old = false;
+    let seenNew = false;
+    for (const row of chat.querySelectorAll(ROW)) {
+      if (added.has(row)) seenNew = true;
+      else if (seenNew) return false; // an older row below a new one: these were put in above
+      else old = true;
+    }
+    return old;
   }
 
   function rowsIn(node) {
@@ -61,14 +76,17 @@ export function createEnemyMarks({ doc = document, win = window, keeper = null, 
         rows.push(row);
       }
     }
-    const perChat = new Map();
+    const perChat = new Map(); // chat -> its new rows
     for (const row of rows) {
       const chat = row.closest('.chat-container');
-      perChat.set(chat, (perChat.get(chat) || 0) + 1);
+      if (!perChat.has(chat)) perChat.set(chat, new Set());
+      perChat.get(chat).add(row);
     }
+    const fresh = new Set();
+    if (onRow) for (const [chat, added] of perChat) if (arrived(chat, added)) fresh.add(chat);
     for (const row of rows) {
       markRow(row, set);
-      if (onRow) onRow(row, { fresh: perChat.get(row.closest('.chat-container')) <= MAX_FRESH });
+      if (onRow) onRow(row, { fresh: fresh.has(row.closest('.chat-container')) });
     }
   }
 

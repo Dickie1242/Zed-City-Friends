@@ -22,7 +22,7 @@ export function headerVersion(text) {
 // { status: 'newer', latest } | { status: 'current' } | { status: 'failed' }
 export async function checkForUpdate({ current, fetchImpl = (...a) => fetch(...a), url = UPDATE_URL } = {}) {
   try {
-    const res = await fetchImpl(url, { cache: 'no-store', credentials: 'omit' });
+    const res = await fetchImpl(url, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
     if (!res || !res.ok) return { status: 'failed' };
     const latest = headerVersion(await res.text());
     if (!latest) return { status: 'failed' };

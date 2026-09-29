@@ -6104,7 +6104,7 @@ sandfish		/items/sandfish.webp`;
   }
   async function checkForUpdate({ current, fetchImpl = (...a) => fetch(...a), url = UPDATE_URL } = {}) {
     try {
-      const res = await fetchImpl(url, { cache: "no-store", credentials: "omit" });
+      const res = await fetchImpl(url, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
       if (!res || !res.ok) return { status: "failed" };
       const latest = headerVersion(await res.text());
       if (!latest) return { status: "failed" };
@@ -6614,6 +6614,17 @@ sandfish		/items/sandfish.webp`;
       if (want && !has) sender.parentNode.insertBefore(enemyMark(), sender);
       else if (!want && has) prev.remove();
     }
+    function arrived(chat, added) {
+      if (!chat || added.size > MAX_FRESH) return false;
+      let old = false;
+      let seenNew = false;
+      for (const row of chat.querySelectorAll(ROW)) {
+        if (added.has(row)) seenNew = true;
+        else if (seenNew) return false;
+        else old = true;
+      }
+      return old;
+    }
     function rowsIn(node) {
       if (node.nodeType !== 1) return [];
       if (node.matches(ROW)) return [node];
@@ -6642,11 +6653,16 @@ sandfish		/items/sandfish.webp`;
       const perChat = /* @__PURE__ */ new Map();
       for (const row of rows) {
         const chat = row.closest(".chat-container");
-        perChat.set(chat, (perChat.get(chat) || 0) + 1);
+        if (!perChat.has(chat)) perChat.set(chat, /* @__PURE__ */ new Set());
+        perChat.get(chat).add(row);
+      }
+      const fresh = /* @__PURE__ */ new Set();
+      if (onRow) {
+        for (const [chat, added] of perChat) if (arrived(chat, added)) fresh.add(chat);
       }
       for (const row of rows) {
         markRow(row, set);
-        if (onRow) onRow(row, { fresh: perChat.get(row.closest(".chat-container")) <= MAX_FRESH });
+        if (onRow) onRow(row, { fresh: fresh.has(row.closest(".chat-container")) });
       }
     }
     function onMutations(records) {
@@ -6714,14 +6730,17 @@ sandfish		/items/sandfish.webp`;
     }
     if (!list.length) return null;
     list.sort((a, b) => b.length - a.length);
-    const source = `(?<![\\p{L}\\p{N}_])(?:${list.map(escape).join("|")})(?![\\p{L}\\p{N}_])`;
+    const source = `(^|[^\\p{L}\\p{N}_])(${list.map(escape).join("|")})(?![\\p{L}\\p{N}_])`;
     const once = new RegExp(source, "iu");
     return {
       test: (text2) => once.test(String(text2)),
       // [start, end) pairs of every match in `text`.
       ranges(text2) {
         const out = [];
-        for (const m of String(text2).matchAll(new RegExp(source, "giu"))) out.push([m.index, m.index + m[0].length]);
+        for (const m of String(text2).matchAll(new RegExp(source, "giu"))) {
+          const start = m.index + m[1].length;
+          out.push([start, start + m[2].length]);
+        }
         return out;
       }
     };
@@ -6732,15 +6751,28 @@ sandfish		/items/sandfish.webp`;
   var HIGHLIGHT = "zcf-mention";
   var CHATS = ".general-chat, .faction-chat";
   var MAX_RANGES = 300;
+  var MAX_HEARD = 500;
+  var defaultTimeOf = (row) => {
+    const t = row.querySelector(".msg-time");
+    return t ? t.textContent.trim() : "";
+  };
   function createMentionMarks({ doc = document, win = window, words, enabled, myName = "", onMention = () => {
-  } }) {
+  }, timeOf = defaultTimeOf }) {
     const registry = win.CSS && win.CSS.highlights && typeof win.Highlight === "function" ? win.CSS.highlights : null;
     let highlight = null;
     let ranges = /* @__PURE__ */ new Set();
     let byRow = /* @__PURE__ */ new WeakMap();
     let matcher = null;
     let matcherKey = null;
+    let heard = /* @__PURE__ */ new Set();
     const me = String(myName || "").trim().toLowerCase();
+    function firstTime(row, sender, text2) {
+      const key = [row.closest(".faction-chat") ? "f" : "g", sender, timeOf(row), text2].join("|");
+      if (heard.has(key)) return false;
+      heard.add(key);
+      if (heard.size > MAX_HEARD) heard.delete(heard.values().next().value);
+      return true;
+    }
     function currentMatcher() {
       const list = words();
       const key = JSON.stringify(list);
@@ -6805,12 +6837,13 @@ sandfish		/items/sandfish.webp`;
       if (!textEl) return;
       clearRow(row);
       const m = enabled() ? currentMatcher() : null;
-      const mine = !!me && sender.textContent.trim().toLowerCase() === me;
+      const name = sender.textContent.trim();
+      const mine = !!me && name.toLowerCase() === me;
       const hit = !!m && !mine && m.test(textEl.textContent);
       setFlag2(line, hit);
       if (!hit) return;
       addRanges(row, textEl, m);
-      if (fresh) onMention(row);
+      if (firstTime(row, name, textEl.textContent) && fresh) onMention(row);
     }
     return {
       mark,
@@ -6819,6 +6852,7 @@ sandfish		/items/sandfish.webp`;
         highlight = null;
         ranges = /* @__PURE__ */ new Set();
         byRow = /* @__PURE__ */ new WeakMap();
+        heard = /* @__PURE__ */ new Set();
         for (const f of doc.querySelectorAll(`.${FLAG}`)) f.remove();
       }
     };
@@ -8737,7 +8771,12 @@ sandfish		/items/sandfish.webp`;
       words: () => [playerName, ...settings.get().mentionWords].filter(Boolean),
       enabled: () => settings.get().mentions,
       myName: playerName || "",
-      onMention
+      onMention,
+      // The moment behind a row's time, which doesn't change with the clock it's shown in.
+      timeOf: (row) => {
+        const el = row.querySelector(TIME);
+        return el ? gameClock.momentOf(el) : null;
+      }
     });
     const marks = createEnemyMarks({
       doc,

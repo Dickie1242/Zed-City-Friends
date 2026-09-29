@@ -8,17 +8,35 @@ export const FLAG = 'zcf-mention-flag';
 export const HIGHLIGHT = 'zcf-mention';
 const CHATS = '.general-chat, .faction-chat';
 const MAX_RANGES = 300;
+// Mentions already seen, so a message drawn again never sounds twice.
+const MAX_HEARD = 500;
+
+const defaultTimeOf = (row) => {
+  const t = row.querySelector('.msg-time');
+  return t ? t.textContent.trim() : '';
+};
 
 // words(): your name plus the words you added. enabled(): the Chat settings switch. myName: your username,
-// whose own messages never count. onMention(row): a mention in a row that just arrived.
-export function createMentionMarks({ doc = document, win = window, words, enabled, myName = '', onMention = () => {} }) {
+// whose own messages never count. onMention(row): a mention in a row that just arrived, the first time that
+// message is seen. timeOf(row): the row's time, telling apart the same words sent twice.
+export function createMentionMarks({ doc = document, win = window, words, enabled, myName = '', onMention = () => {}, timeOf = defaultTimeOf }) {
   const registry = win.CSS && win.CSS.highlights && typeof win.Highlight === 'function' ? win.CSS.highlights : null;
   let highlight = null;
   let ranges = new Set();
   let byRow = new WeakMap(); // row -> its ranges
   let matcher = null;
   let matcherKey = null;
+  let heard = new Set(); // chat|sender|time|text of every mention seen, oldest first
   const me = String(myName || '').trim().toLowerCase();
+
+  // Whether this mention is new to us; remembers it either way.
+  function firstTime(row, sender, text) {
+    const key = [row.closest('.faction-chat') ? 'f' : 'g', sender, timeOf(row), text].join('|');
+    if (heard.has(key)) return false;
+    heard.add(key);
+    if (heard.size > MAX_HEARD) heard.delete(heard.values().next().value);
+    return true;
+  }
 
   function currentMatcher() {
     const list = words();
@@ -92,12 +110,13 @@ export function createMentionMarks({ doc = document, win = window, words, enable
     if (!textEl) return;
     clearRow(row);
     const m = enabled() ? currentMatcher() : null;
-    const mine = !!me && sender.textContent.trim().toLowerCase() === me;
+    const name = sender.textContent.trim();
+    const mine = !!me && name.toLowerCase() === me;
     const hit = !!m && !mine && m.test(textEl.textContent);
     setFlag(line, hit);
     if (!hit) return;
     addRanges(row, textEl, m);
-    if (fresh) onMention(row);
+    if (firstTime(row, name, textEl.textContent) && fresh) onMention(row);
   }
 
   return {
@@ -107,6 +126,7 @@ export function createMentionMarks({ doc = document, win = window, words, enable
       highlight = null;
       ranges = new Set();
       byRow = new WeakMap();
+      heard = new Set();
       for (const f of doc.querySelectorAll(`.${FLAG}`)) f.remove();
     },
   };

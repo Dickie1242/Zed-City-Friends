@@ -97,4 +97,27 @@ describe('enemy marks in the game chats', () => {
     marks.refresh();
     expect(seen.every(([, fresh]) => fresh === false)).toBe(true);
   });
+
+  it('never calls rows fresh when a chat draws them again, puts older ones above, or had none before', async () => {
+    document.body.innerHTML = DOCK_HTML;
+    const seen = [];
+    marks = createEnemyMarks({ names: () => new Set(), onRow: (r, info) => seen.push([r.querySelector('.sender-name').textContent, info.fresh]) });
+    marks.start();
+    const panel = document.querySelector('.general-chat .message-panel');
+    const pass = async (fn) => {
+      seen.length = 0;
+      fn();
+      await flush();
+      await flush();
+      return seen.map(([name, fresh]) => `${name}:${fresh}`);
+    };
+    expect(await pass(() => panel.insertAdjacentHTML('afterbegin', row('Old')))).toEqual(['Old:false']);
+    const html = panel.innerHTML;
+    expect(await pass(() => { panel.innerHTML = ''; })).toEqual([]);
+    expect(await pass(() => { panel.innerHTML = html; }))
+      .toEqual([...panel.querySelectorAll('.sender-name')].map((n) => `${n.textContent}:false`));
+    const faction = document.querySelector('.faction-chat .chat-content');
+    expect(await pass(() => faction.insertAdjacentHTML('beforeend', row('Nyx') + row('Grim')))).toEqual(['Nyx:false', 'Grim:false']);
+    expect(await pass(() => faction.insertAdjacentHTML('beforeend', row('Rust')))).toEqual(['Rust:true']);
+  });
 });
