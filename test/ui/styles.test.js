@@ -182,6 +182,22 @@ describe('styles against the game dock CSS', () => {
     }
   });
 
+  it('never lets a chat walk through the bar when it opens, and drops it straight back when it closes', () => {
+    // The game animates every property of a chat (transition:all .3s), order included: a chat opening would
+    // step through every slot between the bar and the window row, and one closing would keep its window size
+    // in the bar for .3s, throwing the window row up and down. Opening still grows the window in place.
+    renderDock({ friendsOpen: true, settingsOpen: false, dms: [[5, false]] });
+    const pm = document.querySelector('.zcf-pm');
+    const general = document.querySelector('.general-chat');
+    const faction = document.querySelector('.faction-chat');
+    const cog = document.querySelector('.zcf-settings');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      for (const open of [pm, general]) expect(winner(open, 'transition', 1280, sheets).value).toBe('all .3s,order 0s');
+      for (const closed of [faction, cog]) expect(winner(closed, 'transition', 1280, sheets).value).toBe('none');
+      expect(winner(pm, 'transition', 400, sheets).value).toBe('none'); // phones: the game's own rule
+    }
+  });
+
   it("shows an open chat's icon in the bar, highlighted in teal, on desktop only", () => {
     renderDock({ friendsOpen: true, settingsOpen: false, dms: [[5, false]] });
     const stand = (key) => document.querySelector(`[data-zcf-stand="${key}"]`);

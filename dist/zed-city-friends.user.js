@@ -9374,6 +9374,8 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
   body .chat-containers{flex-wrap:wrap-reverse;justify-content:flex-end;row-gap:0}
+  body .chat-containers .chat-container{transition:all .3s,order 0s}
+  body .chat-containers .chat-container.chat-minimized{transition:none}
   body .chat-containers::after{content:"";order:10;flex:0 0 100%;height:5px}
   body .chat-containers .zcf-dm,body .chat-containers .zcf-stand-dm{order:1}
   body .chat-containers > .chat-container.activity-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:activity"]{order:2}
