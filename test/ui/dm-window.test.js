@@ -69,7 +69,7 @@ describe('dm window', () => {
     expect(name.title).toBe('Spike');
     // The desktop rule must out-specificity the game's 2-class `.chat-container.chat-minimized` selectors.
     expect(CSS).toContain('@media (min-width:600px){');
-    expect(CSS).toContain('.chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}');
+    expect(CSS).toContain('.chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized{width:auto;max-width:150px}');
   });
 
   it('clicking the name while minimized expands the window instead of opening the profile', async () => {

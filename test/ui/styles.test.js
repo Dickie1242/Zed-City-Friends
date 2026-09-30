@@ -156,10 +156,42 @@ describe('styles against the game dock CSS', () => {
       // wrap-reverse stacks lines upwards, so the open window must come last or the cog gets a row above it.
       expect(Number(winner(pm, 'order', 400, sheets).value)).toBeGreaterThan(Number(winner(cog, 'order', 400, sheets).value));
       expect(winner(cog, 'display', 400, sheets).value).not.toBe('none');
-      expect(winner(dock, 'flex-wrap', 1280, sheets)).toBeNull();
+      expect(winner(dock, 'flex-wrap', 1280, sheets).value).toBe('wrap-reverse'); // the desktop bar (0.8 spec)
     }
     renderDock({ friendsOpen: false, settingsOpen: false, dms: [[5, false]] });
     expect(winner(document.querySelector('.chat-containers'), 'flex-wrap', 400, OURS_LAST)).toBeNull();
+  });
+
+  it('lays the desktop dock out like Torn: icons in a bar along the bottom, open windows in a row above in the same order', () => {
+    renderDock({ friendsOpen: true, settingsOpen: true, dms: [[5, true], [6, false]] });
+    const q = (sel) => document.querySelector(sel);
+    const dock = q('.chat-containers');
+    const lineBreak = OURS.find((r) => r.selector === 'body .chat-containers::after' && mediaApplies(r.media, 1280));
+    expect(Object.fromEntries(lineBreak.decls.map((d) => [d.prop, d.value]))).toMatchObject({ order: '10', flex: '0 0 100%' });
+    expect(OURS.some((r) => r.selector === 'body .chat-containers::after' && mediaApplies(r.media, 400))).toBe(false);
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      const order = (el) => Number(winner(el, 'order', 1280, sheets).value);
+      expect(winner(dock, 'flex-wrap', 1280, sheets).value).toBe('wrap-reverse');
+      expect(winner(dock, 'justify-content', 1280, sheets).value).toBe('flex-end');
+      // The bar, left to right: DM 6 (minimized), DM 5's stand-in, Faction (minimized), Global's stand-in, then Private Messages' and the cog's.
+      const bar = [q('[data-zcf-chat="dm:6"]'), q('[data-zcf-stand="dm:5"]'), q('.faction-chat'), q('[data-zcf-stand="game:general"]'), q('[data-zcf-stand="pm"]'), q('[data-zcf-stand="settings"]')];
+      expect(bar.map(order)).toEqual([1, 1, 3, 4, 5, 6]);
+      // Above the line break (order 10): the open windows, in the bar's order.
+      const windows = [q('[data-zcf-chat="dm:5"]'), q('.general-chat'), q('[data-zcf-chat="pm"]'), q('[data-zcf-chat="settings"]')];
+      expect(windows.map(order)).toEqual([11, 14, 15, 16]);
+    }
+  });
+
+  it("shows an open chat's icon in the bar, highlighted in teal, on desktop only", () => {
+    renderDock({ friendsOpen: true, settingsOpen: false, dms: [[5, false]] });
+    const stand = (key) => document.querySelector(`[data-zcf-stand="${key}"]`);
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      const display = (key, width = 1280) => winner(stand(key), 'display', width, sheets).value;
+      expect([display('pm'), display('settings'), display('game:general'), display('game:faction')]).toEqual(['flex', 'none', 'flex', 'none']);
+      expect([display('pm', 400), display('game:general', 400)]).toEqual(['none', 'none']);
+      expect(winner(stand('pm').querySelector('.chat-header'), 'box-shadow', 1280, sheets).value).toBe('inset 0 2px 0 #0a748f');
+      expect(winner(stand('pm').querySelector('.chat-icon'), 'color', 1280, sheets).value).toBe('#629464');
+    }
   });
 
   it("gives the game's Faction chat the campground, the icon Faction has everywhere else in the game", () => {

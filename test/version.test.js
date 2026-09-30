@@ -11,8 +11,8 @@ describe('version and release notes', () => {
   });
 
   it('lists releases newest first as plain text', () => {
-    expect(WHATS_NEW[0].version).toBe('0.7.x');
-    expect(WHATS_NEW.map((v) => v.version)).toEqual(['0.7.x', '0.6.0', '0.5.x', '0.4.x', '0.3.x', '0.2.x', '0.1.x']);
+    expect(WHATS_NEW[0].version).toBe('0.8.0');
+    expect(WHATS_NEW.map((v) => v.version)).toEqual(['0.8.0', '0.7.x', '0.6.0', '0.5.x', '0.4.x', '0.3.x', '0.2.x', '0.1.x']);
     for (const v of WHATS_NEW) {
       expect(v.features.length).toBeGreaterThan(0);
       for (const f of v.features) {

@@ -2,6 +2,16 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
+    version: '0.8.0',
+    date: '2026-09-30',
+    features: [
+      {
+        title: 'Chats open above their icons, like Torn',
+        points: ['The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.'],
+      },
+    ],
+  },
+  {
     version: '0.7.x',
     date: '2026-09-29',
     features: [

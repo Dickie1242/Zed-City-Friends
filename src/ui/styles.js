@@ -15,9 +15,11 @@ export const CSS = `
 .zcf-body{position:relative;font-size:13px}
 .zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
-.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#629464!important}
-.chat-container.zcf-pm .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
+.chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header .chat-title .chat-icon{color:#629464!important}
+.chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}
+body .chat-containers .zcf-stand[data-zcf-stand="game:faction"] .chat-icon.fa-users:before{content:"\\f6bb"}
+.chat-containers .zcf-stand{display:none}
 .chat-containers .zcf-pm{order:2}
 .zcf-pm:not(.chat-minimized){height:450px}
 .zcf-pm-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
@@ -174,7 +176,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-menu{position:absolute;top:4px;right:8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 10px 24px #000000a0;z-index:6;min-width:160px;padding:4px 0}
 .zcf-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#d9d9d9;font-size:12.5px;padding:7px 12px;cursor:pointer}
 .zcf-menu button:hover{background:#ffffff0a}
-.zcf-dm .chat-title .zcf-dm-name{text-transform:none;letter-spacing:0;font-weight:700;color:#d9d9d9;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
+:is(.zcf-dm,.zcf-stand-dm) .chat-title .zcf-dm-name{text-transform:none;letter-spacing:0;font-weight:700;color:#d9d9d9;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
 .zcf-dm .chat-title .zcf-dm-name:hover{text-decoration:underline}
 .zcf-dm .chat-title .zcf-dm-status{text-transform:none;letter-spacing:0;opacity:.55;white-space:nowrap}
 .zcf-dm .chat-title .zcf-dm-status.zcf-status-on{color:#6fcf73;opacity:.9}
@@ -334,10 +336,30 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 @media (min-width:600px){
   body .chat-containers{right:0}
   .chat-containers .chat-container.chat-minimized{touch-action:none}
-  .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
-  .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
-  .chat-containers .zcf-dm.chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
-  .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized{width:auto;max-width:150px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header{padding:0 10px 0 8px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
+  body .chat-containers{flex-wrap:wrap-reverse;justify-content:flex-end;row-gap:0}
+  body .chat-containers::after{content:"";order:10;flex:0 0 100%;height:5px}
+  body .chat-containers .zcf-dm,body .chat-containers .zcf-stand-dm{order:1}
+  body .chat-containers > .chat-container.activity-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:activity"]{order:2}
+  body .chat-containers > .chat-container.faction-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:faction"]{order:3}
+  body .chat-containers > .chat-container.general-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:general"]{order:4}
+  body .chat-containers .zcf-pm,body .chat-containers .zcf-stand[data-zcf-stand="pm"]{order:5}
+  body .chat-containers .zcf-settings,body .chat-containers .zcf-stand[data-zcf-stand="settings"]{order:6}
+  body .chat-containers .zcf-dm:not(.chat-minimized){order:11}
+  body .chat-containers > .chat-container.activity-chat:not(.chat-minimized){order:12}
+  body .chat-containers > .chat-container.faction-chat:not(.chat-minimized){order:13}
+  body .chat-containers > .chat-container.general-chat:not(.chat-minimized){order:14}
+  body .chat-containers .zcf-pm:not(.chat-minimized){order:15}
+  body .chat-containers .zcf-settings:not(.chat-minimized){order:16}
+  body .chat-containers .zcf-stand:not([hidden]):not(.zcf-stand-game){display:flex}
+  body .chat-containers:has(> .chat-container.activity-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:activity"]{display:flex}
+  body .chat-containers:has(> .chat-container.faction-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:faction"]{display:flex}
+  body .chat-containers:has(> .chat-container.general-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:general"]{display:flex}
+  body .chat-containers .zcf-stand > .chat-header{background:#0a748f33;box-shadow:inset 0 2px 0 #0a748f}
+  body .chat-containers .zcf-stand > .chat-header:hover{background:#0a748f55}
 }
 @media (max-width:599.98px){
   .zcf-cc,.zcf-grip{display:none!important}

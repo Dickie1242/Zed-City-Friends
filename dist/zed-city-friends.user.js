@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.7.2
+// @version      0.8.0
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -4613,6 +4613,17 @@ sandfish		/items/sandfish.webp`;
     };
   }
 
+  // src/ui/stand.js
+  function createStand(key, { title, onClick, className = "" }, ...content) {
+    return h("div", {
+      class: `chat-container zcf chat-minimized zcf-stand${className ? ` ${className}` : ""}`,
+      dataset: { zcfStand: key },
+      title,
+      hidden: true,
+      onclick: onClick
+    }, h("div", { class: "chat-header" }, h("div", { class: "chat-title" }, ...content)));
+  }
+
   // src/ui/pm-window.js
   var FACTION_MS = 6e4;
   var LOAD_MORE_PX = 80;
@@ -4653,6 +4664,7 @@ sandfish		/items/sandfish.webp`;
     const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More", "aria-haspopup": "menu", "aria-expanded": "false" }, icon("ellipsis-h"));
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
     const header = h("div", { class: "chat-header", onclick: () => actions.togglePm() }, title, menuBtn, toggle);
+    const stand = createStand("pm", { title: "Private Messages", className: "zcf-stand-pm", onClick: () => actions.togglePm() }, h("i", { class: "fas fa-envelope chat-icon", "aria-hidden": "true" }));
     const tabBtns = /* @__PURE__ */ new Map();
     const tabBar = h("div", { class: "zcf-pm-tabs", role: "tablist" });
     for (const [key, label] of TABS) {
@@ -5072,6 +5084,7 @@ sandfish		/items/sandfish.webp`;
       const open = isOpen();
       el.classList.toggle("chat-minimized", !open);
       el.classList.toggle("zcf-open", open);
+      stand.hidden = !open;
       body.hidden = !open;
       titleText.hidden = !open;
       menuBtn.hidden = !open;
@@ -5111,7 +5124,7 @@ sandfish		/items/sandfish.webp`;
       search.cancel();
       closeMenu();
     }
-    return { el, update, scheduleList, syncBadge, destroy };
+    return { el, stand, update, scheduleList, syncBadge, destroy };
   }
 
   // src/ui/gif-picker.js
@@ -5398,6 +5411,9 @@ sandfish		/items/sandfish.webp`;
     const bellIcon = h("i", { class: "fas fa-bell", "aria-hidden": "true" });
     const bellBtn = h("button", { class: "zcf-hbtn zcf-bell", type: "button" }, bellIcon);
     const header = h("div", { class: "chat-header", onclick: () => actions.toggleDm(userId) }, title, bellBtn, inboxBtn, minBtn, closeBtn);
+    const standAvatar = h("span", { class: "zcf-dm-avatar" });
+    const standName = h("span", { class: "zcf-dm-name" });
+    const stand = createStand(`dm:${userId}`, { className: "zcf-stand-dm", onClick: () => actions.minimizeDm(userId) }, standAvatar, standName);
     const notice = h("div", { class: "zcf-notice", hidden: true });
     const loader = h("div", { class: "zcf-loader", hidden: true }, "Loading…");
     const log = h("div", { class: "zcf-log" });
@@ -5646,6 +5662,12 @@ sandfish		/items/sandfish.webp`;
       clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : void 0, size: open ? 18 : 24 }));
       nameEl.textContent = displayName();
       nameEl.title = displayName();
+      stand.hidden = !open;
+      if (open) {
+        clear(standAvatar).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : void 0, size: 24 }));
+        standName.textContent = displayName();
+        stand.title = displayName();
+      }
       const enemy = isEnemy2(userId);
       headMark.hidden = !enemy;
       el.classList.toggle("zcf-enemy", enemy);
@@ -5678,6 +5700,7 @@ sandfish		/items/sandfish.webp`;
     }
     return {
       el,
+      stand,
       update,
       destroy() {
         unsubscribe();
@@ -5997,6 +6020,16 @@ sandfish		/items/sandfish.webp`;
   // src/whats-new.js
   var WHATS_NEW = [
     {
+      version: "0.8.0",
+      date: "2026-09-30",
+      features: [
+        {
+          title: "Chats open above their icons, like Torn",
+          points: ["The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window."]
+        }
+      ]
+    },
+    {
       version: "0.7.x",
       date: "2026-09-29",
       features: [
@@ -6122,7 +6155,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.7.2" : "dev";
+  var VERSION = true ? "0.8.0" : "dev";
   var DEV_PROFILE_ID = 27581;
   var UPDATE_URL = "https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js";
 
@@ -6319,6 +6352,7 @@ sandfish		/items/sandfish.webp`;
     const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-cog chat-icon", "aria-hidden": "true" }), titleText);
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
     const header = h("div", { class: "chat-header", onclick: () => actions.toggleSettings() }, title, toggle);
+    const stand = createStand("settings", { title: "Chat settings", onClick: () => actions.toggleSettings() }, h("i", { class: "fas fa-cog chat-icon", "aria-hidden": "true" }));
     const tabButtons = SETTINGS_TABS.map((tab) => h("button", {
       class: "zcf-pm-tab",
       type: "button",
@@ -6368,6 +6402,7 @@ sandfish		/items/sandfish.webp`;
       const open = !!store.get().dock.settingsOpen;
       el.classList.toggle("chat-minimized", !open);
       el.classList.toggle("zcf-open", open);
+      stand.hidden = !open;
       body.hidden = !open;
       titleText.hidden = !open;
       toggle.hidden = !open;
@@ -6381,6 +6416,7 @@ sandfish		/items/sandfish.webp`;
     }
     return {
       el,
+      stand,
       update,
       destroy() {
         clear(content);
@@ -6403,6 +6439,27 @@ sandfish		/items/sandfish.webp`;
     const pm = createPmWindow(services);
     const settingsWin = createSettingsWindow(services);
     const dms = /* @__PURE__ */ new Map();
+    const doc = root.ownerDocument;
+    const gameChat = (g) => doc.querySelector(`.chat-containers > .chat-container.${g.cls}`);
+    const gameStands = GAME_CHATS.map((g) => {
+      const icon2 = h("i", { class: "chat-icon", "aria-hidden": "true" });
+      const stand = createStand(g.key, {
+        title: g.label,
+        className: "zcf-stand-game",
+        onClick: () => {
+          const header = gameChat(g) && gameChat(g).querySelector(":scope > .chat-header");
+          if (header) header.click();
+        }
+      }, icon2);
+      stand.hidden = false;
+      return { g, stand, icon: icon2 };
+    });
+    function syncGameIcons() {
+      for (const { g, icon: icon2 } of gameStands) {
+        const src = gameChat(g) && gameChat(g).querySelector(":scope > .chat-header .chat-icon");
+        if (src && icon2.className !== src.className) icon2.className = src.className;
+      }
+    }
     function render() {
       const s = services.store.get();
       const entries = visibleDms(s.dock.dms, services.isSmall());
@@ -6411,17 +6468,26 @@ sandfish		/items/sandfish.webp`;
         if (!wanted.has(id)) {
           w.destroy();
           w.el.remove();
+          w.stand.remove();
           dms.delete(id);
         }
       }
       for (const e of entries) if (!dms.has(e.id)) dms.set(e.id, createDmWindow(services, e.id));
-      const desired = [...entries.map((e) => dms.get(e.id).el), pm.el, settingsWin.el];
+      const desired = [
+        ...entries.flatMap((e) => [dms.get(e.id).el, dms.get(e.id).stand]),
+        pm.el,
+        pm.stand,
+        settingsWin.el,
+        settingsWin.stand,
+        ...gameStands.map((s2) => s2.stand)
+      ];
       desired.forEach((node, i) => {
         if (root.children[i] !== node) root.insertBefore(node, root.children[i] || null);
       });
       for (const w of dms.values()) w.update();
       pm.update();
       settingsWin.update();
+      syncGameIcons();
     }
     return {
       render,
@@ -8977,9 +9043,11 @@ sandfish		/items/sandfish.webp`;
 .zcf-body{position:relative;font-size:13px}
 .zcf.chat-container .chat-content{display:flex;flex-direction:column}
 .zcf-dm:not(.chat-minimized){height:450px}
-.chat-container.zcf-pm .chat-header .chat-title .chat-icon{color:#629464!important}
-.chat-container.zcf-pm .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
+.chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header .chat-title .chat-icon{color:#629464!important}
+.chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}
+body .chat-containers .zcf-stand[data-zcf-stand="game:faction"] .chat-icon.fa-users:before{content:"\\f6bb"}
+.chat-containers .zcf-stand{display:none}
 .chat-containers .zcf-pm{order:2}
 .zcf-pm:not(.chat-minimized){height:450px}
 .zcf-pm-main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
@@ -9136,7 +9204,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-menu{position:absolute;top:4px;right:8px;background:#16181c;border:1px solid #000;border-radius:4px;box-shadow:0 10px 24px #000000a0;z-index:6;min-width:160px;padding:4px 0}
 .zcf-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:#d9d9d9;font-size:12.5px;padding:7px 12px;cursor:pointer}
 .zcf-menu button:hover{background:#ffffff0a}
-.zcf-dm .chat-title .zcf-dm-name{text-transform:none;letter-spacing:0;font-weight:700;color:#d9d9d9;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
+:is(.zcf-dm,.zcf-stand-dm) .chat-title .zcf-dm-name{text-transform:none;letter-spacing:0;font-weight:700;color:#d9d9d9;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
 .zcf-dm .chat-title .zcf-dm-name:hover{text-decoration:underline}
 .zcf-dm .chat-title .zcf-dm-status{text-transform:none;letter-spacing:0;opacity:.55;white-space:nowrap}
 .zcf-dm .chat-title .zcf-dm-status.zcf-status-on{color:#6fcf73;opacity:.9}
@@ -9296,10 +9364,30 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 @media (min-width:600px){
   body .chat-containers{right:0}
   .chat-containers .chat-container.chat-minimized{touch-action:none}
-  .chat-containers .zcf-dm.chat-minimized{width:auto;max-width:150px}
-  .chat-containers .zcf-dm.chat-minimized .chat-header{padding:0 10px 0 8px}
-  .chat-containers .zcf-dm.chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
-  .chat-containers .zcf-dm.chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized{width:auto;max-width:150px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header{padding:0 10px 0 8px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}
+  .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .zcf-dm-name{display:inline-block;white-space:nowrap;flex:1;min-width:0}
+  body .chat-containers{flex-wrap:wrap-reverse;justify-content:flex-end;row-gap:0}
+  body .chat-containers::after{content:"";order:10;flex:0 0 100%;height:5px}
+  body .chat-containers .zcf-dm,body .chat-containers .zcf-stand-dm{order:1}
+  body .chat-containers > .chat-container.activity-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:activity"]{order:2}
+  body .chat-containers > .chat-container.faction-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:faction"]{order:3}
+  body .chat-containers > .chat-container.general-chat,body .chat-containers .zcf-stand[data-zcf-stand="game:general"]{order:4}
+  body .chat-containers .zcf-pm,body .chat-containers .zcf-stand[data-zcf-stand="pm"]{order:5}
+  body .chat-containers .zcf-settings,body .chat-containers .zcf-stand[data-zcf-stand="settings"]{order:6}
+  body .chat-containers .zcf-dm:not(.chat-minimized){order:11}
+  body .chat-containers > .chat-container.activity-chat:not(.chat-minimized){order:12}
+  body .chat-containers > .chat-container.faction-chat:not(.chat-minimized){order:13}
+  body .chat-containers > .chat-container.general-chat:not(.chat-minimized){order:14}
+  body .chat-containers .zcf-pm:not(.chat-minimized){order:15}
+  body .chat-containers .zcf-settings:not(.chat-minimized){order:16}
+  body .chat-containers .zcf-stand:not([hidden]):not(.zcf-stand-game){display:flex}
+  body .chat-containers:has(> .chat-container.activity-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:activity"]{display:flex}
+  body .chat-containers:has(> .chat-container.faction-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:faction"]{display:flex}
+  body .chat-containers:has(> .chat-container.general-chat:not(.chat-minimized)) .zcf-stand[data-zcf-stand="game:general"]{display:flex}
+  body .chat-containers .zcf-stand > .chat-header{background:#0a748f33;box-shadow:inset 0 2px 0 #0a748f}
+  body .chat-containers .zcf-stand > .chat-header:hover{background:#0a748f55}
 }
 @media (max-width:599.98px){
   .zcf-cc,.zcf-grip{display:none!important}

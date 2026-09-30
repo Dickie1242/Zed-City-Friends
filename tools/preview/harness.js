@@ -95,6 +95,10 @@ if (scene.startsWith('pm-')) {
   if (scene === 'pm-chats') dock.dms.push({ id: 5, open: window.innerWidth >= 600, lastUsed: 2, username: 'Spike', avatar: null });
   if (scene === 'pm-chats') settings.pinned = [9, 7];
 }
+if (scene === 'pm-settings') {
+  dock.settingsOpen = true;
+  dock.dms.push({ id: 5, open: false, lastUsed: 2, username: 'Spike', avatar: null });
+}
 if (scene === 'dm') dock.dms.push({ id: 5, open: true, lastUsed: 2, username: 'Spike', avatar: null });
 const SETTINGS_TAB = { 'settings-general': 'general', 'settings-chats': 'chats', 'settings-about': 'about' };
 if (SETTINGS_TAB[scene]) {
