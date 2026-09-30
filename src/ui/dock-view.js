@@ -10,6 +10,9 @@ import { createStand } from './stand.js';
 import { GAME_CHATS } from '../chat-custom/chats.js';
 
 export const SMALL_MAX_DMS = 2;
+// The game chats' own icons (its template never changes them), so a stand-in has one even for a chat the
+// game adds later, before anything re-renders the dock. Refreshed from the page on every render anyway.
+const GAME_ICONS = { 'game:general': 'fas fa-comments', 'game:faction': 'fas fa-users', 'game:activity': 'fas fa-radar' };
 
 // On phones only the most recently used DM entries get a tab, so the dock still fits on screen.
 export function visibleDms(dms, small) {
@@ -32,7 +35,7 @@ export function createDockView({ root, services }) {
   // A game chat's icon in the bar while it's open: the stylesheet shows it, and a click on it clicks the
   // game chat's own header, the game's toggle.
   const gameStands = GAME_CHATS.map((g) => {
-    const icon = h('i', { class: 'chat-icon', 'aria-hidden': 'true' });
+    const icon = h('i', { class: `${GAME_ICONS[g.key] || 'fas fa-comments'} chat-icon`, 'aria-hidden': 'true' });
     const stand = createStand(g.key, {
       title: g.label,
       className: 'zcf-stand-game',

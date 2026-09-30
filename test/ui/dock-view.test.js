@@ -74,7 +74,7 @@ describe('dock view', () => {
       view.render();
       expect([stand('dm:7').hidden, stand('pm').hidden, stand('settings').hidden]).toEqual([false, false, true]);
       expect(stand('dm:7').querySelector('.zcf-dm-name').textContent).toBe('Spike');
-      expect(stand('pm').querySelector('.chat-icon').className).toContain('fa-comments');
+      expect(stand('pm').querySelector('.chat-icon').className).toContain('fa-user-friends zcf-pm-icon');
       expect(stand('settings').querySelector('.chat-icon').className).toContain('fa-cog');
       stand('dm:7').click();
       expect(services.actions.minimizeDm).toHaveBeenCalledWith(7);
@@ -87,6 +87,13 @@ describe('dock view', () => {
       expect(stand('settings').hidden).toBe(false);
       stand('settings').click();
       expect(services.actions.toggleSettings).toHaveBeenCalled();
+    });
+
+    it("has the game's icon even for a chat the game adds later", () => {
+      const { view, stand } = mount(); // the fixture has no Activity chat
+      view.render();
+      expect(stand('game:activity').querySelector('.chat-icon').className).toContain('fa-radar');
+      expect(stand('game:faction').querySelector('.chat-icon').className).toContain('fa-users');
     });
 
     it("gives each game chat one with the game chat's icon, closing the chat through the game's own header", () => {
