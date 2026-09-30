@@ -9,7 +9,7 @@ export const WHATS_NEW = [
         title: 'Chats open above their icons, like Torn',
         points: [
           'The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.',
-          'The Global chat has a globe for its icon.',
+          'The Global chat has a globe for its icon, and Private Messages the speech bubbles Global had.',
         ],
       },
     ],

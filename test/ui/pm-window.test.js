@@ -46,7 +46,7 @@ describe('private messages window', () => {
     vi.unstubAllGlobals();
   });
 
-  it('is a minimized envelope tab with a green count of unread chats, friends and Chats alike', () => {
+  it('is a minimized speech-bubbles tab with a green count of unread chats, friends and Chats alike', () => {
     const { services, el } = mount({ threads: [thread(9)] }, { open: false });
     services.store.update((s) => {
       addFriend(s, { id: 5, username: 'Spike' }, 0);
@@ -54,7 +54,7 @@ describe('private messages window', () => {
     });
     expect(el.classList.contains('chat-minimized')).toBe(true);
     expect(el.dataset.zcfChat).toBe('pm');
-    expect(el.querySelector('.chat-icon').className).toContain('fa-envelope');
+    expect(el.querySelector('.chat-icon').className).toContain('fa-comments'); // the speech bubbles Global had before its globe
     const unread = el.querySelector('.unread-badge');
     expect(unread.textContent).toBe('6');
     expect(unread.hidden).toBe(false);

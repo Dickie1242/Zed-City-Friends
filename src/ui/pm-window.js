@@ -57,12 +57,13 @@ export function createPmWindow(services, { doc = document } = {}) {
   const titleText = h('span', null, 'Private Messages');
   const unreadBadge = badge();
   unreadBadge.classList.replace('bg-red-5', 'bg-positive'); // green: new messages, not an alert
-  const title = h('div', { class: 'chat-title' }, h('i', { class: 'fas fa-envelope chat-icon', 'aria-hidden': 'true' }), titleText, unreadBadge);
+  // The speech bubbles the game's Global chat had before we gave it a globe (0.8.0).
+  const title = h('div', { class: 'chat-title' }, h('i', { class: 'fas fa-comments chat-icon', 'aria-hidden': 'true' }), titleText, unreadBadge);
   const menuBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon('ellipsis-h'));
   const toggle = h('div', { class: 'chat-toggle', 'aria-hidden': 'true' }, icon('chevron-down'));
   const header = h('div', { class: 'chat-header', onclick: () => actions.togglePm() }, title, menuBtn, toggle);
-  // Its envelope in the bar while the window is open above it (0.8 spec §2).
-  const stand = createStand('pm', { title: 'Private Messages', className: 'zcf-stand-pm', onClick: () => actions.togglePm() }, h('i', { class: 'fas fa-envelope chat-icon', 'aria-hidden': 'true' }));
+  // Its icon in the bar while the window is open above it (0.8 spec §2).
+  const stand = createStand('pm', { title: 'Private Messages', className: 'zcf-stand-pm', onClick: () => actions.togglePm() }, h('i', { class: 'fas fa-comments chat-icon', 'aria-hidden': 'true' }));
 
   const tabBtns = new Map();
   const tabBar = h('div', { class: 'zcf-pm-tabs', role: 'tablist' });

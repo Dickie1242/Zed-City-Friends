@@ -4660,11 +4660,11 @@ sandfish		/items/sandfish.webp`;
     const titleText = h("span", null, "Private Messages");
     const unreadBadge = badge();
     unreadBadge.classList.replace("bg-red-5", "bg-positive");
-    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-envelope chat-icon", "aria-hidden": "true" }), titleText, unreadBadge);
+    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-comments chat-icon", "aria-hidden": "true" }), titleText, unreadBadge);
     const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More", "aria-haspopup": "menu", "aria-expanded": "false" }, icon("ellipsis-h"));
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
     const header = h("div", { class: "chat-header", onclick: () => actions.togglePm() }, title, menuBtn, toggle);
-    const stand = createStand("pm", { title: "Private Messages", className: "zcf-stand-pm", onClick: () => actions.togglePm() }, h("i", { class: "fas fa-envelope chat-icon", "aria-hidden": "true" }));
+    const stand = createStand("pm", { title: "Private Messages", className: "zcf-stand-pm", onClick: () => actions.togglePm() }, h("i", { class: "fas fa-comments chat-icon", "aria-hidden": "true" }));
     const tabBtns = /* @__PURE__ */ new Map();
     const tabBar = h("div", { class: "zcf-pm-tabs", role: "tablist" });
     for (const [key, label] of TABS) {
@@ -6002,9 +6002,9 @@ sandfish		/items/sandfish.webp`;
           h("span", { class: "zcf-set-text zcf-grow" }, h("span", { class: "zcf-set-label" }, "Text size for every chat"), h("span", { class: "zcf-set-subline" }, "Sets them all; change one below")),
           stepper({ value: m.textAll, min: LIMITS.minText, max: LIMITS.maxText, name: "text in every chat", focus: "textall", onStep: (d) => actions.stepTextAll(d * LIMITS.textStep) })
         )),
-        game.length ? section({ icon: "comments", label: "Game chats" }, game.map((r) => chatRow(r, m.textAll))) : null,
+        game.length ? section({ icon: "globe", label: "Game chats" }, game.map((r) => chatRow(r, m.textAll))) : null,
         section(
-          { icon: "envelope", label: "Private chats" },
+          { icon: "comments", label: "Private chats" },
           ours.map((r) => chatRow(r, m.textAll)),
           h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !m.customized && m.textAll === DEFAULT_TEXT, onclick: () => actions.resetAllChats() }, "Reset all chats")
         ),
@@ -6027,7 +6027,7 @@ sandfish		/items/sandfish.webp`;
           title: "Chats open above their icons, like Torn",
           points: [
             "The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.",
-            "The Global chat has a globe for its icon."
+            "The Global chat has a globe for its icon, and Private Messages the speech bubbles Global had."
           ]
         }
       ]

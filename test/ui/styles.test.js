@@ -137,7 +137,7 @@ describe('styles against the game dock CSS', () => {
     settings.destroy();
   });
 
-  it('colors the Private Messages envelope a soft green over the game rule that forces icons to currentColor', () => {
+  it('colors the Private Messages icon a soft green over the game rule that forces icons to currentColor', () => {
     renderDock(STATES[0]);
     const icon = document.querySelector('.zcf-pm .chat-icon');
     for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#629464');
