@@ -200,6 +200,12 @@ describe('styles against the game dock CSS', () => {
     expect(CSS).not.toContain('\f');
   });
 
+  it("gives the game's Global chat a globe, in the dock and on its icon in the bar", () => {
+    // fa-comments is \f086, fa-globe \f0ac.
+    expect(CSS).toContain('body .chat-containers > .chat-container.general-chat > .chat-header .chat-icon.fa-comments:before{content:"\\f0ac"}');
+    expect(CSS).toContain('body .chat-containers .zcf-stand[data-zcf-stand="game:general"] .chat-icon.fa-comments:before{content:"\\f0ac"}');
+  });
+
   it('parses specificity the way browsers count it', () => {
     expect(specificity('.chat-container .chat-content')).toEqual([0, 2, 0]);
     expect(specificity('.zcf-dm:not(.chat-minimized)')).toEqual([0, 2, 0]);

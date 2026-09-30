@@ -6025,7 +6025,10 @@ sandfish		/items/sandfish.webp`;
       features: [
         {
           title: "Chats open above their icons, like Torn",
-          points: ["The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window."]
+          points: [
+            "The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.",
+            "The Global chat has a globe for its icon."
+          ]
         }
       ]
     },
@@ -9047,6 +9050,8 @@ sandfish		/items/sandfish.webp`;
 .chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}
 body .chat-containers .zcf-stand[data-zcf-stand="game:faction"] .chat-icon.fa-users:before{content:"\\f6bb"}
+body .chat-containers > .chat-container.general-chat > .chat-header .chat-icon.fa-comments:before{content:"\\f0ac"}
+body .chat-containers .zcf-stand[data-zcf-stand="game:general"] .chat-icon.fa-comments:before{content:"\\f0ac"}
 .chat-containers .zcf-stand{display:none}
 .chat-containers .zcf-pm{order:2}
 .zcf-pm:not(.chat-minimized){height:450px}
