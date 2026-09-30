@@ -3,7 +3,7 @@
 A userscript that adds a **friends list** and **Torn-style DM chat windows** to [Zed City](https://www.zed.city)'s bottom-right chat dock, next to the Global and Faction chats.
 
 - **Private Messages.** A window in the dock with **Chats** (every conversation, newest first, with previews), **Friends** (online first), **Faction** (your faction members) and **Blocked** (unblock in place) tabs. Search any player by name to start a chat. When it's minimized, a green number shows your unread chats.
-- **DM windows.** One window per conversation, styled like the game's chat. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
+- **DM windows.** One window per conversation, styled like the game's chat. Trade and activity invites get a **View Trade** / **View Activity** button, like the game's Mail page. Minimized DMs become avatar tabs with unread badges, and a friend's new message pops up as a tab.
 - **GIFs and emoji.** Pick a GIF or an emoji right from the composer, rendered the same way the game's own chat does, including its custom Zed City emojis.
 - **Add Friend button** on player profiles, between Trade and Mail.
 - **Friends page.** A friends icon in the top bar opens a full Friends page at `zed.city/friends`. It's a sortable table with level, online status, injured/traveling icons and faction, plus private notes that only you can see.

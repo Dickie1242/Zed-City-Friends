@@ -12,6 +12,8 @@ const BUSY_TEXT = {
   exploring: 'Mail is unavailable while you are exploring.',
   offline: 'Mail is unavailable while the game is offline.',
 };
+// An invite's line ending and button, by kind (the game's own words).
+const INVITE_WORDS = { trade: ['to trade!', 'View Trade'], activity: ['to an activity!', 'View Activity'] };
 
 export function createDmWindow(services, userId) {
   const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
@@ -202,6 +204,22 @@ export function createDmWindow(services, userId) {
     });
   }
 
+  // A trade or activity invite, as the game's Mail page shows it: who invited whom, and a button to its page
+  // (0.7.2 spec). On a phone the window shrinks to its tab, so the page isn't behind it.
+  function renderInvite(m) {
+    const [what, label] = INVITE_WORDS[m.invite.kind];
+    const line = m.senderId === myId ? `You invited ${displayName()} ${what}` : `${displayName()} invited you ${what}`;
+    const open = () => {
+      router.navigate(`/${m.invite.kind}/${m.invite.id}`);
+      if (services.isSmall && services.isSmall()) actions.minimizeDm(userId);
+    };
+    return h('div', { class: 'zcf-text zcf-invite' },
+      h('span', { class: 'zcf-invite-line' }, line), ' ',
+      h('button', { class: 'zcf-invite-btn', type: 'button', onclick: open }, label));
+  }
+
+  const renderBody = (m) => (m.invite ? renderInvite(m) : h('div', { class: 'zcf-text' }, ...renderText(m.text)));
+
   function renderItem(item) {
     if (item.type === 'divider') return h('div', { class: 'zcf-divider' }, item.label);
     if (item.type === 'new') return h('div', { class: 'zcf-new-line' }, 'New');
@@ -209,12 +227,12 @@ export function createDmWindow(services, userId) {
     const cls = `zcf-msg${item.grouped ? ' zcf-grouped' : ''}${m.isSystem ? ' zcf-system' : ''}`;
     const time = m.ts ? formatMessageTime(m.ts, Date.now(), false, clock12()) : '';
     // data-zcf-ts: hovering shows the full timestamp (ui/time-hover.js).
-    if (item.grouped) return h('div', { class: cls, 'data-zcf-ts': m.ts || null }, h('div', { class: 'zcf-text' }, ...renderText(m.text)));
+    if (item.grouped) return h('div', { class: cls, 'data-zcf-ts': m.ts || null }, renderBody(m));
     const mine = m.senderId === myId;
     const sender = mine
       ? h('span', { class: 'zcf-sender' }, myName)
       : h('span', { class: 'zcf-sender zcf-them', onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
-    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time', 'data-zcf-ts': m.ts || null }, time), h('div', { class: 'zcf-text' }, ...renderText(m.text)));
+    return h('div', { class: cls }, sender, h('span', { class: 'zcf-time', 'data-zcf-ts': m.ts || null }, time), renderBody(m));
   }
 
   function renderPending() {

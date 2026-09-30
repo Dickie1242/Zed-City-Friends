@@ -2,7 +2,7 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
-    version: '0.7.0',
+    version: '0.7.x',
     date: '2026-09-29',
     features: [
       {
@@ -20,6 +20,10 @@ export const WHATS_NEW = [
       {
         title: 'Sounds and time',
         points: ['A volume for the sounds, a Test button for desktop notifications, and a 12-hour clock.'],
+      },
+      {
+        title: 'Invites',
+        points: ["Trade and activity invites in a private chat have a View Trade or View Activity button, like the game's Mail page."],
       },
       {
         title: 'Your data',

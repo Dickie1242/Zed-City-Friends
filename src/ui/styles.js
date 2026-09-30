@@ -206,6 +206,9 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
 .zcf .zcf-emoji{height:1.35em;width:auto;vertical-align:-0.3em;display:inline;margin:0 1px}
 .zcf-system .zcf-text{font-style:italic;opacity:.7}
+.zcf-system .zcf-text.zcf-invite{font-style:normal;opacity:1}
+.zcf .zcf-invite-btn{display:inline-block;margin:1px 0;padding:2px 8px;border:0;border-radius:3px;background:#4caf50;color:#fff;font:inherit;font-size:10.5px;font-weight:500;line-height:1.5;letter-spacing:.03em;text-transform:uppercase;vertical-align:baseline;cursor:pointer}
+.zcf .zcf-invite-btn:hover{background:#43a047}
 .zcf-pending-msg .zcf-text{opacity:.55}
 .zcf-failed .zcf-text{opacity:.5}
 .zcf-error{color:#e57373;font-size:12px}

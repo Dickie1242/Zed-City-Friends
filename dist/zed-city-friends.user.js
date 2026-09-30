@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.7.1
+// @version      0.7.2
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -3574,16 +3574,25 @@ sandfish		/items/sandfish.webp`;
     const s = messageParts(text2).map((p) => p.type === "image" ? `GIF${p.alt ? ": " + p.alt : ""}` : p.type === "emoji" ? p.emoji || `:${p.name}:` : p.text).join("");
     return s.replace(/\s+/g, " ").trim();
   }
+  var INVITES = { tradeInvite: ["trade", "trade_id"], activityInvite: ["activity", "activity_id"] };
+  function inviteOf(message) {
+    const known = message && typeof message === "object" && Object.prototype.hasOwnProperty.call(INVITES, message.cmd) ? INVITES[message.cmd] : null;
+    const id = known && message.data && typeof message.data === "object" ? toId(message.data[known[1]]) : null;
+    return id ? { kind: known[0], id } : null;
+  }
   function normalizeMessage(raw) {
     const id = toId(raw && raw.id);
     if (!id) return null;
-    return {
+    const msg = {
       id,
       senderId: toId(raw.sender_id),
       text: messageText(raw.message),
       ts: parseSentAt(raw.sent_at),
       isSystem: flag(raw.is_system)
     };
+    const invite = inviteOf(raw.message);
+    if (invite) msg.invite = invite;
+    return msg;
   }
   function normalizeMessages(data) {
     return asArray(data).map(normalizeMessage).filter(Boolean);
@@ -5362,6 +5371,7 @@ sandfish		/items/sandfish.webp`;
     exploring: "Mail is unavailable while you are exploring.",
     offline: "Mail is unavailable while the game is offline."
   };
+  var INVITE_WORDS = { trade: ["to trade!", "View Trade"], activity: ["to an activity!", "View Activity"] };
   function createDmWindow(services, userId) {
     const { store, actions, conversations, presence, router, myId, myName, fetchImpl, storage } = services;
     const isEnemy2 = services.isEnemy || (() => false);
@@ -5522,16 +5532,32 @@ sandfish		/items/sandfish.webp`;
         return document.createTextNode(part.text);
       });
     }
+    function renderInvite(m) {
+      const [what, label] = INVITE_WORDS[m.invite.kind];
+      const line = m.senderId === myId ? `You invited ${displayName()} ${what}` : `${displayName()} invited you ${what}`;
+      const open = () => {
+        router.navigate(`/${m.invite.kind}/${m.invite.id}`);
+        if (services.isSmall && services.isSmall()) actions.minimizeDm(userId);
+      };
+      return h(
+        "div",
+        { class: "zcf-text zcf-invite" },
+        h("span", { class: "zcf-invite-line" }, line),
+        " ",
+        h("button", { class: "zcf-invite-btn", type: "button", onclick: open }, label)
+      );
+    }
+    const renderBody = (m) => m.invite ? renderInvite(m) : h("div", { class: "zcf-text" }, ...renderText(m.text));
     function renderItem(item) {
       if (item.type === "divider") return h("div", { class: "zcf-divider" }, item.label);
       if (item.type === "new") return h("div", { class: "zcf-new-line" }, "New");
       const m = item.msg;
       const cls = `zcf-msg${item.grouped ? " zcf-grouped" : ""}${m.isSystem ? " zcf-system" : ""}`;
       const time = m.ts ? formatMessageTime(m.ts, Date.now(), false, clock12()) : "";
-      if (item.grouped) return h("div", { class: cls, "data-zcf-ts": m.ts || null }, h("div", { class: "zcf-text" }, ...renderText(m.text)));
+      if (item.grouped) return h("div", { class: cls, "data-zcf-ts": m.ts || null }, renderBody(m));
       const mine = m.senderId === myId;
       const sender = mine ? h("span", { class: "zcf-sender" }, myName) : h("span", { class: "zcf-sender zcf-them", onclick: () => router.navigate(`/profile/${userId}`) }, enemyMark(), displayName());
-      return h("div", { class: cls }, sender, h("span", { class: "zcf-time", "data-zcf-ts": m.ts || null }, time), h("div", { class: "zcf-text" }, ...renderText(m.text)));
+      return h("div", { class: cls }, sender, h("span", { class: "zcf-time", "data-zcf-ts": m.ts || null }, time), renderBody(m));
     }
     function renderPending() {
       clear(pendingEl);
@@ -5971,7 +5997,7 @@ sandfish		/items/sandfish.webp`;
   // src/whats-new.js
   var WHATS_NEW = [
     {
-      version: "0.7.0",
+      version: "0.7.x",
       date: "2026-09-29",
       features: [
         {
@@ -5989,6 +6015,10 @@ sandfish		/items/sandfish.webp`;
         {
           title: "Sounds and time",
           points: ["A volume for the sounds, a Test button for desktop notifications, and a 12-hour clock."]
+        },
+        {
+          title: "Invites",
+          points: ["Trade and activity invites in a private chat have a View Trade or View Activity button, like the game's Mail page."]
         },
         {
           title: "Your data",
@@ -6092,7 +6122,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.7.1" : "dev";
+  var VERSION = true ? "0.7.2" : "dev";
   var DEV_PROFILE_ID = 27581;
   var UPDATE_URL = "https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js";
 
@@ -9138,6 +9168,9 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf .zcf-gif{display:block;max-width:100%;max-height:200px;width:auto;height:auto;border-radius:4px;margin:4px 0}
 .zcf .zcf-emoji{height:1.35em;width:auto;vertical-align:-0.3em;display:inline;margin:0 1px}
 .zcf-system .zcf-text{font-style:italic;opacity:.7}
+.zcf-system .zcf-text.zcf-invite{font-style:normal;opacity:1}
+.zcf .zcf-invite-btn{display:inline-block;margin:1px 0;padding:2px 8px;border:0;border-radius:3px;background:#4caf50;color:#fff;font:inherit;font-size:10.5px;font-weight:500;line-height:1.5;letter-spacing:.03em;text-transform:uppercase;vertical-align:baseline;cursor:pointer}
+.zcf .zcf-invite-btn:hover{background:#43a047}
 .zcf-pending-msg .zcf-text{opacity:.55}
 .zcf-failed .zcf-text{opacity:.5}
 .zcf-error{color:#e57373;font-size:12px}

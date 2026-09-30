@@ -416,6 +416,46 @@ describe('dm window', () => {
     expect(grouped.getAttribute('data-zcf-ts')).toBe(String(ts + 60000));
     expect(grouped.hasAttribute('title')).toBe(false);
   });
+  it("shows trade and activity invites with a button that opens them, like the game's Mail page", async () => {
+    const invite = (id, sender, message, sentAt) => ({ ...rawMsg(id, sender, '', sentAt), message, is_system: 1 });
+    const { el, services } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({
+        ok: true,
+        data: [
+          rawMsg(1, THEM, 'wanna trade?', '2026-09-28 14:02:00'),
+          invite(2, THEM, { cmd: 'tradeInvite', data: { trade_id: 4321 } }, '2026-09-28 14:02:30'),
+          invite(3, ME, { cmd: 'activityInvite', data: { activity_id: 77 } }, '2026-09-28 14:10:00'),
+          invite(4, THEM, { cmd: 'tradeInvite', data: {} }, '2026-09-28 14:30:00'),
+        ],
+      }),
+    });
+    await flush();
+    const [trade, activity] = el.querySelectorAll('.zcf-invite');
+    expect(el.querySelectorAll('.zcf-invite')).toHaveLength(2);
+    expect(trade.querySelector('.zcf-invite-line').textContent).toBe('Spike invited you to trade!');
+    expect(trade.closest('.zcf-msg').classList.contains('zcf-grouped')).toBe(true);
+    expect(activity.querySelector('.zcf-invite-line').textContent).toBe('You invited Spike to an activity!');
+    trade.querySelector('.zcf-invite-btn').click();
+    expect(services.router.navigate).toHaveBeenLastCalledWith('/trade/4321');
+    activity.querySelector('.zcf-invite-btn').click();
+    expect(services.router.navigate).toHaveBeenLastCalledWith('/activity/77');
+    expect(services.actions.minimizeDm).not.toHaveBeenCalled();
+    expect([...el.querySelectorAll('.zcf-invite-btn')].map((b) => b.textContent)).toEqual(['View Trade', 'View Activity']);
+    // An invite without a usable id keeps the plain line.
+    expect(texts(el)[texts(el).length - 1]).toBe('Sent a trade invite');
+  });
+
+  it('shrinks to its tab on a phone when an invite opens its page', async () => {
+    const { el, services } = mount({
+      getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [{ ...rawMsg(1, THEM, '', '2026-09-28 14:02:00'), message: { cmd: 'tradeInvite', data: { trade_id: 9 } }, is_system: 1 }] }),
+    });
+    await flush();
+    services.isSmall = () => true;
+    el.querySelector('.zcf-invite-btn').click();
+    expect(services.router.navigate).toHaveBeenCalledWith('/trade/9');
+    expect(services.actions.minimizeDm).toHaveBeenCalledWith(THEM);
+  });
+
   it('switches its times to the 12-hour clock with the Chat settings box', async () => {
     const { el, win, services } = mount({
       getChatMessages: vi.fn().mockResolvedValue({ ok: true, data: [rawMsg(1, THEM, 'hi', '2026-09-28 14:03:00')] }),

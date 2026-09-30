@@ -65,16 +65,28 @@ export function previewText(text) {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+// What a trade or activity invite points at, as the game's Mail page reads it: { kind, id }, or null.
+const INVITES = { tradeInvite: ['trade', 'trade_id'], activityInvite: ['activity', 'activity_id'] };
+export function inviteOf(message) {
+  // Own keys only: a cmd like "constructor" must not find Object's.
+  const known = message && typeof message === 'object' && Object.prototype.hasOwnProperty.call(INVITES, message.cmd) ? INVITES[message.cmd] : null;
+  const id = known && message.data && typeof message.data === 'object' ? toId(message.data[known[1]]) : null;
+  return id ? { kind: known[0], id } : null;
+}
+
 export function normalizeMessage(raw) {
   const id = toId(raw && raw.id);
   if (!id) return null;
-  return {
+  const msg = {
     id,
     senderId: toId(raw.sender_id),
     text: messageText(raw.message),
     ts: parseSentAt(raw.sent_at),
     isSystem: flag(raw.is_system),
   };
+  const invite = inviteOf(raw.message);
+  if (invite) msg.invite = invite;
+  return msg;
 }
 
 export function normalizeMessages(data) {

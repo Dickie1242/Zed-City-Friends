@@ -46,6 +46,16 @@ describe('mail', () => {
     expect([a.isSystem, b.isSystem, c.isSystem]).toEqual([true, true, true]);
   });
 
+  it('keeps what a trade or activity invite points at, and nothing for anything else', () => {
+    const invite = (message, id = 1) => normalizeMessages([{ ...rawMsg(id, 2, '', '2026-09-28 10:00:00'), message, is_system: 1 }])[0];
+    expect(invite({ cmd: 'tradeInvite', data: { trade_id: 4321 } })).toMatchObject({ text: 'Sent a trade invite', invite: { kind: 'trade', id: 4321 } });
+    expect(invite({ cmd: 'activityInvite', data: { activity_id: '77' } }).invite).toEqual({ kind: 'activity', id: 77 });
+    for (const bad of [{ cmd: 'tradeInvite' }, { cmd: 'tradeInvite', data: { trade_id: 0 } }, { cmd: 'tradeInvite', data: { trade_id: 'abc' } }, { cmd: 'tradeInvite', data: { activity_id: 5 } }, { cmd: 'somethingNew', data: { trade_id: 5 } }, { cmd: 'constructor', data: { undefined: 5 } }, { cmd: 'toString', data: { undefined: 5 } }]) {
+      expect(invite(bad)).not.toHaveProperty('invite');
+    }
+    expect(normalizeMessages([rawMsg(1, 2, 'hi', '2026-09-28 10:00:00')])[0]).not.toHaveProperty('invite');
+  });
+
   it('normalizes thread rows, including boolean or numeric new_mail', () => {
     const [a, b, c] = normalizeThreads({
       0: rawThread(10, { newMail: 3 }),

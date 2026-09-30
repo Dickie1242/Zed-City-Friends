@@ -52,7 +52,8 @@ const MESSAGES = [
   [104, ME, 'I can pay in ammo :smile:', 38],
   [105, 5, 'deal. meet at the bunker', 20],
   [106, 5, 'see you at the bunker', 16],
-].map(([id, sender, message, min]) => ({ id, sender_id: sender, message, sent_at: ago(min), is_system: 0 }));
+  [107, 5, { cmd: 'tradeInvite', data: { trade_id: 4321 } }, 15],
+].map(([id, sender, message, min]) => ({ id, sender_id: sender, message, sent_at: ago(min), is_system: typeof message === 'object' ? 1 : 0 }));
 
 const api = {
   getStats: () => ok({ id: ME, username: 'Me' }),
