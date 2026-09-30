@@ -295,7 +295,7 @@ describe('app', () => {
   it('adds the Chat settings cog after Private Messages, and padlocks to the game chats', () => {
     app = createApp({ api: fakeApi(), playerId: ME, playerName: 'Me', storage: memoryStorage() });
     const root = document.querySelector('.zcf-root');
-    expect([...root.children].map((c) => c.dataset.zcfChat)).toEqual(['pm', 'settings']);
+    expect([...root.children].filter((c) => c.dataset.zcfChat).map((c) => c.dataset.zcfChat)).toEqual(['pm', 'settings']);
     expect(document.querySelector('.general-chat .chat-header .zcf-cc-lock')).not.toBeNull();
     expect(document.getElementById('zcf-user-settings')).not.toBeNull();
     app.actions.toggleSettings();

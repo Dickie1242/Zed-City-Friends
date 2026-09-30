@@ -6,6 +6,7 @@ import { createGeneralTab } from './settings/general-tab.js';
 import { createChatsTab } from './settings/chats-tab.js';
 import { createAboutTab } from './settings/about-tab.js';
 import { createBackupFile } from './backup-file.js';
+import { createStand } from './stand.js';
 
 const TAB_LABELS = { general: 'General', chats: 'Chats', about: 'About' };
 
@@ -18,6 +19,8 @@ export function createSettingsWindow(services, { doc = document } = {}) {
   const title = h('div', { class: 'chat-title' }, h('i', { class: 'fas fa-cog chat-icon', 'aria-hidden': 'true' }), titleText);
   const toggle = h('div', { class: 'chat-toggle', 'aria-hidden': 'true' }, icon('chevron-down'));
   const header = h('div', { class: 'chat-header', onclick: () => actions.toggleSettings() }, title, toggle);
+  // Its cog in the bar while the window is open above it (0.8 spec §2).
+  const stand = createStand('settings', { title: 'Chat settings', onClick: () => actions.toggleSettings() }, h('i', { class: 'fas fa-cog chat-icon', 'aria-hidden': 'true' }));
   const tabButtons = SETTINGS_TABS.map((tab) => h('button', {
     class: 'zcf-pm-tab',
     type: 'button',
@@ -71,6 +74,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
     const open = !!store.get().dock.settingsOpen;
     el.classList.toggle('chat-minimized', !open);
     el.classList.toggle('zcf-open', open);
+    stand.hidden = !open;
     body.hidden = !open;
     titleText.hidden = !open;
     toggle.hidden = !open;
@@ -85,6 +89,7 @@ export function createSettingsWindow(services, { doc = document } = {}) {
 
   return {
     el,
+    stand,
     update,
     destroy() {
       clear(content);

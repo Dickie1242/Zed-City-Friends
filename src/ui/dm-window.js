@@ -3,6 +3,7 @@ import { h, clear, icon, avatar, badge, setBadge } from './dom.js';
 import { createGifPicker } from './gif-picker.js';
 import { createEmojiPicker } from './emoji-picker.js';
 import { enemyMark } from './marks.js';
+import { createStand } from './stand.js';
 import { buildLog, messageParts } from '../mail.js';
 import { formatMessageTime, statusText } from '../time.js';
 
@@ -44,6 +45,10 @@ export function createDmWindow(services, userId) {
   const bellIcon = h('i', { class: 'fas fa-bell', 'aria-hidden': 'true' });
   const bellBtn = h('button', { class: 'zcf-hbtn zcf-bell', type: 'button' }, bellIcon);
   const header = h('div', { class: 'chat-header', onclick: () => actions.toggleDm(userId) }, title, bellBtn, inboxBtn, minBtn, closeBtn);
+  // Its tab in the bar while the window is open above it (0.8 spec §2).
+  const standAvatar = h('span', { class: 'zcf-dm-avatar' });
+  const standName = h('span', { class: 'zcf-dm-name' });
+  const stand = createStand(`dm:${userId}`, { className: 'zcf-stand-dm', onClick: () => actions.minimizeDm(userId) }, standAvatar, standName);
 
   const notice = h('div', { class: 'zcf-notice', hidden: true });
   const loader = h('div', { class: 'zcf-loader', hidden: true }, 'Loading…');
@@ -328,6 +333,12 @@ export function createDmWindow(services, userId) {
     clear(avatarSlot).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : undefined, size: open ? 18 : 24 }));
     nameEl.textContent = displayName();
     nameEl.title = displayName();
+    stand.hidden = !open;
+    if (open) {
+      clear(standAvatar).appendChild(avatar({ avatar: avatarPath(), online: p ? p.online : undefined, size: 24 }));
+      standName.textContent = displayName();
+      stand.title = displayName();
+    }
     const enemy = isEnemy(userId);
     headMark.hidden = !enemy;
     el.classList.toggle('zcf-enemy', enemy);
@@ -361,6 +372,7 @@ export function createDmWindow(services, userId) {
 
   return {
     el,
+    stand,
     update,
     destroy() {
       unsubscribe();

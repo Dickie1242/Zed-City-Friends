@@ -10,6 +10,7 @@ import { longAgo, longStatusText } from '../time.js';
 import { makePoller } from '../poller.js';
 import { asArray, safe } from '../util.js';
 import { createBackupFile } from './backup-file.js';
+import { createStand } from './stand.js';
 
 export const FACTION_MS = 60000;
 const LOAD_MORE_PX = 80;
@@ -60,6 +61,8 @@ export function createPmWindow(services, { doc = document } = {}) {
   const menuBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon('ellipsis-h'));
   const toggle = h('div', { class: 'chat-toggle', 'aria-hidden': 'true' }, icon('chevron-down'));
   const header = h('div', { class: 'chat-header', onclick: () => actions.togglePm() }, title, menuBtn, toggle);
+  // Its envelope in the bar while the window is open above it (0.8 spec §2).
+  const stand = createStand('pm', { title: 'Private Messages', className: 'zcf-stand-pm', onClick: () => actions.togglePm() }, h('i', { class: 'fas fa-envelope chat-icon', 'aria-hidden': 'true' }));
 
   const tabBtns = new Map();
   const tabBar = h('div', { class: 'zcf-pm-tabs', role: 'tablist' });
@@ -500,6 +503,7 @@ export function createPmWindow(services, { doc = document } = {}) {
     const open = isOpen();
     el.classList.toggle('chat-minimized', !open);
     el.classList.toggle('zcf-open', open);
+    stand.hidden = !open;
     body.hidden = !open;
     titleText.hidden = !open;
     menuBtn.hidden = !open;
@@ -544,5 +548,5 @@ export function createPmWindow(services, { doc = document } = {}) {
     closeMenu();
   }
 
-  return { el, update, scheduleList, syncBadge, destroy };
+  return { el, stand, update, scheduleList, syncBadge, destroy };
 }

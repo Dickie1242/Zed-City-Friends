@@ -1,8 +1,13 @@
 // Reconciles our windows inside the dock root: [DM windows in store order], [Private Messages], [Chat
-// settings]. CSS `order` puts the last two right of the game's chats, the cog in the corner.
+// settings], each followed by its stand-in icon for the bar, then a stand-in for each game chat. CSS `order`
+// puts the last two right of the game's chats, the cog in the corner, and on desktop the open windows in a
+// row above the bar (0.8 spec).
+import { h } from './dom.js';
 import { createPmWindow } from './pm-window.js';
 import { createDmWindow } from './dm-window.js';
 import { createSettingsWindow } from './settings-window.js';
+import { createStand } from './stand.js';
+import { GAME_CHATS } from '../chat-custom/chats.js';
 
 export const SMALL_MAX_DMS = 2;
 
@@ -22,6 +27,31 @@ export function createDockView({ root, services }) {
   const pm = createPmWindow(services);
   const settingsWin = createSettingsWindow(services);
   const dms = new Map();
+  const doc = root.ownerDocument;
+  const gameChat = (g) => doc.querySelector(`.chat-containers > .chat-container.${g.cls}`);
+  // A game chat's icon in the bar while it's open: the stylesheet shows it, and a click on it clicks the
+  // game chat's own header, the game's toggle.
+  const gameStands = GAME_CHATS.map((g) => {
+    const icon = h('i', { class: 'chat-icon', 'aria-hidden': 'true' });
+    const stand = createStand(g.key, {
+      title: g.label,
+      className: 'zcf-stand-game',
+      onClick: () => {
+        const header = gameChat(g) && gameChat(g).querySelector(':scope > .chat-header');
+        if (header) header.click();
+      },
+    }, icon);
+    stand.hidden = false;
+    return { g, stand, icon };
+  });
+
+  // The game chats' own icons (read only), for their stand-ins.
+  function syncGameIcons() {
+    for (const { g, icon } of gameStands) {
+      const src = gameChat(g) && gameChat(g).querySelector(':scope > .chat-header .chat-icon');
+      if (src && icon.className !== src.className) icon.className = src.className;
+    }
+  }
 
   function render() {
     const s = services.store.get();
@@ -31,17 +61,26 @@ export function createDockView({ root, services }) {
       if (!wanted.has(id)) {
         w.destroy();
         w.el.remove();
+        w.stand.remove();
         dms.delete(id);
       }
     }
     for (const e of entries) if (!dms.has(e.id)) dms.set(e.id, createDmWindow(services, e.id));
-    const desired = [...entries.map((e) => dms.get(e.id).el), pm.el, settingsWin.el];
+    const desired = [
+      ...entries.flatMap((e) => [dms.get(e.id).el, dms.get(e.id).stand]),
+      pm.el,
+      pm.stand,
+      settingsWin.el,
+      settingsWin.stand,
+      ...gameStands.map((s) => s.stand),
+    ];
     desired.forEach((node, i) => {
       if (root.children[i] !== node) root.insertBefore(node, root.children[i] || null);
     });
     for (const w of dms.values()) w.update();
     pm.update();
     settingsWin.update();
+    syncGameIcons();
   }
 
   return {
