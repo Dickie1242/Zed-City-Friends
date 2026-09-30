@@ -19,6 +19,8 @@ export const CSS = `
 .chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}
 body .chat-containers .zcf-stand[data-zcf-stand="game:faction"] .chat-icon.fa-users:before{content:"\\f6bb"}
+.zcf .zcf-pm-icon{position:relative}
+.zcf .zcf-pm-icon:after{content:"\\f075";position:absolute;top:-.34em;right:-.42em;font-size:.5em;line-height:1;text-shadow:1px 0 0 #040505,-1px 0 0 #040505,0 1px 0 #040505,0 -1px 0 #040505}
 body .chat-containers > .chat-container.general-chat > .chat-header .chat-icon.fa-comments:before{content:"\\f0ac"}
 body .chat-containers .zcf-stand[data-zcf-stand="game:general"] .chat-icon.fa-comments:before{content:"\\f0ac"}
 .chat-containers .zcf-stand{display:none}

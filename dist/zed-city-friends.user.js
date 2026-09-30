@@ -4660,11 +4660,12 @@ sandfish		/items/sandfish.webp`;
     const titleText = h("span", null, "Private Messages");
     const unreadBadge = badge();
     unreadBadge.classList.replace("bg-red-5", "bg-positive");
-    const title = h("div", { class: "chat-title" }, h("i", { class: "fas fa-comments chat-icon", "aria-hidden": "true" }), titleText, unreadBadge);
+    const pmIcon = () => h("i", { class: "fas fa-user-friends zcf-pm-icon chat-icon", "aria-hidden": "true" });
+    const title = h("div", { class: "chat-title" }, pmIcon(), titleText, unreadBadge);
     const menuBtn = h("button", { class: "zcf-hbtn", type: "button", title: "More", "aria-label": "More", "aria-haspopup": "menu", "aria-expanded": "false" }, icon("ellipsis-h"));
     const toggle = h("div", { class: "chat-toggle", "aria-hidden": "true" }, icon("chevron-down"));
     const header = h("div", { class: "chat-header", onclick: () => actions.togglePm() }, title, menuBtn, toggle);
-    const stand = createStand("pm", { title: "Private Messages", className: "zcf-stand-pm", onClick: () => actions.togglePm() }, h("i", { class: "fas fa-comments chat-icon", "aria-hidden": "true" }));
+    const stand = createStand("pm", { title: "Private Messages", className: "zcf-stand-pm", onClick: () => actions.togglePm() }, pmIcon());
     const tabBtns = /* @__PURE__ */ new Map();
     const tabBar = h("div", { class: "zcf-pm-tabs", role: "tablist" });
     for (const [key, label] of TABS) {
@@ -6004,7 +6005,7 @@ sandfish		/items/sandfish.webp`;
         )),
         game.length ? section({ icon: "globe", label: "Game chats" }, game.map((r) => chatRow(r, m.textAll))) : null,
         section(
-          { icon: "comments", label: "Private chats" },
+          { icon: "user-friends", label: "Private chats" },
           ours.map((r) => chatRow(r, m.textAll)),
           h("button", { class: "zcf-page-btn zcf-set-all", type: "button", "data-zcf-focus": "resetall", disabled: !m.customized && m.textAll === DEFAULT_TEXT, onclick: () => actions.resetAllChats() }, "Reset all chats")
         ),
@@ -6027,7 +6028,7 @@ sandfish		/items/sandfish.webp`;
           title: "Chats open above their icons, like Torn",
           points: [
             "The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.",
-            "The Global chat has a globe for its icon, and Private Messages the speech bubbles Global had."
+            "The Global chat has a globe for its icon, and Private Messages the friends icon with a speech bubble."
           ]
         }
       ]
@@ -6429,6 +6430,7 @@ sandfish		/items/sandfish.webp`;
 
   // src/ui/dock-view.js
   var SMALL_MAX_DMS = 2;
+  var GAME_ICONS = { "game:general": "fas fa-comments", "game:faction": "fas fa-users", "game:activity": "fas fa-radar" };
   function visibleDms(dms, small) {
     if (!small || dms.length <= SMALL_MAX_DMS) return dms;
     const keep = new Set(dms.filter((d) => d.open).map((d) => d.id));
@@ -6445,7 +6447,7 @@ sandfish		/items/sandfish.webp`;
     const doc = root.ownerDocument;
     const gameChat = (g) => doc.querySelector(`.chat-containers > .chat-container.${g.cls}`);
     const gameStands = GAME_CHATS.map((g) => {
-      const icon2 = h("i", { class: "chat-icon", "aria-hidden": "true" });
+      const icon2 = h("i", { class: `${GAME_ICONS[g.key] || "fas fa-comments"} chat-icon`, "aria-hidden": "true" });
       const stand = createStand(g.key, {
         title: g.label,
         className: "zcf-stand-game",
@@ -9050,6 +9052,8 @@ sandfish		/items/sandfish.webp`;
 .chat-container:is(.zcf-pm,.zcf-stand-pm) .chat-header:hover .chat-title .chat-icon{color:#3d8b40!important}
 body .chat-containers > .chat-container.faction-chat > .chat-header .chat-icon.fa-users:before{content:"\\f6bb"}
 body .chat-containers .zcf-stand[data-zcf-stand="game:faction"] .chat-icon.fa-users:before{content:"\\f6bb"}
+.zcf .zcf-pm-icon{position:relative}
+.zcf .zcf-pm-icon:after{content:"\\f075";position:absolute;top:-.34em;right:-.42em;font-size:.5em;line-height:1;text-shadow:1px 0 0 #040505,-1px 0 0 #040505,0 1px 0 #040505,0 -1px 0 #040505}
 body .chat-containers > .chat-container.general-chat > .chat-header .chat-icon.fa-comments:before{content:"\\f0ac"}
 body .chat-containers .zcf-stand[data-zcf-stand="game:general"] .chat-icon.fa-comments:before{content:"\\f0ac"}
 .chat-containers .zcf-stand{display:none}

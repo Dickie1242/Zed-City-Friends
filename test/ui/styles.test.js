@@ -216,6 +216,12 @@ describe('styles against the game dock CSS', () => {
     expect(CSS).not.toContain('\f');
   });
 
+  it('draws a small speech bubble by one head of the friends icon, for Private Messages', () => {
+    // \f075 is fa-comment. The dark outline separates it from the head it comes out of.
+    expect(CSS).toContain('.zcf .zcf-pm-icon{position:relative}');
+    expect(CSS).toContain('.zcf .zcf-pm-icon:after{content:"\\f075";position:absolute;top:-.34em;right:-.42em;font-size:.5em;line-height:1;text-shadow:1px 0 0 #040505,-1px 0 0 #040505,0 1px 0 #040505,0 -1px 0 #040505}');
+  });
+
   it("gives the game's Global chat a globe, in the dock and on its icon in the bar", () => {
     // fa-comments is \f086, fa-globe \f0ac.
     expect(CSS).toContain('body .chat-containers > .chat-container.general-chat > .chat-header .chat-icon.fa-comments:before{content:"\\f0ac"}');

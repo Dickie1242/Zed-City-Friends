@@ -109,7 +109,7 @@ export function createChatsTab({ services, doc = document, requestRender }) {
         h('span', { class: 'zcf-set-text zcf-grow' }, h('span', { class: 'zcf-set-label' }, 'Text size for every chat'), h('span', { class: 'zcf-set-subline' }, 'Sets them all; change one below')),
         stepper({ value: m.textAll, min: LIMITS.minText, max: LIMITS.maxText, name: 'text in every chat', focus: 'textall', onStep: (d) => actions.stepTextAll(d * LIMITS.textStep) }))),
       game.length ? section({ icon: 'globe', label: 'Game chats' }, game.map((r) => chatRow(r, m.textAll))) : null,
-      section({ icon: 'comments', label: 'Private chats' }, ours.map((r) => chatRow(r, m.textAll)),
+      section({ icon: 'user-friends', label: 'Private chats' }, ours.map((r) => chatRow(r, m.textAll)),
         h('button', { class: 'zcf-page-btn zcf-set-all', type: 'button', 'data-zcf-focus': 'resetall', disabled: !m.customized && m.textAll === DEFAULT_TEXT, onclick: () => actions.resetAllChats() }, 'Reset all chats')),
       section({ icon: 'bell-slash', label: 'Muted', count: m.muted.length },
         m.muted.length ? m.muted.map(mutedRow) : h('div', { class: 'zcf-set-empty' }, 'No muted chats. Mute one with the bell in its header.')),
