@@ -54,7 +54,8 @@ describe('private messages window', () => {
     });
     expect(el.classList.contains('chat-minimized')).toBe(true);
     expect(el.dataset.zcfChat).toBe('pm');
-    expect(el.querySelector('.chat-icon').className).toContain('fa-user-friends zcf-pm-icon'); // the top bar's friends icon, with a speech bubble (styles.js)
+    // The top bar's friends icon, with a speech bubble between the heads (drawn in styles.js).
+    expect([...el.querySelector('.chat-icon.zcf-pm-icon').children].map((c) => c.className)).toEqual(['fas fa-user-friends', 'zcf-pm-bubble']);
     const unread = el.querySelector('.unread-badge');
     expect(unread.textContent).toBe('6');
     expect(unread.hidden).toBe(false);

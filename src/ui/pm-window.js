@@ -57,8 +57,8 @@ export function createPmWindow(services, { doc = document } = {}) {
   const titleText = h('span', null, 'Private Messages');
   const unreadBadge = badge();
   unreadBadge.classList.replace('bg-red-5', 'bg-positive'); // green: new messages, not an alert
-  // The top bar's friends icon, with a small speech bubble by one head (styles.js, 0.8.0).
-  const pmIcon = () => h('i', { class: 'fas fa-user-friends zcf-pm-icon chat-icon', 'aria-hidden': 'true' });
+  // The top bar's friends icon with a shared speech bubble between the heads, drawn in styles.js (0.8.0).
+  const pmIcon = () => h('span', { class: 'chat-icon zcf-pm-icon', 'aria-hidden': 'true' }, h('i', { class: 'fas fa-user-friends' }), h('i', { class: 'zcf-pm-bubble' }));
   const title = h('div', { class: 'chat-title' }, pmIcon(), titleText, unreadBadge);
   const menuBtn = h('button', { class: 'zcf-hbtn', type: 'button', title: 'More', 'aria-label': 'More', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon('ellipsis-h'));
   const toggle = h('div', { class: 'chat-toggle', 'aria-hidden': 'true' }, icon('chevron-down'));

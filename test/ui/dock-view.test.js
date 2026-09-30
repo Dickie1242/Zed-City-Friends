@@ -74,7 +74,7 @@ describe('dock view', () => {
       view.render();
       expect([stand('dm:7').hidden, stand('pm').hidden, stand('settings').hidden]).toEqual([false, false, true]);
       expect(stand('dm:7').querySelector('.zcf-dm-name').textContent).toBe('Spike');
-      expect(stand('pm').querySelector('.chat-icon').className).toContain('fa-user-friends zcf-pm-icon');
+      expect([...stand('pm').querySelector('.chat-icon.zcf-pm-icon').children].map((c) => c.className)).toEqual(['fas fa-user-friends', 'zcf-pm-bubble']);
       expect(stand('settings').querySelector('.chat-icon').className).toContain('fa-cog');
       stand('dm:7').click();
       expect(services.actions.minimizeDm).toHaveBeenCalledWith(7);

@@ -137,10 +137,11 @@ describe('styles against the game dock CSS', () => {
     settings.destroy();
   });
 
-  it('colors the Private Messages icon a soft green over the game rule that forces icons to currentColor', () => {
+  it('gives the Private Messages icon the same grey as the other icons in the bar', () => {
     renderDock(STATES[0]);
     const icon = document.querySelector('.zcf-pm .chat-icon');
-    for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('#629464');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) expect(winner(icon, 'color', 1280, sheets).value).toBe('currentColor'); // the game's rule, as for every other icon
+    expect(CSS).not.toContain('#629464!important');
   });
 
   it('gives an open window its own full-width row on phones, with every bubble (the cog too) underneath', () => {
@@ -206,7 +207,6 @@ describe('styles against the game dock CSS', () => {
       expect([display('pm'), display('settings'), display('game:general'), display('game:faction')]).toEqual(['flex', 'none', 'flex', 'none']);
       expect([display('pm', 400), display('game:general', 400)]).toEqual(['none', 'none']);
       expect(winner(stand('pm').querySelector('.chat-header'), 'box-shadow', 1280, sheets).value).toBe('inset 0 2px 0 #0a748f');
-      expect(winner(stand('pm').querySelector('.chat-icon'), 'color', 1280, sheets).value).toBe('#629464');
     }
   });
 
@@ -216,10 +216,19 @@ describe('styles against the game dock CSS', () => {
     expect(CSS).not.toContain('\f');
   });
 
-  it('draws a small speech bubble by one head of the friends icon, for Private Messages', () => {
-    // \f075 is fa-comment. The dark outline separates it from the head it comes out of.
-    expect(CSS).toContain('.zcf .zcf-pm-icon{position:relative}');
-    expect(CSS).toContain('.zcf .zcf-pm-icon:after{content:"\\f075";position:absolute;top:-.34em;right:-.42em;font-size:.5em;line-height:1;text-shadow:1px 0 0 #040505,-1px 0 0 #040505,0 1px 0 #040505,0 -1px 0 #040505}');
+  it('draws a shared speech bubble between the two heads of the friends icon, for Private Messages', () => {
+    renderDock(STATES[0]);
+    const icon = document.querySelector('.zcf-pm .zcf-pm-icon');
+    const bubble = icon.querySelector('.zcf-pm-bubble');
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      expect(winner(icon, 'position', 1280, sheets).value).toBe('relative');
+      expect(winner(bubble, 'position', 1280, sheets).value).toBe('absolute');
+      expect(winner(bubble, 'left', 1280, sheets).value).toBe('.37em'); // over the gap between the heads
+      expect(winner(bubble, 'background', 1280, sheets).value).toBe('currentColor'); // the icon's own grey
+    }
+    // Its tail points down between the heads, and it holds three dots.
+    expect(CSS).toContain('.zcf .zcf-pm-bubble:after{content:"";position:absolute;left:50%;bottom:-.11em;margin-left:-.08em;border-left:.08em solid transparent;border-right:.08em solid transparent;border-top:.12em solid currentColor}');
+    expect((CSS.match(/\.zcf \.zcf-pm-bubble:before\{[^}]*\}/)[0].match(/radial-gradient/g) || []).length).toBe(3);
   });
 
   it("gives the game's Global chat a globe, in the dock and on its icon in the bar", () => {
