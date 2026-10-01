@@ -24,10 +24,14 @@ describe('user stylesheet', () => {
     expect(css).toContain('left:930px;top:350px');
   });
 
-  it('gives an unlocked chat a containing block for its grips and a grab cursor', () => {
+  it('gives an unlocked chat a containing block for its grips and a grab cursor on its header and bubble', () => {
     const css = buildUserCss({ chats: { 'game:faction': { locked: false } } });
     expect(css).toContain('body .chat-containers > .chat-container.faction-chat{position:relative}');
-    expect(css).toContain('body .chat-containers > .chat-container.faction-chat > .chat-header{cursor:grab;touch-action:none}');
+    expect(css).toContain('body .chat-containers > .chat-container.faction-chat > .chat-header,body .chat-containers > .chat-container.faction-chat.chat-minimized{cursor:grab;touch-action:none}');
+  });
+
+  it('gives a locked chat no grab cursor', () => {
+    expect(buildUserCss({ chats: { 'game:faction': { w: 400 } } })).not.toContain('cursor:grab');
   });
 
   it('shows a live gesture over the saved entry', () => {

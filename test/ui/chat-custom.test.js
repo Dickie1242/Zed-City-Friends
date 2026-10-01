@@ -187,15 +187,26 @@ describe('chat customization', () => {
     expect(chat('game:general')).toEqual({ w: 420, text: 90 });
   });
 
-  it('drags a bubble to a new spot without opening it', () => {
-    const { faction } = setup();
+  it('drags an unlocked bubble to a new spot without opening it', () => {
+    const { faction, settings } = setup();
+    settings.update((s) => updateChat(s, 'game:faction', { locked: false }));
     const header = faction.querySelector('.chat-header');
     header.dispatchEvent(ptr('pointerdown', 910, 730));
     document.dispatchEvent(ptr('pointermove', 860, 700));
     document.dispatchEvent(ptr('pointerup', 860, 700));
     click(header);
     expect(faction.classList.contains('chat-minimized')).toBe(true);
-    expect(chat('game:faction')).toEqual({ x: 850, y: 690 });
+    expect(chat('game:faction')).toEqual({ locked: false, x: 850, y: 690 });
+  });
+
+  it("leaves a locked chat's bubble where it is", () => {
+    const { faction } = setup();
+    const header = faction.querySelector('.chat-header');
+    header.dispatchEvent(ptr('pointerdown', 910, 730));
+    document.dispatchEvent(ptr('pointermove', 860, 700));
+    document.dispatchEvent(ptr('pointerup', 860, 700));
+    expect(document.documentElement.classList.contains('zcf-dragging')).toBe(false);
+    expect(chat('game:faction')).toBeUndefined();
   });
 
   it('puts the controls back after the game re-renders a header', async () => {

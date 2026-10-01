@@ -1,6 +1,6 @@
 {
   "name": "zed-city-friends",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.",
   "license": "MIT",
   "private": true,

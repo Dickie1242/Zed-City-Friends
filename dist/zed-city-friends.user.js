@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zed City Friends
 // @namespace    zed-city-friends
-// @version      0.8.0
+// @version      0.8.1
 // @description  Private Messages, friends and enemies lists, and movable, resizable chats for Zed City's chat dock.
 // @license      MIT
 // @match        https://www.zed.city/*
@@ -6021,7 +6021,7 @@ sandfish		/items/sandfish.webp`;
   // src/whats-new.js
   var WHATS_NEW = [
     {
-      version: "0.8.0",
+      version: "0.8.x",
       date: "2026-09-30",
       features: [
         {
@@ -6030,6 +6030,10 @@ sandfish		/items/sandfish.webp`;
             "The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.",
             "The Global chat has a globe for its icon, and Private Messages the friends icon with a speech bubble."
           ]
+        },
+        {
+          title: "Locked chats stay put",
+          points: ["A chat's icon only moves once you unlock the chat, so it can't be dragged by accident."]
         }
       ]
     },
@@ -6159,7 +6163,7 @@ sandfish		/items/sandfish.webp`;
   ];
 
   // src/version.js
-  var VERSION = true ? "0.8.0" : "dev";
+  var VERSION = true ? "0.8.1" : "dev";
   var DEV_PROFILE_ID = 27581;
   var UPDATE_URL = "https://raw.githubusercontent.com/Dickie1242/Zed-City-Friends/main/dist/zed-city-friends.user.js";
 
@@ -8035,7 +8039,7 @@ sandfish		/items/sandfish.webp`;
       if (sized.length || isMoved(entry) || isLive) box.push("transition:none");
       if (box.length) rules.push(`${sel}{${box.join(";")}}`);
       if (sized.length) rules.push(`${sel}:not(.chat-minimized){${sized.join(";")};flex:none}`);
-      if (!isLocked(entry)) rules.push(`${sel} > .chat-header{cursor:grab;touch-action:none}`);
+      if (!isLocked(entry)) rules.push(`${sel} > .chat-header,${sel}.chat-minimized{cursor:grab;touch-action:none}`);
     }
     if (!small) front.forEach((key, i) => rules.push(`${chatSelector(key)}{z-index:${i + 1}}`));
     return rules.join("\n");
@@ -8197,9 +8201,8 @@ sandfish		/items/sandfish.webp`;
       hit(target) {
         if (!target || !target.closest || !target.closest(".chat-containers") || target.closest(".zcf-grip, .zcf-cmenu")) return null;
         const c = findChats(doc).find((x) => x.el.contains(target));
-        if (!c) return null;
-        if (c.minimized) return { key: c.key, el: c.el };
-        if (!c.header || !c.header.contains(target) || isLocked(saved(c.key))) return null;
+        if (!c || isLocked(saved(c.key))) return null;
+        if (!c.minimized && (!c.header || !c.header.contains(target))) return null;
         return { key: c.key, el: c.el };
       },
       onMove(key, pos) {
@@ -9373,7 +9376,6 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-page-empty{padding:28px 16px;text-align:center;color:#9e9e9e}
 @media (min-width:600px){
   body .chat-containers{right:0}
-  .chat-containers .chat-container.chat-minimized{touch-action:none}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized{width:auto;max-width:150px}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header{padding:0 10px 0 8px}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}

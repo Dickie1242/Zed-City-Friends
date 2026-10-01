@@ -2,7 +2,7 @@
 // points at these: they're there for whoever opens settings.
 export const WHATS_NEW = [
   {
-    version: '0.8.0',
+    version: '0.8.x',
     date: '2026-09-30',
     features: [
       {
@@ -11,6 +11,10 @@ export const WHATS_NEW = [
           'The icons stay in a bar along the bottom, the open ones in teal, and windows line up above them from the right. Click a teal icon to close its window.',
           'The Global chat has a globe for its icon, and Private Messages the friends icon with a speech bubble.',
         ],
+      },
+      {
+        title: 'Locked chats stay put',
+        points: ["A chat's icon only moves once you unlock the chat, so it can't be dragged by accident."],
       },
     ],
   },

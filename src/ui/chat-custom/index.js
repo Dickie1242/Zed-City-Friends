@@ -186,9 +186,9 @@ export function createChatCustom({ doc = document, win = window, keeper = null, 
     hit(target) {
       if (!target || !target.closest || !target.closest('.chat-containers') || target.closest('.zcf-grip, .zcf-cmenu')) return null;
       const c = findChats(doc).find((x) => x.el.contains(target));
-      if (!c) return null;
-      if (c.minimized) return { key: c.key, el: c.el };
-      if (!c.header || !c.header.contains(target) || isLocked(saved(c.key))) return null;
+      // A locked chat stays put, bubble included, so a slip of the mouse can't move it.
+      if (!c || isLocked(saved(c.key))) return null;
+      if (!c.minimized && (!c.header || !c.header.contains(target))) return null;
       return { key: c.key, el: c.el };
     },
     onMove(key, pos) {

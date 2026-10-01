@@ -1,4 +1,4 @@
-// Moving chats (spec §B.3): an unlocked, expanded chat by its header, or any minimized chat by its bubble.
+// Moving chats (spec §B.3): an unlocked chat by its header, or by its bubble while minimized.
 // A 6px threshold keeps a still click a click; the click that ends a real drag is swallowed in the capture
 // phase, before the game's header toggle sees it. Listens on the document, so a header that Vue re-renders
 // mid-drag doesn't end the gesture.
