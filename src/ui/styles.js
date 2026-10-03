@@ -339,7 +339,7 @@ html.zcf-resizing,html.zcf-resizing *{user-select:none!important}
 .zcf-page-btn.zcf-page-danger{background:#ff42421f;color:#ff8a8a}
 .zcf-page-empty{padding:28px 16px;text-align:center;color:#9e9e9e}
 @media (min-width:600px){
-  body .chat-containers{right:0}
+  body .chat-containers{right:0;z-index:2001}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized{width:auto;max-width:150px}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header{padding:0 10px 0 8px}
   .chat-containers :is(.zcf-dm,.zcf-stand-dm).chat-minimized .chat-header .chat-title{justify-content:flex-start;gap:6px}

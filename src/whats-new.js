@@ -16,6 +16,10 @@ export const WHATS_NEW = [
         title: 'Locked chats stay put',
         points: ["A chat's icon only moves once you unlock the chat, so it can't be dragged by accident."],
       },
+      {
+        title: 'Tall chats go over the top bar',
+        points: ["A chat stretched or moved to the top of the screen covers the game's top bar instead of slipping under it, so its padlock stays in reach."],
+      },
     ],
   },
   {

@@ -123,6 +123,19 @@ describe('styles against the game dock CSS', () => {
     }
   });
 
+  it('lifts the desktop dock over the top bar, so a chat grown or moved to the top keeps its header in reach', () => {
+    renderDock(STATES[0]);
+    const dock = document.querySelector('.chat-containers');
+    // Quasar's stacking in the game's index.css: the top bar (.q-header) at 2000, the slide-over drawer's
+    // backdrop at 2999 and the drawer at 3000, menus and dialogs at 6000.
+    for (const sheets of [OURS_LAST, OURS_FIRST]) {
+      const z = Number(winner(dock, 'z-index', 1280, sheets).value);
+      expect(z).toBeGreaterThan(2000);
+      expect(z).toBeLessThan(2999);
+      expect(winner(dock, 'z-index', 400, sheets).value).toBe('1000');
+    }
+  });
+
   it('keeps the chat controls and grips we put in the game chats order-independent', () => {
     renderDock(STATES[0]);
     const settings = createSettingsStore({ playerId: 1, storage: memoryStorage(), win: new EventTarget() });
